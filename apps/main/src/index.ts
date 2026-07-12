@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import { app, BrowserWindow } from 'electron';
 import { createIPCHandler } from 'electron-trpc/main';
 import { appRouter } from './router';
+import { terminalService } from './services/terminal';
 import { closeStore, getWindowBounds, initStore, setWindowBounds } from './store';
 
 const DEV_RENDERER_URL = 'http://localhost:3000';
@@ -62,5 +63,6 @@ app.on('window-all-closed', () => {
 });
 
 app.on('will-quit', () => {
+  terminalService.disposeAll();
   closeStore();
 });
