@@ -7,6 +7,12 @@
     "apps/*",
     "packages/*"
   ],
+  "trustedDependencies": [
+    "node-pty",
+    "better-sqlite3",
+    "electron",
+    "esbuild"
+  ],
   "scripts": {
     "dev": "concurrently -k -n renderer,main -c blue,green \"bun run dev:renderer\" \"bun run dev:main\"",
     "dev:renderer": "bun run --filter '@flowstate/renderer' dev",

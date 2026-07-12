@@ -3,6 +3,7 @@ import { appRouter as appMeta } from './app';
 import { claudeRouter } from './claude';
 import { gitRouter } from './git';
 import { linearRouter } from './linear';
+import { onboardingRouter } from './onboarding';
 import { terminalRouter } from './terminal';
 import { worktreeRouter } from './worktree';
 
@@ -11,6 +12,7 @@ export const appRouter = router({
   git: gitRouter,
   worktree: worktreeRouter,
   terminal: terminalRouter,
+  onboarding: onboardingRouter,
   claude: claudeRouter,
   linear: linearRouter,
 });
