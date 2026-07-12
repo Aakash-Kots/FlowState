@@ -15,6 +15,13 @@ jobs:
         with:
           bun-version: latest
 
+      # node-gyp@9 (used by electron-builder's install-app-deps postinstall to
+      # rebuild node-pty) imports distutils, which was removed from Python 3.12+.
+      # macos-latest runners default to 3.12+, so pin 3.11 which still ships it.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
 

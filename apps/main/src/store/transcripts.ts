@@ -26,6 +26,27 @@ export function appendMessage(
     .run();
 }
 
+/**
+ * Full history for a workspace across all session ids. Resuming a session
+ * yields a new session id, so the chat UI hydrates from the workspace's whole
+ * transcript rather than a single session's slice.
+ */
+export function getWorkspaceTranscript(workspaceId: string): ClaudeMessage[] {
+  const rows = getDb()
+    .select()
+    .from(claudeMessages)
+    .where(eq(claudeMessages.workspaceId, workspaceId))
+    .orderBy(asc(claudeMessages.id))
+    .all();
+  return rows.map((row) =>
+    claudeMessageSchema.parse({
+      role: row.role,
+      content: JSON.parse(row.content),
+      createdAt: row.createdAt,
+    }),
+  );
+}
+
 export function getTranscript(workspaceId: string, sessionId: string): ClaudeMessage[] {
   const rows = getDb()
     .select()
