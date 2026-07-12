@@ -14,6 +14,11 @@
  * The SDK package is ESM-only while this bundle is CJS, so it is loaded via a
  * real dynamic import() (preserved by Rollup's dynamicImportInCjs) — never a
  * top-level value import.
+ *
+ * Note on enums: the SDK's own string fields (`message.type`, `message.subtype`,
+ * raw content-block `type`, `PermissionResult.behavior`) are the vendor's types
+ * and stay as raw strings; only FlowState's own domain strings use the shared
+ * enums, mapped explicitly at the boundary.
  */
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
@@ -25,14 +30,18 @@ import type {
   SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
 import {
+  ChatBlockType,
+  ChatEventKind,
+  ChatMessageRole,
+  ClaudeSessionState,
+  PermissionBehavior,
+  chatMessageSchema,
   type ChatBlock,
   type ChatEvent,
   type ChatMessage,
   type ChatSnapshot,
-  type ClaudeSessionState,
   type PermissionRequest,
   type Workspace,
-  chatMessageSchema,
 } from '@flowstate/shared';
 import {
   appendMessage,
@@ -44,14 +53,104 @@ import {
 } from '../store';
 import { authService } from './auth';
 
-export const DEFAULT_WORKSPACE_ID = 'default';
-const CWD_SETTING_KEY = 'claude.cwd';
+///////////
+// Types //
+///////////
 
 type SdkModule = typeof import('@anthropic-ai/claude-agent-sdk');
+
+type PendingPermission = {
+  request: PermissionRequest;
+  resolve: (result: PermissionResult) => void;
+};
+
+/** Content-block shapes we care about, accessed defensively (SDK unions are huge). */
+type RawBlock = {
+  type?: string;
+  text?: string;
+  thinking?: string;
+  id?: string;
+  name?: string;
+  input?: unknown;
+  tool_use_id?: string;
+  content?: unknown;
+  is_error?: boolean;
+};
+
+///////////////
+// Constants //
+///////////////
+
+const CWD_SETTING_KEY = 'claude.cwd';
+
+const ASSISTANT_ERROR_TEXT: Record<string, string> = {
+  authentication_failed:
+    'Claude Code is not signed in. Open Connect and sign in with `claude auth login`.',
+  billing_error: 'Claude Code reported a billing problem with your account.',
+  rate_limit: 'Rate limited by the Claude API — wait a moment and try again.',
+  overloaded: 'The Claude API is overloaded — try again shortly.',
+};
+
+/////////////
+// Helpers //
+/////////////
+
 let sdkModule: Promise<SdkModule> | null = null;
 function loadSdk(): Promise<SdkModule> {
   sdkModule ??= import('@anthropic-ai/claude-agent-sdk');
   return sdkModule;
+}
+
+function blockText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((b: RawBlock) => (b?.type === 'text' && typeof b.text === 'string' ? b.text : ''))
+      .join('');
+  }
+  return content == null ? '' : JSON.stringify(content);
+}
+
+function normalizeAssistantBlocks(content: unknown): ChatBlock[] {
+  if (!Array.isArray(content)) return [];
+  const blocks: ChatBlock[] = [];
+  for (const raw of content as RawBlock[]) {
+    switch (raw?.type) {
+      case 'text':
+        if (raw.text) blocks.push({ type: ChatBlockType.Text, text: raw.text });
+        break;
+      case 'thinking':
+        if (raw.thinking) blocks.push({ type: ChatBlockType.Thinking, text: raw.thinking });
+        break;
+      case 'tool_use':
+        blocks.push({
+          type: ChatBlockType.ToolUse,
+          id: raw.id ?? randomUUID(),
+          name: raw.name ?? 'unknown',
+          input: raw.input ?? {},
+        });
+        break;
+      default:
+        break; // redacted_thinking etc. — nothing to render
+    }
+  }
+  return blocks;
+}
+
+function normalizeToolResultBlocks(content: unknown): ChatBlock[] {
+  if (!Array.isArray(content)) return [];
+  const blocks: ChatBlock[] = [];
+  for (const raw of content as RawBlock[]) {
+    if (raw?.type === 'tool_result' && raw.tool_use_id) {
+      blocks.push({
+        type: ChatBlockType.ToolResult,
+        toolUseId: raw.tool_use_id,
+        content: blockText(raw.content),
+        isError: raw.is_error === true,
+      });
+    }
+  }
+  return blocks;
 }
 
 /**
@@ -98,84 +197,6 @@ class AsyncMessageQueue<T> implements AsyncIterable<T> {
   }
 }
 
-interface PendingPermission {
-  request: PermissionRequest;
-  resolve: (result: PermissionResult) => void;
-}
-
-/** Content-block shapes we care about, accessed defensively (SDK unions are huge). */
-interface RawBlock {
-  type?: string;
-  text?: string;
-  thinking?: string;
-  id?: string;
-  name?: string;
-  input?: unknown;
-  tool_use_id?: string;
-  content?: unknown;
-  is_error?: boolean;
-}
-
-function blockText(content: unknown): string {
-  if (typeof content === 'string') return content;
-  if (Array.isArray(content)) {
-    return content
-      .map((b: RawBlock) => (b?.type === 'text' && typeof b.text === 'string' ? b.text : ''))
-      .join('');
-  }
-  return content == null ? '' : JSON.stringify(content);
-}
-
-function normalizeAssistantBlocks(content: unknown): ChatBlock[] {
-  if (!Array.isArray(content)) return [];
-  const blocks: ChatBlock[] = [];
-  for (const raw of content as RawBlock[]) {
-    switch (raw?.type) {
-      case 'text':
-        if (raw.text) blocks.push({ type: 'text', text: raw.text });
-        break;
-      case 'thinking':
-        if (raw.thinking) blocks.push({ type: 'thinking', text: raw.thinking });
-        break;
-      case 'tool_use':
-        blocks.push({
-          type: 'tool_use',
-          id: raw.id ?? randomUUID(),
-          name: raw.name ?? 'unknown',
-          input: raw.input ?? {},
-        });
-        break;
-      default:
-        break; // redacted_thinking etc. — nothing to render
-    }
-  }
-  return blocks;
-}
-
-function normalizeToolResultBlocks(content: unknown): ChatBlock[] {
-  if (!Array.isArray(content)) return [];
-  const blocks: ChatBlock[] = [];
-  for (const raw of content as RawBlock[]) {
-    if (raw?.type === 'tool_result' && raw.tool_use_id) {
-      blocks.push({
-        type: 'tool_result',
-        toolUseId: raw.tool_use_id,
-        content: blockText(raw.content),
-        isError: raw.is_error === true,
-      });
-    }
-  }
-  return blocks;
-}
-
-const ASSISTANT_ERROR_TEXT: Record<string, string> = {
-  authentication_failed:
-    'Claude Code is not signed in. Open Connect and sign in with `claude auth login`.',
-  billing_error: 'Claude Code reported a billing problem with your account.',
-  rate_limit: 'Rate limited by the Claude API — wait a moment and try again.',
-  overloaded: 'The Claude API is overloaded — try again shortly.',
-};
-
 class ClaudeSession {
   readonly queue = new AsyncMessageQueue<SDKUserMessage>();
   readonly abort = new AbortController();
@@ -196,8 +217,6 @@ export class ClaudeService {
   private readonly sessions = new Map<string, ClaudeSession>();
   private readonly events = new EventEmitter();
 
-  // ---- public API ---------------------------------------------------------
-
   getCwd(): string | null {
     return getSetting<string>(CWD_SETTING_KEY);
   }
@@ -211,18 +230,21 @@ export class ClaudeService {
     this.disposeSession(workspaceId);
     const ws = getWorkspace(workspaceId);
     if (ws) upsertWorkspace({ ...ws, repoRoot: cwd, worktreePath: cwd, claudeSessionId: null });
-    this.emit(workspaceId, { kind: 'cwd', cwd });
+    this.emit(workspaceId, { kind: ChatEventKind.Cwd, cwd });
   }
 
   send(workspaceId: string, text: string): void {
     const cwd = this.getCwd();
     if (!cwd) {
-      this.emit(workspaceId, { kind: 'error', message: 'Choose a working folder first.' });
+      this.emit(workspaceId, {
+        kind: ChatEventKind.Error,
+        message: 'Choose a working folder first.',
+      });
       return;
     }
     if (!authService.status().claudeConnected) {
       this.emit(workspaceId, {
-        kind: 'error',
+        kind: ChatEventKind.Error,
         message: 'Claude Code is not connected. Open Connect and sign in first.',
       });
       return;
@@ -231,11 +253,11 @@ export class ClaudeService {
     const session = this.ensureSession(workspaceId, cwd);
     const userMessage: ChatMessage = {
       id: randomUUID(),
-      role: 'user',
-      blocks: [{ type: 'text', text }],
+      role: ChatMessageRole.User,
+      blocks: [{ type: ChatBlockType.Text, text }],
     };
     this.persistAndEmit(session, userMessage);
-    this.setState(workspaceId, 'running');
+    this.setState(workspaceId, ClaudeSessionState.Running);
     session.queue.push({
       type: 'user',
       message: { role: 'user', content: text },
@@ -258,13 +280,13 @@ export class ClaudeService {
     } catch (err) {
       console.warn('[claude] interrupt failed', err);
     }
-    this.setState(workspaceId, 'idle');
+    this.setState(workspaceId, ClaudeSessionState.Idle);
   }
 
   respondPermission(
     workspaceId: string,
     requestId: string,
-    behavior: 'allow' | 'deny',
+    behavior: PermissionBehavior,
     message?: string,
   ): void {
     const session = this.sessions.get(workspaceId);
@@ -272,12 +294,13 @@ export class ClaudeService {
     if (!session || !pending) return;
     session.pendingPermissions.delete(requestId);
     pending.resolve(
-      behavior === 'allow'
+      behavior === PermissionBehavior.Allow
         ? { behavior: 'allow' }
         : { behavior: 'deny', message: message ?? 'The user denied this action.' },
     );
-    this.emit(workspaceId, { kind: 'permission_resolved', id: requestId, behavior });
-    if (session.pendingPermissions.size === 0) this.setState(workspaceId, 'running');
+    this.emit(workspaceId, { kind: ChatEventKind.PermissionResolved, id: requestId, behavior });
+    if (session.pendingPermissions.size === 0)
+      this.setState(workspaceId, ClaudeSessionState.Running);
   }
 
   onEvent(workspaceId: string, cb: (event: ChatEvent) => void): () => void {
@@ -295,7 +318,7 @@ export class ClaudeService {
       if (parsed.success) messages.push({ message: parsed.data, createdAt: row.createdAt });
     }
     return {
-      state: ws?.claudeState ?? 'idle',
+      state: ws?.claudeState ?? ClaudeSessionState.Idle,
       sessionId: ws?.claudeSessionId ?? null,
       cwd: this.getCwd(),
       model: session?.model ?? null,
@@ -310,8 +333,6 @@ export class ClaudeService {
   disposeAll(): void {
     for (const workspaceId of this.sessions.keys()) this.disposeSession(workspaceId);
   }
-
-  // ---- session lifecycle ---------------------------------------------------
 
   private ensureSession(workspaceId: string, cwd: string): ClaudeSession {
     const existing = this.sessions.get(workspaceId);
@@ -335,7 +356,7 @@ export class ClaudeService {
       worktreePath: cwd,
       branch: '',
       linearIssue: null,
-      claudeState: 'idle',
+      claudeState: ClaudeSessionState.Idle,
       claudeSessionId: null,
       createdAt: new Date().toISOString(),
     });
@@ -381,8 +402,11 @@ export class ClaudeService {
       if (!this.sessions.has(workspaceId)) return; // torn down deliberately
       const text = err instanceof Error ? err.message : String(err);
       console.error('[claude] session crashed:', text);
-      this.emit(workspaceId, { kind: 'error', message: `Claude session error: ${text}` });
-      this.setState(workspaceId, 'error');
+      this.emit(workspaceId, {
+        kind: ChatEventKind.Error,
+        message: `Claude session error: ${text}`,
+      });
+      this.setState(workspaceId, ClaudeSessionState.Error);
       // Drop the broken session; the next send() starts fresh and resumes.
       this.sessions.delete(workspaceId);
       this.resolveAllPermissions(session, {
@@ -394,8 +418,6 @@ export class ClaudeService {
     }
   }
 
-  // ---- SDK message normalization -------------------------------------------
-
   private handleSdkMessage(session: ClaudeSession, message: SDKMessage): void {
     const { workspaceId } = session;
     switch (message.type) {
@@ -406,7 +428,7 @@ export class ClaudeService {
           const ws = getWorkspace(workspaceId);
           if (ws) upsertWorkspace({ ...ws, claudeSessionId: message.session_id });
           this.emit(workspaceId, {
-            kind: 'init',
+            kind: ChatEventKind.Init,
             sessionId: message.session_id,
             model: message.model,
             cwd: message.cwd,
@@ -414,10 +436,10 @@ export class ClaudeService {
         } else if (message.subtype === 'session_state_changed') {
           const state: ClaudeSessionState =
             message.state === 'requires_action'
-              ? 'waiting'
+              ? ClaudeSessionState.Waiting
               : message.state === 'running'
-                ? 'running'
-                : 'idle';
+                ? ClaudeSessionState.Running
+                : ClaudeSessionState.Idle;
           this.setState(workspaceId, state);
         }
         break;
@@ -425,13 +447,20 @@ export class ClaudeService {
 
       case 'stream_event': {
         if (message.parent_tool_use_id !== null) break; // subagent chatter
-        const event = message.event as { type?: string; delta?: RawBlock; content_block?: RawBlock };
+        const event = message.event as {
+          type?: string;
+          delta?: RawBlock;
+          content_block?: RawBlock;
+        };
         if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
           if (event.delta.text) {
-            this.emit(workspaceId, { kind: 'text_delta', text: event.delta.text });
+            this.emit(workspaceId, { kind: ChatEventKind.TextDelta, text: event.delta.text });
           }
         } else if (event.type === 'content_block_start' && event.content_block?.type) {
-          this.emit(workspaceId, { kind: 'block_start', blockType: event.content_block.type });
+          this.emit(workspaceId, {
+            kind: ChatEventKind.BlockStart,
+            blockType: event.content_block.type,
+          });
         }
         break;
       }
@@ -440,16 +469,16 @@ export class ClaudeService {
         if (message.parent_tool_use_id !== null) break; // subagent messages
         if (message.error) {
           this.emit(workspaceId, {
-            kind: 'error',
+            kind: ChatEventKind.Error,
             message:
               ASSISTANT_ERROR_TEXT[message.error] ?? `Claude returned an error: ${message.error}`,
           });
-          this.setState(workspaceId, 'error');
+          this.setState(workspaceId, ClaudeSessionState.Error);
           break;
         }
         const blocks = normalizeAssistantBlocks(message.message.content);
         if (blocks.length === 0) break;
-        this.persistAndEmit(session, { id: message.uuid, role: 'assistant', blocks });
+        this.persistAndEmit(session, { id: message.uuid, role: ChatMessageRole.Assistant, blocks });
         break;
       }
 
@@ -460,7 +489,7 @@ export class ClaudeService {
         const blocks = normalizeToolResultBlocks(message.message.content);
         if (blocks.length === 0) break;
         const id = 'uuid' in message && message.uuid ? String(message.uuid) : randomUUID();
-        this.persistAndEmit(session, { id, role: 'tool', blocks });
+        this.persistAndEmit(session, { id, role: ChatMessageRole.Tool, blocks });
         break;
       }
 
@@ -469,10 +498,15 @@ export class ClaudeService {
         const blocks: ChatBlock[] =
           message.subtype === 'success' || session.interrupted
             ? []
-            : [{ type: 'text', text: message.errors.join('\n') || `Run failed: ${message.subtype}` }];
+            : [
+                {
+                  type: ChatBlockType.Text,
+                  text: message.errors.join('\n') || `Run failed: ${message.subtype}`,
+                },
+              ];
         this.persistAndEmit(session, {
           id: message.uuid,
-          role: 'result',
+          role: ChatMessageRole.Result,
           blocks,
           meta: {
             costUsd: message.total_cost_usd,
@@ -482,7 +516,7 @@ export class ClaudeService {
           },
         });
         session.interrupted = false;
-        this.setState(workspaceId, 'idle');
+        this.setState(workspaceId, ClaudeSessionState.Idle);
         break;
       }
 
@@ -490,8 +524,6 @@ export class ClaudeService {
         break; // the SDKMessage union is huge — ignore everything else
     }
   }
-
-  // ---- permissions ----------------------------------------------------------
 
   private makePermissionHandler(session: ClaudeSession): CanUseTool {
     return (toolName, input, options) =>
@@ -504,15 +536,15 @@ export class ClaudeService {
           description: options.description,
         };
         session.pendingPermissions.set(request.id, { request, resolve });
-        this.setState(session.workspaceId, 'waiting');
-        this.emit(session.workspaceId, { kind: 'permission_request', ...request });
+        this.setState(session.workspaceId, ClaudeSessionState.Waiting);
+        this.emit(session.workspaceId, { kind: ChatEventKind.PermissionRequest, ...request });
 
         options.signal.addEventListener('abort', () => {
           if (!session.pendingPermissions.delete(request.id)) return;
           this.emit(session.workspaceId, {
-            kind: 'permission_resolved',
+            kind: ChatEventKind.PermissionResolved,
             id: request.id,
-            behavior: 'deny',
+            behavior: PermissionBehavior.Deny,
           });
           resolve({ behavior: 'deny', message: 'The request was cancelled.' });
         });
@@ -523,15 +555,13 @@ export class ClaudeService {
     for (const [id, pending] of session.pendingPermissions) {
       pending.resolve(result);
       this.emit(session.workspaceId, {
-        kind: 'permission_resolved',
+        kind: ChatEventKind.PermissionResolved,
         id,
-        behavior: result.behavior,
+        behavior: result.behavior === 'allow' ? PermissionBehavior.Allow : PermissionBehavior.Deny,
       });
     }
     session.pendingPermissions.clear();
   }
-
-  // ---- plumbing --------------------------------------------------------------
 
   private persistAndEmit(session: ClaudeSession, message: ChatMessage): void {
     const createdAt = new Date().toISOString();
@@ -540,13 +570,13 @@ export class ClaudeService {
       content: message,
       createdAt,
     });
-    this.emit(session.workspaceId, { kind: 'message', message, createdAt });
+    this.emit(session.workspaceId, { kind: ChatEventKind.Message, message, createdAt });
   }
 
   private setState(workspaceId: string, state: ClaudeSessionState): void {
     const ws = getWorkspace(workspaceId);
     if (ws && ws.claudeState !== state) upsertWorkspace({ ...ws, claudeState: state });
-    this.emit(workspaceId, { kind: 'state', state });
+    this.emit(workspaceId, { kind: ChatEventKind.State, state });
   }
 
   private emit(workspaceId: string, event: ChatEvent): void {

@@ -4,13 +4,13 @@ import { useEffect } from 'react';
 import { create } from 'zustand';
 import { trpc } from './trpc';
 
-interface OnboardingState {
+type OnboardingState = {
   claudeConnected: boolean;
   githubConnected: boolean;
   /** True once we've received the first status from the main process. */
   hydrated: boolean;
   setStatus: (s: { claudeConnected: boolean; githubConnected: boolean }) => void;
-}
+};
 
 export const useOnboarding = create<OnboardingState>((set) => ({
   claudeConnected: false,

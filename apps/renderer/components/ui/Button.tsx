@@ -3,11 +3,20 @@
 import type { ButtonHTMLAttributes } from 'react';
 import { cn } from './cn';
 
+///////////
+// Types //
+///////////
+
+// Presentational variant prop — intentionally a string-literal union, not an enum (conventions §4).
 type Variant = 'primary' | 'secondary' | 'ghost';
 
-interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: Variant;
-}
+};
+
+///////////////
+// Constants //
+///////////////
 
 const VARIANTS: Record<Variant, string> = {
   primary:

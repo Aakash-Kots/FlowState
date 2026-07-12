@@ -1,11 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { ConnStatus } from '@/lib/enums/connection';
 import { trpc } from '@/lib/trpc';
 import { useOnboarding } from '@/lib/onboarding';
 import { Button } from './ui/Button';
 import { Card, CardHeader } from './ui/Card';
-import { StatusPill, type ConnStatus } from './ui/StatusPill';
+import { StatusPill } from './ui/StatusPill';
 import { TerminalView } from './TerminalView';
 
 type Busy = null | 'claude' | 'github' | 'refresh' | 'pat';
@@ -22,7 +23,9 @@ export function ConnectScreen({ onClose }: { onClose?: () => void }) {
 
   // Refresh live status when the screen mounts, and learn whether `gh` exists.
   useEffect(() => {
-    void trpc().onboarding.refresh.mutate().catch(() => {});
+    void trpc()
+      .onboarding.refresh.mutate()
+      .catch(() => {});
     void trpc()
       .onboarding.githubHasCli.query()
       .then((v) => {
@@ -94,8 +97,16 @@ export function ConnectScreen({ onClose }: { onClose?: () => void }) {
     }
   };
 
-  const claudeStatus: ConnStatus = claudeConnected ? 'connected' : busy === 'claude' ? 'pending' : 'idle';
-  const githubStatus: ConnStatus = githubConnected ? 'connected' : busy === 'github' ? 'pending' : 'idle';
+  const claudeStatus: ConnStatus = claudeConnected
+    ? ConnStatus.Connected
+    : busy === 'claude'
+      ? ConnStatus.Pending
+      : ConnStatus.Idle;
+  const githubStatus: ConnStatus = githubConnected
+    ? ConnStatus.Connected
+    : busy === 'github'
+      ? ConnStatus.Pending
+      : ConnStatus.Idle;
 
   return (
     <main className="flex h-screen flex-col bg-base">
@@ -139,14 +150,19 @@ export function ConnectScreen({ onClose }: { onClose?: () => void }) {
                       : 'Log in to Claude'}
                 </Button>
                 {claudeConnected ? (
-                  <Button variant="ghost" onClick={claudeLogout} disabled={!terminalId || busy === 'claude'}>
+                  <Button
+                    variant="ghost"
+                    onClick={claudeLogout}
+                    disabled={!terminalId || busy === 'claude'}
+                  >
                     Log out
                   </Button>
                 ) : null}
               </div>
               <p className="mt-3 text-xs leading-relaxed text-muted">
-                Runs <code className="text-neutral-300">claude auth login</code> in the terminal and opens
-                your browser. FlowState detects when you finish and stores the credential securely.
+                Runs <code className="text-neutral-300">claude auth login</code> in the terminal and
+                opens your browser. FlowState detects when you finish and stores the credential
+                securely.
               </p>
             </div>
           </Card>
@@ -172,7 +188,11 @@ export function ConnectScreen({ onClose }: { onClose?: () => void }) {
                         : 'Sign in to GitHub'}
                   </Button>
                   {githubConnected ? (
-                    <Button variant="ghost" onClick={githubLogout} disabled={!terminalId || busy === 'github'}>
+                    <Button
+                      variant="ghost"
+                      onClick={githubLogout}
+                      disabled={!terminalId || busy === 'github'}
+                    >
                       Log out
                     </Button>
                   ) : null}
@@ -186,7 +206,9 @@ export function ConnectScreen({ onClose }: { onClose?: () => void }) {
                     className="text-xs text-muted underline-offset-2 hover:text-neutral-200 hover:underline"
                     onClick={() => setShowPat((v) => !v)}
                   >
-                    {hasGh === false ? 'gh CLI not found — paste a token instead' : 'Use a personal access token instead'}
+                    {hasGh === false
+                      ? 'gh CLI not found — paste a token instead'
+                      : 'Use a personal access token instead'}
                   </button>
                   {showPat ? (
                     <div className="mt-2 flex gap-2">
@@ -197,7 +219,11 @@ export function ConnectScreen({ onClose }: { onClose?: () => void }) {
                         placeholder="ghp_… or gho_…"
                         className="min-w-0 flex-1 rounded-md border border-edge bg-base px-2.5 py-1.5 text-sm text-neutral-100 placeholder:text-muted focus:border-accent/50 focus:outline-none"
                       />
-                      <Button variant="secondary" onClick={submitPat} disabled={!pat.trim() || busy === 'pat'}>
+                      <Button
+                        variant="secondary"
+                        onClick={submitPat}
+                        disabled={!pat.trim() || busy === 'pat'}
+                      >
                         Save
                       </Button>
                     </div>
@@ -206,8 +232,8 @@ export function ConnectScreen({ onClose }: { onClose?: () => void }) {
               ) : null}
 
               <p className="mt-3 text-xs leading-relaxed text-muted">
-                Runs <code className="text-neutral-300">gh auth login</code> in the terminal. The token is
-                encrypted with your OS keychain — only ciphertext is written to disk.
+                Runs <code className="text-neutral-300">gh auth login</code> in the terminal. The
+                token is encrypted with your OS keychain — only ciphertext is written to disk.
               </p>
             </div>
           </Card>
@@ -215,7 +241,10 @@ export function ConnectScreen({ onClose }: { onClose?: () => void }) {
 
         {/* Right: the shared embedded terminal */}
         <Card className="flex min-h-0 flex-col overflow-hidden">
-          <CardHeader title="Terminal" subtitle="Your login shell — the buttons drive it for you." />
+          <CardHeader
+            title="Terminal"
+            subtitle="Your login shell — the buttons drive it for you."
+          />
           <div className="min-h-0 flex-1 bg-surface p-2">
             <TerminalView onSpawned={onSpawned} />
           </div>

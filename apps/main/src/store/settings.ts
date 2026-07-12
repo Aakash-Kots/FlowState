@@ -6,6 +6,23 @@ import { eq } from 'drizzle-orm';
 import { getDb } from './db';
 import { settings } from './schema';
 
+///////////
+// Types //
+///////////
+
+type WindowBounds = {
+  width: number;
+  height: number;
+  x?: number;
+  y?: number;
+};
+
+///////////////
+// Constants //
+///////////////
+
+const WINDOW_BOUNDS_KEY = 'window.bounds';
+
 export function getSetting<T>(key: string): T | null {
   const row = getDb().select().from(settings).where(eq(settings.key, key)).get();
   return row ? (JSON.parse(row.value) as T) : null;
@@ -19,15 +36,6 @@ export function setSetting<T>(key: string, value: T): void {
     .onConflictDoUpdate({ target: settings.key, set: { value: serialized } })
     .run();
 }
-
-export interface WindowBounds {
-  width: number;
-  height: number;
-  x?: number;
-  y?: number;
-}
-
-const WINDOW_BOUNDS_KEY = 'window.bounds';
 
 export function getWindowBounds(): WindowBounds | null {
   return getSetting<WindowBounds>(WINDOW_BOUNDS_KEY);

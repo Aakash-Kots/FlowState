@@ -16,8 +16,17 @@ import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { app } from 'electron';
 import * as schema from './schema';
 
+///////////
+// Types //
+///////////
+
 type Db = BetterSQLite3Database<typeof schema>;
 
+/////////////
+// Helpers //
+/////////////
+
+// Module-level handles; populated by openDb() and cleared by closeDb().
 let sqlite: Database.Database | null = null;
 let db: Db | null = null;
 

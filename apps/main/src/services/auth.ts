@@ -18,23 +18,30 @@ import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
+import { SecretName } from '../lib/enums/secret';
+import type { OnboardingStatus } from '../lib/types/onboarding';
 import { getSetting, setSetting } from '../store/settings';
-import { SecretName, deleteSecret, getSecret, hasSecret, setSecret } from '../store/secrets';
+import { deleteSecret, getSecret, hasSecret, setSecret } from '../store/secrets';
 import { terminalService } from './terminal';
 
-const execFileAsync = promisify(execFile);
+///////////////
+// Constants //
+///////////////
 
 const CLAUDE_CONNECTED_KEY = 'claude.connected';
 const POLL_INTERVAL_MS = 2500;
 const POLL_TIMEOUT_MS = 3 * 60 * 1000;
 
-export interface OnboardingStatus {
-  claudeConnected: boolean;
-  githubConnected: boolean;
-}
+/////////////
+// Helpers //
+/////////////
+
+const execFileAsync = promisify(execFile);
 
 /** Run a command through the user's login shell so PATH matches their terminal. */
-async function loginShell(command: string): Promise<{ code: number; stdout: string; stderr: string }> {
+async function loginShell(
+  command: string,
+): Promise<{ code: number; stdout: string; stderr: string }> {
   const shell = process.env.SHELL ?? '/bin/zsh';
   try {
     const { stdout, stderr } = await execFileAsync(shell, ['-lic', command], {
@@ -45,15 +52,50 @@ async function loginShell(command: string): Promise<{ code: number; stdout: stri
     return { code: 0, stdout, stderr };
   } catch (err) {
     const e = err as { code?: number; stdout?: string; stderr?: string };
-    return { code: typeof e.code === 'number' ? e.code : 1, stdout: e.stdout ?? '', stderr: e.stderr ?? '' };
+    return {
+      code: typeof e.code === 'number' ? e.code : 1,
+      stdout: e.stdout ?? '',
+      stderr: e.stderr ?? '',
+    };
+  }
+}
+
+/** Persist a GitHub token via safeStorage (only ciphertext hits SQLite). */
+function storeGithubToken(token: string): void {
+  if (!token) return;
+  if (getSecret(SecretName.GithubToken) === token) return;
+  setSecret(SecretName.GithubToken, token);
+}
+
+/**
+ * Read the Claude Code credential from wherever the CLI stored it: the macOS
+ * Keychain item `Claude Code-credentials`, or the `~/.claude/.credentials.json`
+ * fallback used on Linux / when no Keychain is available.
+ */
+async function readClaudeCredential(): Promise<string | null> {
+  if (process.platform === 'darwin') {
+    try {
+      const { stdout } = await execFileAsync(
+        'security',
+        ['find-generic-password', '-s', 'Claude Code-credentials', '-w'],
+        { timeout: 10_000 },
+      );
+      const value = stdout.trim();
+      if (value) return value;
+    } catch {
+      // fall through to the file-based path
+    }
+  }
+  try {
+    return await readFile(join(homedir(), '.claude', '.credentials.json'), 'utf8');
+  } catch {
+    return null;
   }
 }
 
 export class AuthService extends EventEmitter {
   private claudePolling = false;
   private githubPolling = false;
-
-  // ---- authoritative status checks --------------------------------------
 
   async checkClaude(): Promise<boolean> {
     const { stdout } = await loginShell('claude auth status');
@@ -72,8 +114,6 @@ export class AuthService extends EventEmitter {
     return code === 0;
   }
 
-  // ---- persisted onboarding status --------------------------------------
-
   status(): OnboardingStatus {
     return {
       claudeConnected: getSetting<boolean>(CLAUDE_CONNECTED_KEY) === true,
@@ -89,7 +129,10 @@ export class AuthService extends EventEmitter {
 
   /** Live-check both providers, reconcile persisted state, emit, and return it. */
   async refresh(): Promise<OnboardingStatus> {
-    const [claudeLive, githubToken] = await Promise.all([this.checkClaude(), this.readGithubToken()]);
+    const [claudeLive, githubToken] = await Promise.all([
+      this.checkClaude(),
+      this.readGithubToken(),
+    ]);
 
     if (claudeLive) await this.onClaudeConnected();
     else setSetting(CLAUDE_CONNECTED_KEY, false);
@@ -98,8 +141,6 @@ export class AuthService extends EventEmitter {
 
     return this.emitStatus();
   }
-
-  // ---- credential capture -----------------------------------------------
 
   /** Copy the Claude Code OAuth credential into our safeStorage (best-effort). */
   private async captureClaudeCredentials(): Promise<void> {
@@ -118,8 +159,6 @@ export class AuthService extends EventEmitter {
     setSetting(CLAUDE_CONNECTED_KEY, true);
     if (!hasSecret(SecretName.ClaudeCredentials)) await this.captureClaudeCredentials();
   }
-
-  // ---- login flows (write to pty, then poll status) ---------------------
 
   /**
    * Run `claude auth login` in the given terminal and watch for success. The
@@ -218,39 +257,6 @@ export class AuthService extends EventEmitter {
       setTimeout(() => void tick(), POLL_INTERVAL_MS);
     };
     setTimeout(() => void tick(), POLL_INTERVAL_MS);
-  }
-}
-
-/** Persist a GitHub token via safeStorage (only ciphertext hits SQLite). */
-function storeGithubToken(token: string): void {
-  if (!token) return;
-  if (getSecret(SecretName.GithubToken) === token) return;
-  setSecret(SecretName.GithubToken, token);
-}
-
-/**
- * Read the Claude Code credential from wherever the CLI stored it: the macOS
- * Keychain item `Claude Code-credentials`, or the `~/.claude/.credentials.json`
- * fallback used on Linux / when no Keychain is available.
- */
-async function readClaudeCredential(): Promise<string | null> {
-  if (process.platform === 'darwin') {
-    try {
-      const { stdout } = await execFileAsync(
-        'security',
-        ['find-generic-password', '-s', 'Claude Code-credentials', '-w'],
-        { timeout: 10_000 },
-      );
-      const value = stdout.trim();
-      if (value) return value;
-    } catch {
-      // fall through to the file-based path
-    }
-  }
-  try {
-    return await readFile(join(homedir(), '.claude', '.credentials.json'), 'utf8');
-  } catch {
-    return null;
   }
 }
 

@@ -1,6 +1,6 @@
 'use client';
 
-import type { PermissionRequest } from '@flowstate/shared';
+import { PermissionBehavior, type PermissionRequest } from '@flowstate/shared';
 import { respondPermission } from '@/lib/chat';
 import { Button } from '../ui/Button';
 
@@ -19,8 +19,13 @@ export function PermissionCard({ request }: { request: PermissionRequest }) {
         {JSON.stringify(request.input, null, 2)}
       </pre>
       <div className="flex gap-2">
-        <Button onClick={() => respondPermission(request.id, 'allow')}>Allow</Button>
-        <Button variant="secondary" onClick={() => respondPermission(request.id, 'deny')}>
+        <Button onClick={() => respondPermission(request.id, PermissionBehavior.Allow)}>
+          Allow
+        </Button>
+        <Button
+          variant="secondary"
+          onClick={() => respondPermission(request.id, PermissionBehavior.Deny)}
+        >
           Deny
         </Button>
       </div>
