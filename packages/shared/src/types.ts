@@ -1,5 +1,6 @@
 import type { z } from 'zod';
 import type {
+  claudeMessageSchema,
   claudeSessionStateSchema,
   createWorkspaceInputSchema,
   linearIssueRefSchema,
@@ -8,6 +9,7 @@ import type {
 
 export type LinearIssueRef = z.infer<typeof linearIssueRefSchema>;
 export type ClaudeSessionState = z.infer<typeof claudeSessionStateSchema>;
+export type ClaudeMessage = z.infer<typeof claudeMessageSchema>;
 export type Workspace = z.infer<typeof workspaceSchema>;
 export type CreateWorkspaceInput = z.infer<typeof createWorkspaceInputSchema>;
 

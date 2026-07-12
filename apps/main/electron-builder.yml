@@ -8,7 +8,10 @@ directories:
 files:
   - out/**/*
   - '!**/*.map'
-extraResources: []
+# drizzle migrations are read at runtime from Resources/drizzle (see store/db.ts).
+extraResources:
+  - from: drizzle
+    to: drizzle
 asar: true
 
 mac:

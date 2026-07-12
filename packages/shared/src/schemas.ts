@@ -39,6 +39,17 @@ export const workspaceSchema = z.object({
   createdAt: z.string().datetime(),
 });
 
+/**
+ * A single persisted message in a Claude Code session transcript. `content` is
+ * the raw SDK message payload (kept as JSON) so a workspace can reopen with its
+ * full agent history intact.
+ */
+export const claudeMessageSchema = z.object({
+  role: z.string(), // 'user' | 'assistant' | 'tool' | 'system' | SDK subtype
+  content: z.unknown(), // raw SDK message payload, serialized as JSON on disk
+  createdAt: z.string().datetime(),
+});
+
 /** Input to create a new workspace (worktree + branch). */
 export const createWorkspaceInputSchema = z.object({
   repoRoot: z.string(),
