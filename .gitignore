@@ -1,0 +1,55 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.*
+
+# Next.js
+apps/renderer/.next/
+apps/renderer/out/
+
+# Build output
+dist/
+release/
+build/
+out/
+*.tsbuildinfo
+
+# Electron packaging artifacts
+*.dmg
+*.zip
+*.app
+*.blockmap
+
+# Test / coverage
+coverage/
+.nyc_output/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Signing / notarization (never commit)
+*.p12
+*.pem
+*.provisionprofile
+*.mobileprovision
+notarization.log
+build/entitlements*.plist.local
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# macOS
+.DS_Store
+
+# Editors
+.idea/
+.vscode/
+*.swp
+
+# Conductor workspace scratch dir
+.context/

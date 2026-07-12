@@ -1,0 +1,31 @@
+{
+  "name": "@flowstate/main",
+  "version": "0.0.0",
+  "private": true,
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "dist": "electron-builder --mac --config electron-builder.yml"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.207",
+    "@flowstate/shared": "workspace:*",
+    "@linear/sdk": "^88.1.0",
+    "@trpc/server": "^10.45.2",
+    "chokidar": "^5.0.0",
+    "electron-store": "^11.0.2",
+    "electron-trpc": "^0.7.1",
+    "simple-git": "^3.36.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.1",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "electron-vite": "^2.3.0",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11"
+  }
+}

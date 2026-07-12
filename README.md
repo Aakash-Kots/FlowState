@@ -1,6 +1,6 @@
 # FlowState
 
-**One command center for your development workflow.** FlowState is a dev tool that orchestrates the tools you already live in — Git, your terminal, Linear, and Claude Code — into a single, unified flow so you can stay in the zone instead of context-switching between windows.
+**One command center for your development workflow.** FlowState is a macOS dev tool that orchestrates the tools you already live in — Git, your terminal, Linear, and Claude Code — into a single, unified flow so you can stay in the zone instead of context-switching between windows.
 
 ## Why FlowState?
 
@@ -10,21 +10,96 @@ Modern development means jumping between a dozen tools: a terminal for commands,
 
 - **Git** — Branch, commit, review, and push without leaving your flow. See status and history inline.
 - **Terminal** — A first-class integrated terminal for running commands, scripts, and dev servers.
+- **Worktrees** — Spin up an isolated worktree per task and run parallel branches side by side.
+- **Claude Code** — Delegate coding tasks to an AI agent, wired into the same worktree and context as everything else.
 - **Linear** — Pull up assigned issues, update status, and link work to tickets automatically.
-- **Claude Code** — Delegate coding tasks to an AI agent and keep it wired into the same context as everything else.
-- **Unified workflows** — Chain actions across tools into repeatable, orchestrated flows (e.g. pick a ticket → create a branch → run the agent → open a PR).
+- **Unified workflows** — Chain actions across tools into repeatable flows (e.g. pick a ticket → create a worktree → run the agent → open a PR).
+
+## The core idea: a Workspace
+
+Everything in FlowState hangs off one concept:
+
+> **A Workspace = one git worktree + its terminals + its Claude Code session + an optionally linked Linear issue.**
+
+Because every workspace is its own worktree, running the agent on multiple branches in parallel is the default, not an afterthought.
+
+## Tech Stack
+
+| Layer | Choice |
+|---|---|
+| Desktop shell | **Electron** (main process owns git, ptys, and the Claude Agent SDK) |
+| UI | **Next.js** (React + TypeScript), static-exported and served by Electron |
+| Styling | **Tailwind CSS** |
+| Typed IPC | **electron-trpc** (tRPC over Electron IPC) through a locked-down `contextBridge` preload |
+| Claude Code | **@anthropic-ai/claude-agent-sdk** — drives Claude Code sessions, reusing your existing login |
+| Git & worktrees | **simple-git** (system `git`) + **chokidar** for live status |
+| Terminal | **node-pty** + **xterm.js** |
+| Linear | **@linear/sdk** (OAuth 2.0 or personal API key) |
+| Packaging | **electron-builder** + **electron-updater** → signed, notarized **DMG** |
+| Tooling | **Bun** workspaces, **electron-vite**, TypeScript, ESLint, Prettier |
+
+Full design rationale and the process/service architecture live in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## Repository Layout
+
+```
+flowstate/
+├── apps/
+│   ├── main/          # Electron main process — tRPC routers + services
+│   │   └── src/
+│   │       ├── index.ts        # window + IPC bootstrap
+│   │       ├── preload.ts      # contextBridge (electron-trpc only)
+│   │       ├── router/         # app / git / worktree / terminal / claude / linear
+│   │       └── services/       # the logic behind each router
+│   └── renderer/      # Next.js UI (workspace shell, panels)
+├── packages/
+│   └── shared/        # types + zod schemas shared by main & renderer
+└── docs/              # ARCHITECTURE.md
+```
 
 ## Getting Started
+
+**Prerequisites:** macOS, [Bun](https://bun.sh) ≥ 1.3, Node ≥ 20 (for Electron), `git`, and a working [Claude Code](https://claude.com/claude-code) login (the app reuses it — no separate API key needed when you're already signed in).
 
 ```bash
 git clone https://github.com/<your-username>/FlowState.git
 cd FlowState
-# Setup instructions coming soon
+bun install
+bun run dev
 ```
+
+`bun run dev` starts the Next.js dev server on `:3000` and launches Electron pointed at it. When the window opens you'll see the workspace shell with an **"IPC connected"** indicator in the header — proof the renderer ↔ main bridge is live.
+
+### Useful scripts
+
+| Command | What it does |
+|---|---|
+| `bun run dev` | Next dev server + Electron with hot reload |
+| `bun run build` | Static-export the renderer and bundle main/preload |
+| `bun run typecheck` | Typecheck every workspace |
+| `bun run lint` | Lint the renderer |
+| `bun run dist` | Build and package a macOS **DMG** (see below) |
+
+## Building the DMG
+
+```bash
+bun run dist
+```
+
+This produces a `.dmg` (and an auto-update `.zip`) in `release/`. Code signing and notarization are wired for CI: set `CSC_LINK` / `CSC_KEY_PASSWORD` (Developer ID Application certificate) and the `APPLE_API_KEY*` notarization secrets, then uncomment the `mac.notarize` / signing options in [`apps/main/electron-builder.yml`](apps/main/electron-builder.yml).
+
+## Roadmap
+
+1. **Scaffold** — monorepo, Electron + Next.js dev loop, typed IPC bridge. ✅
+2. **Terminal** — node-pty + xterm.js integrated terminal.
+3. **Git + worktrees** — status panel, worktree create/switch, the Workspace model.
+4. **Claude Code** — Agent SDK session per workspace, streaming chat, permission prompts, diff review.
+5. **Linear** — ticket list and the ticket → workspace flow; OAuth.
+6. **Ship** — signing, notarization, DMG, auto-update, release CI.
 
 ## Status
 
-🚧 Early development. Core orchestration engine and integrations are in progress.
+🚧 Early development. The scaffold (step 1) is in place — a runnable Electron + Next.js shell with typed IPC end-to-end; feature milestones are in progress.
 
 ## License
 
