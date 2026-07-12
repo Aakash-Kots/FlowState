@@ -1,0 +1,43 @@
+appId: com.flowstate.app
+productName: FlowState
+directories:
+  output: ../../release
+  buildResources: build
+
+# Bundle the compiled main/preload plus the renderer's static export.
+files:
+  - out/**/*
+  - '!**/*.map'
+# drizzle migrations are read at runtime from Resources/drizzle (see store/db.ts).
+extraResources:
+  - from: drizzle
+    to: drizzle
+asar: true
+
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch:
+        - arm64
+        - x64
+    - target: zip # required for electron-updater auto-update
+      arch:
+        - arm64
+        - x64
+  # Signing & notarization — supplied via CI env / a local .env, never committed:
+  #   CSC_LINK, CSC_KEY_PASSWORD (Developer ID Application cert)
+  #   APPLE_API_KEY, APPLE_API_KEY_ID, APPLE_API_ISSUER (notarytool)
+  # hardenedRuntime: true
+  # gatekeeperAssess: false
+  # notarize: true
+
+# The renderer's static export lives outside apps/main, so include it explicitly.
+extraFiles:
+  - from: ../renderer/out
+    to: Resources/renderer/out
+
+# publish:
+#   provider: github
+#   owner: <your-org>
+#   repo: FlowState

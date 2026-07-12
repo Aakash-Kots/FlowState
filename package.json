@@ -1,0 +1,28 @@
+{
+  "name": "flowstate",
+  "version": "0.0.0",
+  "private": true,
+  "description": "One command center for your development workflow — Claude Code, Git, terminals, worktrees, and Linear in one flow.",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n renderer,main -c blue,green \"bun run dev:renderer\" \"bun run dev:main\"",
+    "dev:renderer": "bun run --filter '@flowstate/renderer' dev",
+    "dev:main": "wait-on tcp:127.0.0.1:3000 && bun run --filter '@flowstate/main' dev",
+    "build": "bun run build:renderer && bun run build:main",
+    "build:renderer": "bun run --filter '@flowstate/renderer' build",
+    "build:main": "bun run --filter '@flowstate/main' build",
+    "dist": "bun run build && bun run --filter '@flowstate/main' dist",
+    "typecheck": "bun run --filter '*' typecheck",
+    "lint": "bun run --filter '@flowstate/renderer' lint",
+    "format": "prettier --write ."
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "prettier": "^3.4.2",
+    "typescript": "^5.6.3",
+    "wait-on": "^8.0.1"
+  }
+}
