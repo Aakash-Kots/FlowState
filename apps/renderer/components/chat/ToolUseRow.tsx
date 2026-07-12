@@ -1,18 +1,16 @@
 'use client';
 
 import { useState } from 'react';
-import type { ChatBlock } from '@flowstate/shared';
+import type { ToolResultBlock, ToolUseBlock } from '@/lib/types/chat';
 import { cn } from '../ui/cn';
-
-type ToolUseBlock = Extract<ChatBlock, { type: 'tool_use' }>;
-type ToolResultBlock = Extract<ChatBlock, { type: 'tool_result' }>;
 
 function summarizeInput(input: unknown): string {
   if (input == null) return '';
   if (typeof input === 'object') {
     const obj = input as Record<string, unknown>;
     // The most recognizable single field per common tool, else first string value.
-    const preferred = obj.command ?? obj.file_path ?? obj.pattern ?? obj.query ?? obj.url ?? obj.description;
+    const preferred =
+      obj.command ?? obj.file_path ?? obj.pattern ?? obj.query ?? obj.url ?? obj.description;
     const value = preferred ?? Object.values(obj).find((v) => typeof v === 'string');
     if (typeof value === 'string') return value.split('\n')[0] ?? '';
   }

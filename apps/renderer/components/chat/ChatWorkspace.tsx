@@ -1,18 +1,19 @@
 'use client';
 
 import { useState } from 'react';
-import type { ClaudeSessionState } from '@flowstate/shared';
+import { ClaudeSessionState } from '@flowstate/shared';
+import { ConnStatus } from '@/lib/enums/connection';
 import { pickWorkingFolder, useChat, useChatSync } from '@/lib/chat';
 import { Button } from '../ui/Button';
-import { type ConnStatus, StatusPill } from '../ui/StatusPill';
+import { StatusPill } from '../ui/StatusPill';
 import { ChatView } from './ChatView';
 import { InputBar } from './InputBar';
 
 const STATE_PILL: Record<ClaudeSessionState, { status: ConnStatus; label: string }> = {
-  idle: { status: 'idle', label: 'Ready' },
-  running: { status: 'pending', label: 'Working…' },
-  waiting: { status: 'pending', label: 'Needs input' },
-  error: { status: 'error', label: 'Error' },
+  [ClaudeSessionState.Idle]: { status: ConnStatus.Idle, label: 'Ready' },
+  [ClaudeSessionState.Running]: { status: ConnStatus.Pending, label: 'Working…' },
+  [ClaudeSessionState.Waiting]: { status: ConnStatus.Pending, label: 'Needs input' },
+  [ClaudeSessionState.Error]: { status: ConnStatus.Error, label: 'Error' },
 };
 
 function shortenPath(path: string): string {
@@ -33,7 +34,8 @@ export function ChatWorkspace() {
   const [picking, setPicking] = useState(false);
 
   const pill = STATE_PILL[sessionState];
-  const idle = sessionState === 'idle' || sessionState === 'error';
+  const idle =
+    sessionState === ClaudeSessionState.Idle || sessionState === ClaudeSessionState.Error;
 
   const pickFolder = async () => {
     setPicking(true);
@@ -62,7 +64,11 @@ export function ChatWorkspace() {
               type="button"
               onClick={pickFolder}
               disabled={!idle || picking}
-              title={idle ? 'Change folder (starts a new session)' : 'Stop the current turn to change folders'}
+              title={
+                idle
+                  ? 'Change folder (starts a new session)'
+                  : 'Stop the current turn to change folders'
+              }
               className="truncate font-mono text-xs text-muted transition-colors hover:text-neutral-200 disabled:cursor-not-allowed disabled:hover:text-muted"
             >
               {shortenPath(cwd)}

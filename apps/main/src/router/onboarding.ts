@@ -1,6 +1,7 @@
 import { observable } from '@trpc/server/observable';
 import { z } from 'zod';
-import { authService, type OnboardingStatus } from '../services/auth';
+import type { OnboardingStatus } from '../lib/types/onboarding';
+import { authService } from '../services/auth';
 import { publicProcedure, router } from '../trpc';
 
 // The Connect / onboarding surface: Claude Code + GitHub authentication. The

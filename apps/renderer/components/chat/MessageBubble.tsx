@@ -1,12 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import type { ChatBlock, ChatMessage } from '@flowstate/shared';
+import { ChatBlockType, ChatMessageRole, type ChatMessage } from '@flowstate/shared';
+import type { ToolResultBlock } from '@/lib/types/chat';
 import { cn } from '../ui/cn';
 import { Markdown } from './Markdown';
 import { ToolUseRow } from './ToolUseRow';
-
-type ToolResultBlock = Extract<ChatBlock, { type: 'tool_result' }>;
 
 function ThinkingBlock({ text }: { text: string }) {
   const [open, setOpen] = useState(false);
@@ -43,9 +42,9 @@ export function MessageBubble({
   /** Ids of every tool_use block in the conversation — a result whose call is known renders inside that call's row. */
   toolUseIds: Set<string>;
 }) {
-  if (message.role === 'user') {
+  if (message.role === ChatMessageRole.User) {
     const text = message.blocks
-      .map((b) => (b.type === 'text' ? b.text : ''))
+      .map((b) => (b.type === ChatBlockType.Text ? b.text : ''))
       .join('')
       .trim();
     if (!text) return null;
@@ -58,19 +57,23 @@ export function MessageBubble({
     );
   }
 
-  if (message.role === 'result') {
+  if (message.role === ChatMessageRole.Result) {
     const meta = message.meta;
     const errorText = message.blocks
-      .map((b) => (b.type === 'text' ? b.text : ''))
+      .map((b) => (b.type === ChatBlockType.Text ? b.text : ''))
       .join('')
       .trim();
     return (
       <div className={cn('text-xs', meta?.isError ? 'text-danger' : 'text-muted')}>
-        {meta?.isError && errorText ? <p className="mb-1 whitespace-pre-wrap">{errorText}</p> : null}
+        {meta?.isError && errorText ? (
+          <p className="mb-1 whitespace-pre-wrap">{errorText}</p>
+        ) : null}
         <span>
           {meta?.costUsd != null ? `$${meta.costUsd.toFixed(4)}` : null}
           {meta?.durationMs != null ? ` · ${(meta.durationMs / 1000).toFixed(1)}s` : null}
-          {meta?.numTurns != null ? ` · ${meta.numTurns} ${meta.numTurns === 1 ? 'turn' : 'turns'}` : null}
+          {meta?.numTurns != null
+            ? ` · ${meta.numTurns} ${meta.numTurns === 1 ? 'turn' : 'turns'}`
+            : null}
         </span>
       </div>
     );
@@ -81,13 +84,13 @@ export function MessageBubble({
     <div className="space-y-2">
       {message.blocks.map((block, i) => {
         switch (block.type) {
-          case 'text':
+          case ChatBlockType.Text:
             return <Markdown key={i}>{block.text}</Markdown>;
-          case 'thinking':
+          case ChatBlockType.Thinking:
             return <ThinkingBlock key={i} text={block.text} />;
-          case 'tool_use':
+          case ChatBlockType.ToolUse:
             return <ToolUseRow key={block.id} block={block} result={toolResults.get(block.id)} />;
-          case 'tool_result':
+          case ChatBlockType.ToolResult:
             // Rendered inline with its tool_use row; skip standalone output
             // unless the call is missing (defensive).
             return toolUseIds.has(block.toolUseId) ? null : (

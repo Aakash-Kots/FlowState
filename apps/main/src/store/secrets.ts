@@ -12,16 +12,6 @@ import { eq } from 'drizzle-orm';
 import { getDb } from './db';
 import { secrets } from './schema';
 
-/** Well-known secret names FlowState persists. */
-export const SecretName = {
-  LinearToken: 'linear.token',
-  GithubToken: 'github.token',
-  AnthropicApiKey: 'anthropic.apiKey',
-  /** A copy of the Claude Code OAuth credential captured after `claude auth login`. */
-  ClaudeCredentials: 'claude.credentials',
-} as const;
-export type SecretName = (typeof SecretName)[keyof typeof SecretName];
-
 export function setSecret(name: string, value: string): void {
   if (!safeStorage.isEncryptionAvailable()) {
     console.warn(
@@ -53,5 +43,7 @@ export function deleteSecret(name: string): void {
 
 /** Whether a secret with this name is currently stored (without decrypting it). */
 export function hasSecret(name: string): boolean {
-  return getDb().select({ name: secrets.name }).from(secrets).where(eq(secrets.name, name)).get() != null;
+  return (
+    getDb().select({ name: secrets.name }).from(secrets).where(eq(secrets.name, name)).get() != null
+  );
 }

@@ -13,12 +13,20 @@ import { homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import * as pty from 'node-pty';
 
+///////////
+// Types //
+///////////
+
 /** A spawned pty and the emitter callers subscribe to for its output. */
-interface Session {
+type Session = {
   pty: pty.IPty;
   /** 'data' → (chunk: string), 'exit' → (code: number) */
   events: EventEmitter;
-}
+};
+
+/////////////
+// Helpers //
+/////////////
 
 function defaultShell(): string {
   if (process.platform === 'win32') return process.env.COMSPEC ?? 'powershell.exe';
@@ -39,7 +47,9 @@ export class TerminalService {
    * It runs *inside* the interactive shell, so if the program exits the user
    * drops back to a normal prompt.
    */
-  spawn(opts: { cwd?: string; cols?: number; rows?: number; startupCommand?: string } = {}): { id: string } {
+  spawn(opts: { cwd?: string; cols?: number; rows?: number; startupCommand?: string } = {}): {
+    id: string;
+  } {
     const id = randomUUID();
     const shell = defaultShell();
     const args = process.platform === 'win32' ? [] : ['-l', '-i'];

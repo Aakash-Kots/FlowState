@@ -1,7 +1,7 @@
 import { observable } from '@trpc/server/observable';
 import { BrowserWindow, dialog } from 'electron';
 import { z } from 'zod';
-import type { ChatEvent } from '@flowstate/shared';
+import { PermissionBehavior, type ChatEvent } from '@flowstate/shared';
 import { claudeService } from '../services/claude';
 import { publicProcedure, router } from '../trpc';
 
@@ -28,7 +28,7 @@ export const claudeRouter = router({
       z.object({
         workspaceId: z.string(),
         requestId: z.string(),
-        behavior: z.enum(['allow', 'deny']),
+        behavior: z.nativeEnum(PermissionBehavior),
         message: z.string().optional(),
       }),
     )
@@ -59,9 +59,11 @@ export const claudeRouter = router({
       return { cwd };
     }),
 
-  onEvent: publicProcedure.input(z.object({ workspaceId: z.string() })).subscription(({ input }) =>
-    observable<ChatEvent>((emit) =>
-      claudeService.onEvent(input.workspaceId, (event) => emit.next(event)),
+  onEvent: publicProcedure
+    .input(z.object({ workspaceId: z.string() }))
+    .subscription(({ input }) =>
+      observable<ChatEvent>((emit) =>
+        claudeService.onEvent(input.workspaceId, (event) => emit.next(event)),
+      ),
     ),
-  ),
 });

@@ -3,7 +3,7 @@
  * database. Edit these tables, then run `bun run db:generate` (drizzle-kit) to
  * produce a versioned SQL migration under `apps/main/drizzle/`, which is applied
  * at startup by `db.ts`. Column shapes mirror the shared zod schemas
- * (`packages/shared/src/schemas.ts`); the query modules re-validate on read/write.
+ * (`packages/shared/src/schemas/`); the query modules re-validate on read/write.
  */
 import { blob, index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 

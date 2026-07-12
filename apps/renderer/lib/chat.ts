@@ -2,23 +2,29 @@
 
 import { useEffect } from 'react';
 import { create } from 'zustand';
-import type {
-  ChatEvent,
-  ChatMessage,
+import {
+  ChatBlockType,
+  ChatEventKind,
   ClaudeSessionState,
-  PermissionRequest,
+  DEFAULT_WORKSPACE_ID,
+  PermissionBehavior,
+  type ChatEvent,
+  type ChatMessage,
+  type PermissionRequest,
 } from '@flowstate/shared';
+import { ActivityIndicator } from './enums/chat';
 import { trpc } from './trpc';
 
-/** v1 runs a single workspace; worktree-per-workspace comes later. */
-export const WORKSPACE_ID = 'default';
+///////////
+// Types //
+///////////
 
-export interface ChatEntry {
+type ChatEntry = {
   message: ChatMessage;
   createdAt: string;
-}
+};
 
-interface ChatState {
+type ChatState = {
   /** True once the snapshot query has seeded the store. */
   hydrated: boolean;
   sessionState: ClaudeSessionState;
@@ -29,14 +35,18 @@ interface ChatState {
   /** In-flight assistant text for the current turn (replaced by the final message). */
   streamingText: string | null;
   /** What the agent is doing between text, for the activity indicator. */
-  activeIndicator: 'thinking' | 'tool' | null;
+  activeIndicator: ActivityIndicator | null;
   pendingPermissions: PermissionRequest[];
   error: string | null;
-}
+};
+
+///////////////
+// Constants //
+///////////////
 
 const INITIAL: ChatState = {
   hydrated: false,
-  sessionState: 'idle',
+  sessionState: ClaudeSessionState.Idle,
   sessionId: null,
   cwd: null,
   model: null,
@@ -48,6 +58,10 @@ const INITIAL: ChatState = {
 };
 
 export const useChat = create<ChatState>(() => INITIAL);
+
+/////////////
+// Helpers //
+/////////////
 
 function pushMessage(state: ChatState, entry: ChatEntry): Partial<ChatState> {
   // Dedupe against hydration/replay by message id.
@@ -62,33 +76,37 @@ function pushMessage(state: ChatState, entry: ChatEntry): Partial<ChatState> {
 function applyEvent(event: ChatEvent): void {
   const set = useChat.setState;
   switch (event.kind) {
-    case 'init':
+    case ChatEventKind.Init:
       set({ sessionId: event.sessionId, model: event.model, cwd: event.cwd });
       break;
-    case 'text_delta':
+    case ChatEventKind.TextDelta:
       set((s) => ({ streamingText: (s.streamingText ?? '') + event.text, activeIndicator: null }));
       break;
-    case 'block_start':
+    case ChatEventKind.BlockStart:
       set({
         activeIndicator:
-          event.blockType === 'thinking' ? 'thinking' : event.blockType === 'tool_use' ? 'tool' : null,
+          event.blockType === ChatBlockType.Thinking
+            ? ActivityIndicator.Thinking
+            : event.blockType === ChatBlockType.ToolUse
+              ? ActivityIndicator.Tool
+              : null,
       });
       break;
-    case 'message':
+    case ChatEventKind.Message:
       set((s) => pushMessage(s, { message: event.message, createdAt: event.createdAt }));
       break;
-    case 'state':
+    case ChatEventKind.State:
       set({
         sessionState: event.state,
         // A finished or failed turn has nothing in flight anymore.
-        ...(event.state === 'idle' || event.state === 'error'
+        ...(event.state === ClaudeSessionState.Idle || event.state === ClaudeSessionState.Error
           ? { streamingText: null, activeIndicator: null }
           : {}),
-        ...(event.state !== 'error' ? { error: null } : {}),
-        ...(event.state === 'idle' ? { pendingPermissions: [] } : {}),
+        ...(event.state !== ClaudeSessionState.Error ? { error: null } : {}),
+        ...(event.state === ClaudeSessionState.Idle ? { pendingPermissions: [] } : {}),
       });
       break;
-    case 'permission_request':
+    case ChatEventKind.PermissionRequest:
       set((s) => ({
         pendingPermissions: s.pendingPermissions.some((p) => p.id === event.id)
           ? s.pendingPermissions
@@ -104,15 +122,15 @@ function applyEvent(event: ChatEvent): void {
             ],
       }));
       break;
-    case 'permission_resolved':
+    case ChatEventKind.PermissionResolved:
       set((s) => ({ pendingPermissions: s.pendingPermissions.filter((p) => p.id !== event.id) }));
       break;
-    case 'cwd':
+    case ChatEventKind.Cwd:
       // Folder change resets the session but keeps the persisted transcript
       // (which is what a restart would show anyway).
       set({ cwd: event.cwd, sessionId: null, streamingText: null, activeIndicator: null });
       break;
-    case 'error':
+    case ChatEventKind.Error:
       set({ error: event.message, streamingText: null, activeIndicator: null });
       break;
   }
@@ -135,7 +153,7 @@ export function useChatSync(): void {
     const buffer: ChatEvent[] = [];
 
     trpc().claude.onEvent.subscribe(
-      { workspaceId: WORKSPACE_ID },
+      { workspaceId: DEFAULT_WORKSPACE_ID },
       {
         onData: (event) => {
           if (seeded) applyEvent(event);
@@ -146,7 +164,7 @@ export function useChatSync(): void {
     );
 
     trpc()
-      .claude.snapshot.query({ workspaceId: WORKSPACE_ID })
+      .claude.snapshot.query({ workspaceId: DEFAULT_WORKSPACE_ID })
       .then((snapshot) => {
         useChat.setState({
           hydrated: true,
@@ -174,23 +192,27 @@ export function useChatSync(): void {
   }, []);
 }
 
-// ---- actions ---------------------------------------------------------------
+// actions
 
 export function sendPrompt(text: string): void {
   const trimmed = text.trim();
   if (!trimmed) return;
   useChat.setState({ error: null });
-  void trpc().claude.send.mutate({ workspaceId: WORKSPACE_ID, text: trimmed });
+  void trpc().claude.send.mutate({ workspaceId: DEFAULT_WORKSPACE_ID, text: trimmed });
 }
 
 export function interruptSession(): void {
-  void trpc().claude.interrupt.mutate({ workspaceId: WORKSPACE_ID });
+  void trpc().claude.interrupt.mutate({ workspaceId: DEFAULT_WORKSPACE_ID });
 }
 
-export function respondPermission(requestId: string, behavior: 'allow' | 'deny'): void {
-  void trpc().claude.respondPermission.mutate({ workspaceId: WORKSPACE_ID, requestId, behavior });
+export function respondPermission(requestId: string, behavior: PermissionBehavior): void {
+  void trpc().claude.respondPermission.mutate({
+    workspaceId: DEFAULT_WORKSPACE_ID,
+    requestId,
+    behavior,
+  });
 }
 
 export async function pickWorkingFolder(): Promise<void> {
-  await trpc().claude.pickCwd.mutate({ workspaceId: WORKSPACE_ID });
+  await trpc().claude.pickCwd.mutate({ workspaceId: DEFAULT_WORKSPACE_ID });
 }

@@ -6,9 +6,17 @@ import { claudeService } from './services/claude';
 import { terminalService } from './services/terminal';
 import { closeStore, getWindowBounds, initStore, setWindowBounds } from './store';
 
+///////////////
+// Constants //
+///////////////
+
 const DEV_RENDERER_URL = 'http://localhost:3000';
 
 const DEFAULT_BOUNDS = { width: 1440, height: 900 };
+
+/////////////
+// Helpers //
+/////////////
 
 function createWindow(): void {
   const saved = getWindowBounds();

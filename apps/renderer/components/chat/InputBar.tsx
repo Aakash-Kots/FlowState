@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { ClaudeSessionState } from '@flowstate/shared';
 import { interruptSession, sendPrompt, useChat } from '@/lib/chat';
 import { Button } from '../ui/Button';
 
@@ -17,7 +18,8 @@ export function InputBar({ disabled }: { disabled: boolean }) {
   const [text, setText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const busy = sessionState === 'running' || sessionState === 'waiting';
+  const busy =
+    sessionState === ClaudeSessionState.Running || sessionState === ClaudeSessionState.Waiting;
 
   useEffect(() => {
     if (!disabled) textareaRef.current?.focus();
@@ -51,7 +53,11 @@ export function InputBar({ disabled }: { disabled: boolean }) {
             value={text}
             rows={1}
             disabled={disabled}
-            placeholder={disabled ? 'Choose a folder to start…' : 'Message Claude — Enter to send, Shift+Enter for a new line'}
+            placeholder={
+              disabled
+                ? 'Choose a folder to start…'
+                : 'Message Claude — Enter to send, Shift+Enter for a new line'
+            }
             onChange={(e) => {
               setText(e.target.value);
               resize();

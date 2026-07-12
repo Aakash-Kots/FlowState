@@ -1,13 +1,13 @@
 'use client';
 
 import { useEffect, useMemo, useRef } from 'react';
-import type { ChatBlock } from '@flowstate/shared';
+import { ChatBlockType, ChatMessageRole, ClaudeSessionState } from '@flowstate/shared';
+import { ActivityIndicator } from '@/lib/enums/chat';
+import type { ToolResultBlock } from '@/lib/types/chat';
 import { useChat } from '@/lib/chat';
 import { Markdown } from './Markdown';
 import { MessageBubble } from './MessageBubble';
 import { PermissionCard } from './PermissionCard';
-
-type ToolResultBlock = Extract<ChatBlock, { type: 'tool_result' }>;
 
 const NEAR_BOTTOM_PX = 80;
 
@@ -33,8 +33,8 @@ export function ChatView() {
     const ids = new Set<string>();
     for (const { message } of messages) {
       for (const block of message.blocks) {
-        if (block.type === 'tool_result') results.set(block.toolUseId, block);
-        else if (block.type === 'tool_use') ids.add(block.id);
+        if (block.type === ChatBlockType.ToolResult) results.set(block.toolUseId, block);
+        else if (block.type === ChatBlockType.ToolUse) ids.add(block.id);
       }
     }
     return { toolResults: results, toolUseIds: ids };
@@ -51,7 +51,7 @@ export function ChatView() {
     if (el && pinnedToBottom.current) el.scrollTop = el.scrollHeight;
   }, [messages, streamingText, activeIndicator, pendingPermissions]);
 
-  const showWorking = sessionState === 'running' && !streamingText;
+  const showWorking = sessionState === ClaudeSessionState.Running && !streamingText;
 
   return (
     <div ref={scrollRef} onScroll={handleScroll} className="min-h-0 flex-1 overflow-y-auto">
@@ -66,8 +66,10 @@ export function ChatView() {
           // Tool messages whose results all render inside a tool_use row
           // produce empty bubbles — skip them entirely.
           if (
-            message.role === 'tool' &&
-            message.blocks.every((b) => b.type === 'tool_result' && toolUseIds.has(b.toolUseId))
+            message.role === ChatMessageRole.Tool &&
+            message.blocks.every(
+              (b) => b.type === ChatBlockType.ToolResult && toolUseIds.has(b.toolUseId),
+            )
           ) {
             return null;
           }
@@ -86,9 +88,9 @@ export function ChatView() {
         {(showWorking || activeIndicator) && (
           <div className="flex items-center gap-2 text-xs text-muted">
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-warn" />
-            {activeIndicator === 'thinking'
+            {activeIndicator === ActivityIndicator.Thinking
               ? 'Thinking…'
-              : activeIndicator === 'tool'
+              : activeIndicator === ActivityIndicator.Tool
                 ? 'Running a tool…'
                 : 'Working…'}
           </div>

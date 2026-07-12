@@ -1,14 +1,13 @@
 'use client';
 
+import { ConnStatus } from '@/lib/enums/connection';
 import { cn } from './cn';
 
-export type ConnStatus = 'connected' | 'pending' | 'error' | 'idle';
-
 const STYLES: Record<ConnStatus, { dot: string; text: string; label: string }> = {
-  connected: { dot: 'bg-success', text: 'text-success', label: 'Connected' },
-  pending: { dot: 'bg-warn animate-pulse', text: 'text-warn', label: 'Waiting…' },
-  error: { dot: 'bg-danger', text: 'text-danger', label: 'Error' },
-  idle: { dot: 'bg-muted', text: 'text-muted', label: 'Not connected' },
+  [ConnStatus.Connected]: { dot: 'bg-success', text: 'text-success', label: 'Connected' },
+  [ConnStatus.Pending]: { dot: 'bg-warn animate-pulse', text: 'text-warn', label: 'Waiting…' },
+  [ConnStatus.Error]: { dot: 'bg-danger', text: 'text-danger', label: 'Error' },
+  [ConnStatus.Idle]: { dot: 'bg-muted', text: 'text-muted', label: 'Not connected' },
 };
 
 export function StatusPill({ status, label }: { status: ConnStatus; label?: string }) {
