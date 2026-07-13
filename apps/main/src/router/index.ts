@@ -5,6 +5,7 @@ import { gitRouter } from './git';
 import { linearRouter } from './linear';
 import { onboardingRouter } from './onboarding';
 import { projectsRouter } from './projects';
+import { settingsRouter } from './settings';
 import { shortcutsRouter } from './shortcuts';
 import { tabsRouter } from './tabs';
 import { terminalRouter } from './terminal';
@@ -21,6 +22,7 @@ export const appRouter = router({
   claude: claudeRouter,
   linear: linearRouter,
   shortcuts: shortcutsRouter,
+  settings: settingsRouter,
 });
 
 /** Exported for the renderer's typed tRPC client (type-only import). */

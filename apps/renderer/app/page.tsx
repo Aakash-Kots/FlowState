@@ -3,8 +3,10 @@
 import Link from 'next/link';
 import { DEFAULT_WORKSPACE_ID } from '@flowstate/shared';
 import { useIsOnboarded, useOnboarding, useOnboardingSync } from '@/lib/onboarding';
+import { useSettingsSync } from '@/lib/settings';
 import { useWorkspace, useWorkspaceSync } from '@/lib/workspace';
 import { ConnectScreen } from '@/components/ConnectScreen';
+import { SoundToggle } from '@/components/settings/SoundToggle';
 import { AppSidebar } from '@/components/sidebar/AppSidebar';
 import { ProjectSelector } from '@/components/projects/ProjectSelector';
 import { GitHeaderButton } from '@/components/git/GitHeaderButton';
@@ -39,6 +41,7 @@ export default function Page() {
  */
 function WorkspaceShell() {
   useWorkspaceSync();
+  useSettingsSync();
   // No worktree selected (the startup/default state) → land on the project picker
   // instead of the empty default-workspace chat.
   const onDefaultWorkspace = useWorkspace((s) => s.workspaceId) === DEFAULT_WORKSPACE_ID;
@@ -63,6 +66,7 @@ function WorkspaceShell() {
             )}
             <div className="flex items-center gap-4 text-xs text-muted-foreground">
               {!onDefaultWorkspace && <GitHeaderButton />}
+              <SoundToggle />
               <Link
                 href="/connect"
                 className="text-muted-foreground transition-colors hover:text-neutral-200"
