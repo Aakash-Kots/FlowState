@@ -63,6 +63,7 @@ import {
   upsertWorkspace,
 } from '../store';
 import { authService } from './auth';
+import { slugifyTitle, worktreeService } from './worktree';
 
 ///////////
 // Types //
@@ -872,11 +873,25 @@ export class ClaudeService {
     }
     const workspace = getWorkspace(session.workspaceId);
     if (workspace && workspace.name === UNTITLED_WORKSPACE_NAME) {
-      upsertWorkspace({ ...workspace, name });
+      // Rename the throwaway random branch (e.g. `brave-lark`) to a slug of the
+      // title. Best-effort: a git failure keeps the old branch and never breaks
+      // the chat.
+      let branch = workspace.branch;
+      try {
+        branch = await worktreeService.renameBranch({
+          repoRoot: workspace.repoRoot,
+          oldBranch: workspace.branch,
+          newBranch: slugifyTitle(name),
+        });
+      } catch (err) {
+        console.warn('[claude] branch rename failed', err);
+      }
+      upsertWorkspace({ ...workspace, name, branch });
       this.emit(session.tabId, {
         kind: ChatEventKind.WorktreeName,
         workspaceId: workspace.id,
         name,
+        branch,
       });
     }
   }

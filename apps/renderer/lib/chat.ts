@@ -186,11 +186,14 @@ function applyEvent(tabId: string, event: ChatEvent): void {
       break;
     case ChatEventKind.WorktreeName:
       // Worktree names live in the projects store's per-project worktree lists.
+      // The sidebar renders `branch`, so update both the name and the renamed branch.
       useProjects.setState((s) => ({
         worktrees: Object.fromEntries(
           Object.entries(s.worktrees).map(([pid, list]) => [
             pid,
-            list.map((w) => (w.id === event.workspaceId ? { ...w, name: event.name } : w)),
+            list.map((w) =>
+              w.id === event.workspaceId ? { ...w, name: event.name, branch: event.branch } : w,
+            ),
           ]),
         ),
       }));

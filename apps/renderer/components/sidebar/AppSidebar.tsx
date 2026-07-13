@@ -80,7 +80,7 @@ function WorktreeRow({ workspace }: { workspace: Workspace }) {
           className="group/wt w-full cursor-pointer"
         >
           <GitBranch className="size-4 shrink-0" />
-          <span className="flex-1 truncate">{workspace.name}</span>
+          <span className="flex-1 truncate">{workspace.branch}</span>
           <span
             role="button"
             tabIndex={-1}

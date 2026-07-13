@@ -12,7 +12,6 @@ import { TRPCError } from '@trpc/server';
 import {
   ClaudeSessionState,
   DEFAULT_TAB_TITLE,
-  UNTITLED_BRANCH_PREFIX,
   UNTITLED_WORKSPACE_NAME,
   createWorktreeInputSchema,
   type Tab,
@@ -28,6 +27,7 @@ import {
   upsertTab,
   upsertWorkspace,
 } from '../store';
+import { randomBranchName } from '../lib/branch-names';
 import { claudeService } from '../services/claude';
 import { GitService } from '../services/git';
 import { fileLinkService } from '../services/links';
@@ -59,9 +59,10 @@ export const worktreeRouter = router({
 
       const repoRoot = project.localPath;
       const baseRef = input.baseRef?.trim() || project.defaultBranch;
-      // The user no longer names the branch; it's a fixed throwaway id. Only the
-      // workspace's display name is dynamic (auto-generated from the first chat).
-      const branch = `${UNTITLED_BRANCH_PREFIX}-${randomUUID().slice(0, 8)}`;
+      // The user no longer names the branch: it starts as a friendly random name
+      // (e.g. `brave-lark`), then `maybeGenerateTitle` renames it to a slug of the
+      // first chat. Made unique so a name collision never fails creation.
+      const branch = await worktreeService.uniqueBranchName(repoRoot, randomBranchName());
       const worktreePath = worktreeService.worktreePathFor(repoRoot, branch);
 
       // 1. Create the worktree + branch.

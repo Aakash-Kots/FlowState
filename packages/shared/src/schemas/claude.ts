@@ -139,6 +139,7 @@ export const chatEventSchema: z.ZodType<ChatEvent> = z.discriminatedUnion('kind'
     kind: z.literal(ChatEventKind.WorktreeName),
     workspaceId: z.string(),
     name: z.string(),
+    branch: z.string(),
   }),
   z.object({ kind: z.literal(ChatEventKind.Error), message: z.string() }),
 ]);

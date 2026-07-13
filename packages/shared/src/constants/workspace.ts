@@ -11,12 +11,7 @@ export const DEFAULT_WORKSPACE_ID = 'default';
 
 /**
  * Display name a worktree carries until its first chat auto-names it (mirrors the
- * tab auto-title flow). The rename path keys off this exact value.
+ * tab auto-title flow). Also the sentinel the auto-title/branch-rename path keys
+ * off: while the name still equals this, the worktree is treated as unnamed.
  */
 export const UNTITLED_WORKSPACE_NAME = 'Untitled';
-
-/**
- * Prefix for the throwaway branch a worktree is created on (`untitled-<shortid>`).
- * The branch is never renamed — only the workspace's display name is dynamic.
- */
-export const UNTITLED_BRANCH_PREFIX = 'untitled';
