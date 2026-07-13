@@ -1,5 +1,7 @@
 # FlowState
 
+> **Test paragraph:** This is a test paragraph added while testing the project. It doesn't describe any real functionality and can be safely removed.
+
 **One command center for your development workflow.** FlowState is a macOS dev tool that orchestrates the tools you already live in — Git, your terminal, Linear, and Claude Code — into a single, unified flow so you can stay in the zone instead of context-switching between windows.
 
 ## Why FlowState?
