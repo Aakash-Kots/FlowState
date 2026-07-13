@@ -1,9 +1,12 @@
 'use client';
 
-import { useState } from 'react';
-import { ChevronRight, Folder } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { ChevronRight, Folder, Plus } from 'lucide-react';
+import type { Project } from '@flowstate/shared';
+import { loadProjects, openProject, setAddOpen, useProjects } from '@/lib/projects';
 import { pickWorkingFolder, useWorkspace } from '@/lib/workspace';
-import { Button } from '../ui/Button';
+import { AddProjectModal } from '../projects/AddProjectModal';
+import { CtaIconButton } from '../shared/CtaIconButton';
 import { cn } from '../ui/cn';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible';
 import {
@@ -65,12 +68,35 @@ function FlowStateMark({ className }: { className?: string }) {
   );
 }
 
-/** The current project row: folder name over its shortened path; click to change. */
-function ProjectItem({ cwd }: { cwd: string }) {
+/** A persisted project row: name over its shortened path; click to make active. */
+function ProjectRow({ project, active }: { project: Project; active: boolean }) {
   return (
     <SidebarMenuItem>
       <SidebarMenuButton
         className="h-auto py-2"
+        isActive={active}
+        tooltip={project.name}
+        onClick={() => void openProject(project)}
+      >
+        <Folder className="size-4 shrink-0" />
+        <div className="flex min-w-0 flex-col group-data-[collapsible=icon]:hidden">
+          <span className="truncate font-medium">{project.name}</span>
+          <span className="truncate font-mono text-xs text-sidebar-foreground/60">
+            {shortenPath(project.localPath)}
+          </span>
+        </div>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  );
+}
+
+/** Fallback row for a working folder opened before projects existed. */
+function FolderItem({ cwd }: { cwd: string }) {
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton
+        className="h-auto py-2"
+        isActive
         tooltip={projectName(cwd)}
         onClick={() => void pickWorkingFolder()}
       >
@@ -86,10 +112,19 @@ function ProjectItem({ cwd }: { cwd: string }) {
   );
 }
 
-/** App sidebar: the current project / worktree the user is working in. */
+/** App sidebar: the projects the user has brought into FlowState. */
 export function AppSidebar() {
   const cwd = useWorkspace((s) => s.cwd);
+  const projects = useProjects((s) => s.projects);
   const [open, setOpen] = useState(true);
+
+  // Hydrate the persisted project list once for the app's lifetime.
+  useEffect(() => {
+    void loadProjects();
+  }, []);
+
+  // Any active working folder that isn't one of the tracked projects.
+  const orphanCwd = cwd && !projects.some((p) => p.localPath === cwd) ? cwd : null;
 
   return (
     <Sidebar collapsible="icon">
@@ -102,6 +137,11 @@ export function AppSidebar() {
             FlowState
           </span>
         </div>
+        <div className="px-1 group-data-[collapsible=icon]:px-0">
+          <CtaIconButton icon={Plus} onClick={() => setAddOpen(true)}>
+            Add Project
+          </CtaIconButton>
+        </div>
       </SidebarHeader>
       <SidebarContent>
         <Collapsible open={open} onOpenChange={setOpen}>
@@ -111,19 +151,22 @@ export function AppSidebar() {
                 <ChevronRight
                   className={cn('mr-1 size-4 transition-transform', open && 'rotate-90')}
                 />
-                Project
+                Projects
               </CollapsibleTrigger>
             </SidebarGroupLabel>
             <CollapsibleContent>
               <SidebarGroupContent>
                 <SidebarMenu>
-                  {cwd ? (
-                    <ProjectItem cwd={cwd} />
-                  ) : (
+                  {projects.map((project) => (
+                    <ProjectRow key={project.id} project={project} active={project.localPath === cwd} />
+                  ))}
+                  {orphanCwd && <FolderItem cwd={orphanCwd} />}
+                  {projects.length === 0 && !orphanCwd && (
                     <SidebarMenuItem>
-                      <div className="px-2 py-1.5">
-                        <p className="mb-2 text-xs text-sidebar-foreground/60">No folder open.</p>
-                        <Button onClick={() => void pickWorkingFolder()}>Pick a folder</Button>
+                      <div className="px-2 py-1.5 group-data-[collapsible=icon]:hidden">
+                        <p className="text-xs text-sidebar-foreground/60">
+                          No projects yet. Use “Add Project” above.
+                        </p>
                       </div>
                     </SidebarMenuItem>
                   )}
@@ -134,6 +177,7 @@ export function AppSidebar() {
         </Collapsible>
       </SidebarContent>
       <SidebarRail />
+      <AddProjectModal />
     </Sidebar>
   );
 }

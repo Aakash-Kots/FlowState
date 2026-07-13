@@ -13,6 +13,7 @@ type WorkspaceRow = typeof workspaces.$inferSelect;
 function rowToWorkspace(row: WorkspaceRow): Workspace {
   return workspaceSchema.parse({
     id: row.id,
+    projectId: row.projectId,
     name: row.name,
     repoRoot: row.repoRoot,
     worktreePath: row.worktreePath,
@@ -27,6 +28,7 @@ function rowToWorkspace(row: WorkspaceRow): Workspace {
 function workspaceToRow(ws: Workspace): WorkspaceRow {
   return {
     id: ws.id,
+    projectId: ws.projectId,
     name: ws.name,
     repoRoot: ws.repoRoot,
     worktreePath: ws.worktreePath,
@@ -63,6 +65,7 @@ export function upsertWorkspace(input: Workspace): Workspace {
       target: workspaces.id,
       // id and createdAt are immutable; update everything else.
       set: {
+        projectId: row.projectId,
         name: row.name,
         repoRoot: row.repoRoot,
         worktreePath: row.worktreePath,
@@ -74,6 +77,17 @@ export function upsertWorkspace(input: Workspace): Workspace {
     })
     .run();
   return ws;
+}
+
+/** All workspaces (worktrees) under a project, most-recently-created first. */
+export function listWorkspacesByProject(projectId: string): Workspace[] {
+  return getDb()
+    .select()
+    .from(workspaces)
+    .where(eq(workspaces.projectId, projectId))
+    .orderBy(desc(workspaces.createdAt))
+    .all()
+    .map(rowToWorkspace);
 }
 
 export function deleteWorkspace(id: string): void {
@@ -90,6 +104,7 @@ export function ensureWorkspace(id: string): Workspace {
   if (existing) return existing;
   return upsertWorkspace({
     id,
+    projectId: null,
     name: 'Workspace',
     repoRoot: '',
     worktreePath: '',

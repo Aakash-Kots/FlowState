@@ -18,6 +18,7 @@ export function closeStore(): void {
 export { getDb } from './db';
 export * from './workspaces';
 export * from './tabs';
+export * from './projects';
 export * from './transcripts';
 export * from './secrets';
 export * from './settings';

@@ -19,6 +19,7 @@ import {
 } from '@flowstate/shared';
 import { ActivityIndicator } from './enums/chat';
 import { trpc } from './trpc';
+import { useWorkspace } from './workspace';
 
 ///////////
 // Types //
@@ -175,6 +176,12 @@ function applyEvent(tabId: string, event: ChatEvent): void {
       // Folder change resets the session but keeps the persisted transcript
       // (which is what a restart would show anyway).
       set({ cwd: event.cwd, sessionId: null, streamingText: null, activeIndicator: null });
+      break;
+    case ChatEventKind.Title:
+      // Tab titles live in the workspace store, not the per-tab chat store.
+      useWorkspace.setState((s) => ({
+        tabs: s.tabs.map((t) => (t.id === tabId ? { ...t, title: event.title } : t)),
+      }));
       break;
     case ChatEventKind.Error:
       set({ error: event.message, streamingText: null, activeIndicator: null });
