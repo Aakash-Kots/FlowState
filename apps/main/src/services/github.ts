@@ -13,7 +13,7 @@ import { mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
 import { promisify } from 'node:util';
-import type { AddProjectInput, GithubRepo } from '@flowstate/shared';
+import type { AddProjectInput, CreatePrResult, GithubRepo } from '@flowstate/shared';
 import { SecretName } from '../lib/enums/secret';
 import { getSecret } from '../store/secrets';
 import { authService } from './auth';
@@ -168,6 +168,123 @@ export class GithubService {
       cloneUrl: parsed?.cloneUrl ?? origin ?? '',
       defaultBranch: branch ?? 'main',
     };
+  }
+
+  /////////////////////////
+  // Sync (push/pull/fetch)
+  /////////////////////////
+
+  /**
+   * A worktree's GitHub `origin`, parsed. Throws with a clear message when the
+   * remote is missing or not a GitHub URL (the UI gates push/PR on this).
+   */
+  private async githubOrigin(
+    worktreePath: string,
+  ): Promise<{ owner: string; fullName: string }> {
+    const origin = await gitOutput(['-C', worktreePath, 'remote', 'get-url', 'origin']);
+    const parsed = origin ? parseGithubRemote(origin) : null;
+    if (!parsed) {
+      throw new Error('This worktree has no GitHub `origin` remote.');
+    }
+    return { owner: parsed.owner, fullName: parsed.fullName };
+  }
+
+  /**
+   * `-c http.extraHeader=…` args that inject the linked token as HTTP basic auth
+   * for a single git invocation — never persisted to `.git/config`. Scoped to
+   * github.com so the token is only ever sent to GitHub.
+   */
+  private async authHeaderArgs(): Promise<string[]> {
+    const token = await this.token();
+    const basic = Buffer.from(`x-access-token:${token}`).toString('base64');
+    return ['-c', `http.https://github.com/.extraheader=AUTHORIZATION: basic ${basic}`];
+  }
+
+  /** Fetch `origin` to refresh the worktree's ahead/behind counts. */
+  async fetch(worktreePath: string): Promise<void> {
+    await this.githubOrigin(worktreePath);
+    const auth = await this.authHeaderArgs();
+    await git(['-C', worktreePath, ...auth, 'fetch', 'origin']);
+  }
+
+  /** Fast-forward the current branch from its upstream. */
+  async pull(worktreePath: string): Promise<void> {
+    await this.githubOrigin(worktreePath);
+    const auth = await this.authHeaderArgs();
+    await git(['-C', worktreePath, ...auth, 'pull', '--ff-only']);
+  }
+
+  /** Push `branch` to `origin`, setting it as the branch's upstream. */
+  async push(worktreePath: string, branch: string): Promise<void> {
+    await this.githubOrigin(worktreePath);
+    const auth = await this.authHeaderArgs();
+    await git(['-C', worktreePath, ...auth, 'push', '-u', 'origin', branch]);
+  }
+
+  /**
+   * Open a pull request for `head` against `base`. If one already exists for the
+   * branch, returns that PR instead of failing.
+   */
+  async createPullRequest(input: {
+    worktreePath: string;
+    head: string;
+    base: string;
+    title: string;
+    body?: string;
+  }): Promise<CreatePrResult> {
+    const token = await this.token();
+    const { owner, fullName } = await this.githubOrigin(input.worktreePath);
+    const headers = {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+    };
+
+    const res = await fetch(`${GITHUB_API}/repos/${fullName}/pulls`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        title: input.title,
+        head: input.head,
+        base: input.base,
+        body: input.body ?? '',
+      }),
+    });
+
+    if (res.ok) {
+      const pr = (await res.json()) as { html_url: string; number: number };
+      return { url: pr.html_url, number: pr.number };
+    }
+
+    // A PR already open for this branch → surface it instead of erroring.
+    if (res.status === 422) {
+      const existing = await this.findOpenPr(fullName, owner, input.head, token);
+      if (existing) return existing;
+    }
+    throw new Error(`GitHub API error (${res.status}): failed to open pull request.`);
+  }
+
+  /** The open PR whose head is `owner:branch`, if any. */
+  private async findOpenPr(
+    fullName: string,
+    owner: string,
+    branch: string,
+    token: string,
+  ): Promise<CreatePrResult | null> {
+    const url = new URL(`/repos/${fullName}/pulls`, GITHUB_API);
+    url.searchParams.set('head', `${owner}:${branch}`);
+    url.searchParams.set('state', 'open');
+    const res = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    });
+    if (!res.ok) return null;
+    const prs = (await res.json()) as { html_url: string; number: number }[];
+    const pr = prs[0];
+    return pr ? { url: pr.html_url, number: pr.number } : null;
   }
 }
 

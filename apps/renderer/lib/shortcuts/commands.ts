@@ -121,7 +121,7 @@ export const COMMANDS: Record<ShortcutCommand, CommandDef> = {
   },
   [ShortcutCommand.NextView]: {
     command: ShortcutCommand.NextView,
-    label: 'Next view (Workspace/Terminals)',
+    label: 'Next view (Workspace / Git / Terminals)',
     category: ShortcutCategory.Navigation,
     scope: ShortcutScope.Global,
     run: () => cycleViewMode(1),
@@ -129,7 +129,7 @@ export const COMMANDS: Record<ShortcutCommand, CommandDef> = {
   },
   [ShortcutCommand.PrevView]: {
     command: ShortcutCommand.PrevView,
-    label: 'Previous view (Workspace/Terminals)',
+    label: 'Previous view (Workspace / Git / Terminals)',
     category: ShortcutCategory.Navigation,
     scope: ShortcutScope.Global,
     run: () => cycleViewMode(-1),

@@ -18,6 +18,9 @@ export const workspaces = sqliteTable(
     repoRoot: text('repo_root').notNull(),
     worktreePath: text('worktree_path').notNull(),
     branch: text('branch').notNull(),
+    // The branch this worktree was cut from — the PR base. Nullable: legacy rows
+    // predate this column and fall back to the project's default branch.
+    baseRef: text('base_ref'),
     linearIssue: text('linear_issue'), // JSON (linearIssueRefSchema) or null
     claudeState: text('claude_state').notNull().default('idle'),
     claudeSessionId: text('claude_session_id'),

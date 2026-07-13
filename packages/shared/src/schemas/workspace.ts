@@ -17,6 +17,7 @@ export const workspaceSchema = z.object({
   repoRoot: z.string(),
   worktreePath: z.string(),
   branch: z.string(),
+  baseRef: z.string().nullable().default(null),
   linearIssue: linearIssueRefSchema.nullable().default(null),
   claudeState: claudeSessionStateSchema.default(ClaudeSessionState.Idle),
   claudeSessionId: z.string().nullable().default(null),

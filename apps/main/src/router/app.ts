@@ -1,5 +1,6 @@
-import { app } from 'electron';
+import { app, shell } from 'electron';
 import type { AppInfo } from '@flowstate/shared';
+import { z } from 'zod';
 import { publicProcedure, router } from '../trpc';
 
 /**
@@ -15,4 +16,9 @@ export const appRouter = router({
     };
   }),
   ping: publicProcedure.query(() => 'pong'),
+
+  /** Open a URL in the user's default browser (e.g. a freshly created PR). */
+  openExternal: publicProcedure
+    .input(z.object({ url: z.string().url() }))
+    .mutation(({ input }) => shell.openExternal(input.url)),
 });
