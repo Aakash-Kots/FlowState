@@ -85,6 +85,11 @@ export class WorktreeService {
     return { path: opts.worktreePath, branch: opts.branch, head: opts.baseRef };
   }
 
+  /** The repo's local branch names — the choices for a new worktree's base ref. */
+  async listBranches(repoRoot: string): Promise<string[]> {
+    return (await simpleGit(repoRoot).branchLocal()).all;
+  }
+
   /** All worktrees registered on the repo. */
   async list(repoRoot: string): Promise<WorktreeInfo[]> {
     const out = await simpleGit(repoRoot).raw(['worktree', 'list', '--porcelain']);

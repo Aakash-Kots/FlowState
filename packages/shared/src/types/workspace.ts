@@ -39,7 +39,6 @@ export type CreateWorkspaceInput = {
  */
 export type CreateWorktreeInput = {
   projectId: string;
-  branch: string;
   baseRef?: string;
   initialPrompt?: string;
 };

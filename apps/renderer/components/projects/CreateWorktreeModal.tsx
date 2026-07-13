@@ -31,39 +31,43 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 /////////////////
 
 /**
- * The "New worktree" modal: create a git worktree (a sub-tab) on its own branch
- * under a project, optionally seeding its first Claude session with a prompt.
+ * The "New worktree" modal: create a git worktree (a sub-tab) under a project by
+ * picking a base branch and, optionally, a first prompt. The worktree starts
+ * "Untitled" and auto-names itself from its first chat.
  */
 export function CreateWorktreeModal() {
   const open = useProjects((s) => s.createOpen);
   const projectId = useProjects((s) => s.createProjectId);
   const creating = useProjects((s) => s.creating);
   const error = useProjects((s) => s.createError);
+  const branches = useProjects((s) => s.branches);
   const project = useProjects((s) => s.projects.find((p) => p.id === s.createProjectId) ?? null);
 
-  const [branch, setBranch] = useState('');
   const [baseRef, setBaseRef] = useState('');
   const [prompt, setPrompt] = useState('');
 
-  // Reset the form each time the modal opens.
+  // Reset the form each time the modal opens, defaulting to the project's branch.
   useEffect(() => {
     if (!open) return;
-    setBranch('');
-    setBaseRef('');
+    setBaseRef(project?.defaultBranch ?? '');
     setPrompt('');
-  }, [open, projectId]);
+  }, [open, projectId, project?.defaultBranch]);
 
-  const canSubmit = branch.trim().length > 0 && !creating;
+  const canSubmit = !creating;
   const submit = () => {
     if (!canSubmit) return;
-    void createWorktree({ branch, baseRef, initialPrompt: prompt });
+    void createWorktree({ baseRef, initialPrompt: prompt });
   };
+
+  // The base branch may not be in the fetched list yet (or ever); include it so
+  // the select always reflects the current value.
+  const options = branches.includes(baseRef) || !baseRef ? branches : [baseRef, ...branches];
 
   return (
     <DialogPrimitive.Root open={open} onOpenChange={setCreateOpen}>
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/70 data-[state=open]:animate-in data-[state=open]:fade-in-0" />
-        <DialogPrimitive.Content className="fixed left-1/2 top-1/2 z-50 flex w-full max-w-md -translate-x-1/2 -translate-y-1/2 flex-col gap-4 rounded-xl border border-edge bg-base p-5 shadow-2xl shadow-black/40 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95">
+        <DialogPrimitive.Content className="fixed left-1/2 top-1/2 z-50 flex w-full max-w-2xl -translate-x-1/2 -translate-y-1/2 flex-col gap-4 rounded-xl border border-edge bg-base p-5 shadow-2xl shadow-black/40 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95">
           <div className="flex items-center justify-between">
             <DialogPrimitive.Title className="text-base font-semibold text-foreground">
               New worktree{project ? ` · ${project.name}` : ''}
@@ -74,40 +78,32 @@ export function CreateWorktreeModal() {
             </DialogPrimitive.Close>
           </div>
 
-          <p className="text-xs text-muted-foreground">
-            Creates a git worktree on a new branch and links this project&apos;s{' '}
-            <code className="text-foreground">.env</code> files into it.
-          </p>
-
-          <Field label="Branch">
-            <input
-              autoFocus
-              value={branch}
-              onChange={(e) => setBranch(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && submit()}
-              placeholder="feature/my-change"
-              className={INPUT_CLASS}
-            />
-          </Field>
-
-          <Field label="Base ref" hint={`optional — defaults to ${project?.defaultBranch ?? 'the default branch'}`}>
-            <input
-              value={baseRef}
-              onChange={(e) => setBaseRef(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && submit()}
-              placeholder={project?.defaultBranch ?? 'main'}
-              className={INPUT_CLASS}
-            />
-          </Field>
-
-          <Field label="First prompt" hint="optional">
+          <Field label="Prompt" hint="optional — Claude starts on this right away">
             <textarea
+              autoFocus
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submit();
+              }}
               placeholder="What should Claude start on in this worktree?"
               rows={3}
               className={`${INPUT_CLASS} h-auto resize-none py-2`}
             />
+          </Field>
+
+          <Field label="Branch off">
+            <select
+              value={baseRef}
+              onChange={(e) => setBaseRef(e.target.value)}
+              className={INPUT_CLASS}
+            >
+              {options.map((b) => (
+                <option key={b} value={b}>
+                  {b}
+                </option>
+              ))}
+            </select>
           </Field>
 
           {error && <p className="text-sm text-warn">{error}</p>}

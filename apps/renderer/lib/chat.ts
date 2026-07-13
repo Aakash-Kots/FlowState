@@ -18,6 +18,7 @@ import {
   type QuestionRequest,
 } from '@flowstate/shared';
 import { ActivityIndicator } from './enums/chat';
+import { useProjects } from './projects';
 import { trpc } from './trpc';
 import { useWorkspace } from './workspace';
 
@@ -181,6 +182,17 @@ function applyEvent(tabId: string, event: ChatEvent): void {
       // Tab titles live in the workspace store, not the per-tab chat store.
       useWorkspace.setState((s) => ({
         tabs: s.tabs.map((t) => (t.id === tabId ? { ...t, title: event.title } : t)),
+      }));
+      break;
+    case ChatEventKind.WorktreeName:
+      // Worktree names live in the projects store's per-project worktree lists.
+      useProjects.setState((s) => ({
+        worktrees: Object.fromEntries(
+          Object.entries(s.worktrees).map(([pid, list]) => [
+            pid,
+            list.map((w) => (w.id === event.workspaceId ? { ...w, name: event.name } : w)),
+          ]),
+        ),
       }));
       break;
     case ChatEventKind.Error:

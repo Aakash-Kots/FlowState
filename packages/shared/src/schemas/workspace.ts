@@ -32,7 +32,6 @@ export const createWorkspaceInputSchema = z.object({
 
 export const createWorktreeInputSchema = z.object({
   projectId: z.string(),
-  branch: z.string().min(1),
   baseRef: z.string().optional(),
   initialPrompt: z.string().optional(),
 });

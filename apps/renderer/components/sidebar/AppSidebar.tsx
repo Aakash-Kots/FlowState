@@ -6,12 +6,12 @@ import { DEFAULT_WORKSPACE_ID, type Project, type Workspace } from '@flowstate/s
 import {
   loadProjects,
   openCreateWorktree,
-  openProject,
   removeWorktree,
   selectWorktree,
   setAddOpen,
   useProjects,
 } from '@/lib/projects';
+import { projectName, shortenPath } from '@/lib/paths';
 import { pickWorkingFolder, useWorkspace } from '@/lib/workspace';
 import { AddProjectModal } from '../projects/AddProjectModal';
 import { CreateWorktreeModal } from '../projects/CreateWorktreeModal';
@@ -34,20 +34,6 @@ import {
   SidebarMenuSubItem,
   SidebarRail,
 } from '../ui/sidebar';
-
-/////////////
-// Helpers //
-/////////////
-
-/** The folder's basename — used as the project's display name. */
-function projectName(cwd: string): string {
-  return cwd.split('/').filter(Boolean).pop() ?? cwd;
-}
-
-function shortenPath(path: string): string {
-  const home = path.match(/^\/(?:Users|home)\/[^/]+/);
-  return home ? path.replace(home[0], '~') : path;
-}
 
 ///////////////////
 // Sub-components //
@@ -90,10 +76,11 @@ function WorktreeRow({ workspace }: { workspace: Workspace }) {
         <button
           type="button"
           onClick={() => selectWorktree(workspace)}
+          title={workspace.branch}
           className="group/wt w-full cursor-pointer"
         >
           <GitBranch className="size-4 shrink-0" />
-          <span className="flex-1 truncate">{workspace.branch}</span>
+          <span className="flex-1 truncate">{workspace.name}</span>
           <span
             role="button"
             tabIndex={-1}
@@ -114,16 +101,16 @@ function WorktreeRow({ workspace }: { workspace: Workspace }) {
 }
 
 /** A project header row plus its nested worktree sub-tabs. */
-function ProjectGroup({ project, active }: { project: Project; active: boolean }) {
+function ProjectGroup({ project }: { project: Project }) {
   const worktrees = useProjects((s) => s.worktrees[project.id] ?? []);
   return (
     <>
       <SidebarMenuItem>
-        <SidebarMenuButton
-          className="h-auto py-2"
-          isActive={active}
-          tooltip={project.name}
-          onClick={() => void openProject(project)}
+        {/* A non-interactive header: projects aren't a workspace you chat in —
+            only their worktrees are selectable. */}
+        <div
+          className="flex h-auto w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm group-has-[[data-sidebar=menu-action]]/menu-item:pr-8"
+          title={project.name}
         >
           <Folder className="size-4 shrink-0" />
           <div className="flex min-w-0 flex-col group-data-[collapsible=icon]:hidden">
@@ -132,7 +119,7 @@ function ProjectGroup({ project, active }: { project: Project; active: boolean }
               {shortenPath(project.localPath)}
             </span>
           </div>
-        </SidebarMenuButton>
+        </div>
         <SidebarMenuAction showOnHover title="New worktree" onClick={() => openCreateWorktree(project.id)}>
           <Plus />
           <span className="sr-only">New worktree</span>
@@ -193,8 +180,13 @@ export function AppSidebar() {
     void loadProjects();
   }, []);
 
-  // Any active working folder that isn't one of the tracked projects.
-  const orphanCwd = cwd && !projects.some((p) => p.localPath === cwd) ? cwd : null;
+  // A legacy working folder opened on the default workspace that isn't one of the
+  // tracked projects. Worktrees are real workspaces shown under their project, so
+  // they're never orphans — only fall back to this for the default workspace.
+  const orphanCwd =
+    workspaceId === DEFAULT_WORKSPACE_ID && cwd && !projects.some((p) => p.localPath === cwd)
+      ? cwd
+      : null;
 
   return (
     <Sidebar collapsible="icon">
@@ -228,11 +220,7 @@ export function AppSidebar() {
               <SidebarGroupContent>
                 <SidebarMenu>
                   {projects.map((project) => (
-                    <ProjectGroup
-                      key={project.id}
-                      project={project}
-                      active={workspaceId === DEFAULT_WORKSPACE_ID && project.localPath === cwd}
-                    />
+                    <ProjectGroup key={project.id} project={project} />
                   ))}
                   {orphanCwd && <FolderItem cwd={orphanCwd} />}
                   {projects.length === 0 && !orphanCwd && (

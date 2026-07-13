@@ -12,6 +12,8 @@ import { TRPCError } from '@trpc/server';
 import {
   ClaudeSessionState,
   DEFAULT_TAB_TITLE,
+  UNTITLED_BRANCH_PREFIX,
+  UNTITLED_WORKSPACE_NAME,
   createWorktreeInputSchema,
   type Tab,
   type Workspace,
@@ -39,6 +41,15 @@ export const worktreeRouter = router({
     .input(z.object({ projectId: z.string() }))
     .query(({ input }) => listWorkspacesByProject(input.projectId)),
 
+  /** A project's local branch names — the base-ref choices for a new worktree. */
+  listBranches: publicProcedure
+    .input(z.object({ projectId: z.string() }))
+    .query(({ input }): Promise<string[]> => {
+      const project = getProject(input.projectId);
+      if (!project) throw new TRPCError({ code: 'NOT_FOUND', message: 'Project not found.' });
+      return worktreeService.listBranches(project.localPath);
+    }),
+
   /** Create a worktree (branch + linked env) under a project and seed its first tab. */
   create: publicProcedure
     .input(createWorktreeInputSchema)
@@ -48,11 +59,14 @@ export const worktreeRouter = router({
 
       const repoRoot = project.localPath;
       const baseRef = input.baseRef?.trim() || project.defaultBranch;
-      const worktreePath = worktreeService.worktreePathFor(repoRoot, input.branch);
+      // The user no longer names the branch; it's a fixed throwaway id. Only the
+      // workspace's display name is dynamic (auto-generated from the first chat).
+      const branch = `${UNTITLED_BRANCH_PREFIX}-${randomUUID().slice(0, 8)}`;
+      const worktreePath = worktreeService.worktreePathFor(repoRoot, branch);
 
       // 1. Create the worktree + branch.
       try {
-        await worktreeService.create({ repoRoot, branch: input.branch, baseRef, worktreePath });
+        await worktreeService.create({ repoRoot, branch, baseRef, worktreePath });
       } catch (err) {
         throw new TRPCError({
           code: 'PRECONDITION_FAILED',
@@ -69,10 +83,10 @@ export const worktreeRouter = router({
         const workspace = upsertWorkspace({
           id: randomUUID(),
           projectId: project.id,
-          name: input.branch,
+          name: UNTITLED_WORKSPACE_NAME,
           repoRoot,
           worktreePath,
-          branch: input.branch,
+          branch,
           linearIssue: null,
           claudeState: ClaudeSessionState.Idle,
           claudeSessionId: null,

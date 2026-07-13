@@ -28,6 +28,9 @@ type ProjectsState = {
   createProjectId: string | null;
   creating: boolean;
   createError: string | null;
+  /** The active project's local branches — base-ref choices in the modal. */
+  branches: string[];
+  branchesLoading: boolean;
 };
 
 /////////////
@@ -51,6 +54,8 @@ export const useProjects = create<ProjectsState>(() => ({
   createProjectId: null,
   creating: false,
   createError: null,
+  branches: [],
+  branchesLoading: false,
 }));
 
 /** Load the persisted project list — and each project's worktrees — into the store. */
@@ -157,7 +162,24 @@ export async function addProject(repo: GithubRepo): Promise<void> {
 
 /** Open the create-worktree modal for a project (resetting the last error). */
 export function openCreateWorktree(projectId: string): void {
-  useProjects.setState({ createOpen: true, createProjectId: projectId, createError: null });
+  useProjects.setState({
+    createOpen: true,
+    createProjectId: projectId,
+    createError: null,
+    branches: [],
+  });
+  void loadBranches(projectId);
+}
+
+/** Load a project's local branches (the base-ref choices) into the store. */
+export async function loadBranches(projectId: string): Promise<void> {
+  useProjects.setState({ branchesLoading: true });
+  try {
+    const branches = await trpc().worktree.listBranches.query({ projectId });
+    useProjects.setState({ branches, branchesLoading: false });
+  } catch {
+    useProjects.setState({ branchesLoading: false });
+  }
 }
 
 /** Open or close the create-worktree modal. */
@@ -170,7 +192,6 @@ export function setCreateOpen(open: boolean): void {
  * insert it into the tree, and switch to it. Surfaces failures via `createError`.
  */
 export async function createWorktree(input: {
-  branch: string;
   baseRef?: string;
   initialPrompt?: string;
 }): Promise<void> {
@@ -180,7 +201,6 @@ export async function createWorktree(input: {
   try {
     const { workspace } = await trpc().worktree.create.mutate({
       projectId,
-      branch: input.branch.trim(),
       baseRef: input.baseRef?.trim() || undefined,
       initialPrompt: input.initialPrompt?.trim() || undefined,
     });

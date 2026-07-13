@@ -40,6 +40,7 @@ import {
   DEFAULT_TAB_TITLE,
   PermissionBehavior,
   ReasoningEffort,
+  UNTITLED_WORKSPACE_NAME,
   chatMessageSchema,
   mergeModelOptions,
   type ChatBlock,
@@ -849,24 +850,35 @@ export class ClaudeService {
   }
 
   /**
-   * Derive a concise tab title from the opening exchange and persist it, at most
-   * once per session and only while the tab still has its default title (so a
-   * manual rename always wins). Best-effort: failures leave the title untouched.
+   * Derive a concise name from the opening exchange (one Haiku call) and apply it
+   * to both the tab title and — for a fresh worktree — the workspace's display
+   * name, at most once per session. Each target updates only while it still holds
+   * its default ("Chat" / "Untitled"), so a manual rename always wins. Best-effort:
+   * failures leave both untouched.
    */
   private async maybeGenerateTitle(session: ClaudeSession): Promise<void> {
     if (session.titled) return;
     session.titled = true;
-    const tab = getTab(session.tabId);
-    if (!tab || tab.title !== DEFAULT_TAB_TITLE) return;
     const source = firstExchangeText(session.tabId);
     if (!source) return;
-    const title = await generateTitle(source, session.cwd);
-    if (!title) return;
-    // Re-check: the user may have renamed the tab while we were summarizing.
-    const current = getTab(session.tabId);
-    if (!current || current.title !== DEFAULT_TAB_TITLE) return;
-    upsertTab({ ...current, title });
-    this.emit(session.tabId, { kind: ChatEventKind.Title, title });
+    const name = await generateTitle(source, session.cwd);
+    if (!name) return;
+    // Re-check each target after the async summarization — the user may have
+    // renamed the tab or the worktree while we were summarizing.
+    const tab = getTab(session.tabId);
+    if (tab && tab.title === DEFAULT_TAB_TITLE) {
+      upsertTab({ ...tab, title: name });
+      this.emit(session.tabId, { kind: ChatEventKind.Title, title: name });
+    }
+    const workspace = getWorkspace(session.workspaceId);
+    if (workspace && workspace.name === UNTITLED_WORKSPACE_NAME) {
+      upsertWorkspace({ ...workspace, name });
+      this.emit(session.tabId, {
+        kind: ChatEventKind.WorktreeName,
+        workspaceId: workspace.id,
+        name,
+      });
+    }
   }
 
   private persistAndEmit(session: ClaudeSession, message: ChatMessage): void {
