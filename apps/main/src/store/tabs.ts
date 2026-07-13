@@ -19,6 +19,7 @@ function rowToTab(row: TabRow): Tab {
     claudeSessionId: row.claudeSessionId,
     model: row.model,
     effort: row.effort,
+    planMode: row.planMode,
     position: row.position,
     createdAt: row.createdAt,
   });
@@ -33,6 +34,7 @@ function tabToRow(tab: Tab): TabRow {
     claudeSessionId: tab.claudeSessionId,
     model: tab.model,
     effort: tab.effort,
+    planMode: tab.planMode,
     position: tab.position,
     createdAt: tab.createdAt,
   };
@@ -47,6 +49,11 @@ export function listTabs(workspaceId: string): Tab[] {
     .orderBy(asc(tabs.position))
     .all()
     .map(rowToTab);
+}
+
+/** Every tab across all workspaces — used to seed/reconcile app-wide state. */
+export function listAllTabs(): Tab[] {
+  return getDb().select().from(tabs).all().map(rowToTab);
 }
 
 export function getTab(id: string): Tab | null {
@@ -68,6 +75,7 @@ export function upsertTab(input: Tab): Tab {
         title: row.title,
         claudeState: row.claudeState,
         claudeSessionId: row.claudeSessionId,
+        planMode: row.planMode,
         position: row.position,
       },
     })

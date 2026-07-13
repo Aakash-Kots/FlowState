@@ -11,7 +11,10 @@ import { Input } from '../ui/input';
 // Constants //
 ///////////////
 
-const COPY: Record<TerminalKind.Setup | TerminalKind.Run, { title: string; hint: string; placeholder: string }> = {
+const COPY: Record<
+  TerminalKind.Setup | TerminalKind.Run,
+  { title: string; hint: string; placeholder: string }
+> = {
   [TerminalKind.Setup]: {
     title: 'Set a setup command',
     hint: 'Runs in every new worktree of this project (e.g. installing dependencies).',

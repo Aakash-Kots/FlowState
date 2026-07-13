@@ -2,7 +2,7 @@
 
 import { ChevronDown } from 'lucide-react';
 import { CURATED_MODELS, DEFAULT_EFFORT, DEFAULT_MODEL, ReasoningEffort } from '@flowstate/shared';
-import { setEffort, setModel, useChat, useTabId } from '@/lib/chat';
+import { setEffort, setModel, togglePlanMode, useChat, useTabId } from '@/lib/chat';
 import { DropdownItem, DropdownMenu } from '../ui/dropdown-menu';
 
 ///////////////
@@ -32,6 +32,7 @@ export function InputToolbar({ disabled }: { disabled: boolean }) {
   // effort (Opus 4.8 / High) until the user changes it.
   const model = useChat((s) => s.model) ?? DEFAULT_MODEL;
   const effort = useChat((s) => s.effort) ?? DEFAULT_EFFORT;
+  const planMode = useChat((s) => s.planMode);
   const models = MODELS;
 
   const current = models.find((m) => m.value === model);
@@ -44,6 +45,18 @@ export function InputToolbar({ disabled }: { disabled: boolean }) {
 
   return (
     <div className="flex items-center gap-1 px-1.5 pb-1.5 pt-1">
+      {planMode && (
+        <button
+          type="button"
+          onClick={() => togglePlanMode(tabId)}
+          title="Plan mode — Shift+Tab to exit"
+          className="mr-0.5 inline-flex items-center gap-1.5 rounded-full border border-primary/60 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
+        >
+          <span className="text-[10px] leading-none">◆</span>
+          Plan
+        </button>
+      )}
+
       <DropdownMenu
         disabled={disabled}
         triggerClassName={triggerClass}

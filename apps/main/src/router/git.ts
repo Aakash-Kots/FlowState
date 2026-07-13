@@ -45,12 +45,10 @@ function remoteError(err: unknown): TRPCError {
 
 export const gitRouter = router({
   /** The worktree's uncommitted changes + branch/upstream sync position. */
-  status: publicProcedure
-    .input(gitWorkspaceInputSchema)
-    .query(({ input }): Promise<GitStatus> => {
-      const ws = requireWorkspace(input.workspaceId);
-      return new GitService(ws.worktreePath).status();
-    }),
+  status: publicProcedure.input(gitWorkspaceInputSchema).query(({ input }): Promise<GitStatus> => {
+    const ws = requireWorkspace(input.workspaceId);
+    return new GitService(ws.worktreePath).status();
+  }),
 
   /** Total lines added/removed on this worktree's branch vs its base (for the sidebar badge). */
   diffStat: publicProcedure

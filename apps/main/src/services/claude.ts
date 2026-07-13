@@ -52,12 +52,14 @@ import {
   type QuestionItem,
   type QuestionRequest,
   type Tab,
+  type TabStateChange,
 } from '@flowstate/shared';
 import {
   appendMessage,
   getTab,
   getTabTranscript,
   getWorkspace,
+  listAllTabs,
   listTabs,
   upsertTab,
   upsertWorkspace,
@@ -347,6 +349,8 @@ class ClaudeSession {
   model: string | null = null;
   /** The user's explicit reasoning-effort selection (null = model default). */
   effort: ReasoningEffort | null = null;
+  /** Whether this session runs in plan mode (SDK `permissionMode: 'plan'`). */
+  planMode = false;
   /** The model the SDK actually ran (from its `init` message; display only). */
   reportedModel: string | null = null;
   /** Set while an interrupt is in flight so error results read as a clean stop. */
@@ -365,6 +369,26 @@ export class ClaudeService {
   // Keyed by tabId — each tab is an independent Claude chat session.
   private readonly sessions = new Map<string, ClaudeSession>();
   private readonly events = new EventEmitter();
+  // App-wide fan-out of every tab's state transition (the per-tab `events`
+  // emitter keys on tabId, so it can't broadcast to a subscriber that doesn't
+  // yet know which tabs exist — the sidebar/tab-strip status dots need this).
+  private readonly stateEvents = new EventEmitter();
+
+  /**
+   * Reset stuck states on startup: no sessions run at boot, so a tab persisted
+   * as Running/Waiting (the app quit mid-turn) would otherwise show a live dot
+   * forever. Errors are kept so "last run errored" survives a restart.
+   */
+  reconcileOnStartup(): void {
+    for (const tab of listAllTabs()) {
+      if (
+        tab.claudeState === ClaudeSessionState.Running ||
+        tab.claudeState === ClaudeSessionState.Waiting
+      ) {
+        upsertTab({ ...tab, claudeState: ClaudeSessionState.Idle });
+      }
+    }
+  }
 
   /** A workspace's working folder — its worktree path (null until it has one). */
   getCwd(workspaceId: string): string | null {
@@ -508,6 +532,7 @@ export class ClaudeService {
       kind: ChatEventKind.Config,
       model,
       effort: session?.effort ?? tab?.effort ?? null,
+      planMode: session?.planMode ?? tab?.planMode ?? false,
     });
   }
 
@@ -521,13 +546,49 @@ export class ClaudeService {
     if (tab) upsertTab({ ...tab, effort });
     if (this.sessions.has(tabId)) this.disposeSession(tabId);
     this.setState(tabId, ClaudeSessionState.Idle);
-    this.emit(tabId, { kind: ChatEventKind.Config, model: tab?.model ?? null, effort });
+    this.emit(tabId, {
+      kind: ChatEventKind.Config,
+      model: tab?.model ?? null,
+      effort,
+      planMode: tab?.planMode ?? false,
+    });
+  }
+
+  /**
+   * Toggle a tab's plan mode. Persists it and applies it live if a session
+   * exists — the SDK supports switching `permissionMode` on a running session
+   * (like `setModel`), so no teardown is needed.
+   */
+  async setPlanMode(tabId: string, planMode: boolean): Promise<void> {
+    const tab = getTab(tabId);
+    if (tab) upsertTab({ ...tab, planMode });
+    const session = this.sessions.get(tabId);
+    if (session) {
+      session.planMode = planMode;
+      try {
+        await session.query?.setPermissionMode(planMode ? 'plan' : 'default');
+      } catch (err) {
+        console.warn('[claude] setPermissionMode failed', err);
+      }
+    }
+    this.emit(tabId, {
+      kind: ChatEventKind.Config,
+      model: session?.model ?? tab?.model ?? null,
+      effort: session?.effort ?? tab?.effort ?? null,
+      planMode,
+    });
   }
 
   /** Subscribe to a tab's ChatEvents; returns an unsubscribe function. */
   onEvent(tabId: string, cb: (event: ChatEvent) => void): () => void {
     this.events.on(tabId, cb);
     return () => this.events.off(tabId, cb);
+  }
+
+  /** Subscribe to every tab's state transitions; returns an unsubscribe function. */
+  onAnyStateChange(cb: (change: TabStateChange) => void): () => void {
+    this.stateEvents.on('change', cb);
+    return () => this.stateEvents.off('change', cb);
   }
 
   /** Hydrate a tab on mount: persisted state, resume id, cwd, and transcript. */
@@ -547,6 +608,7 @@ export class ClaudeService {
       // Prefer the explicit selection; fall back to what the last turn ran as.
       model: session ? (session.model ?? session.reportedModel) : (tab?.model ?? null),
       effort: session?.effort ?? tab?.effort ?? null,
+      planMode: session?.planMode ?? tab?.planMode ?? false,
       messages,
       pendingPermissions: session
         ? [...session.pendingPermissions.values()].map((p) => p.request)
@@ -573,6 +635,7 @@ export class ClaudeService {
     session.sessionId = tab.claudeSessionId;
     session.model = tab.model;
     session.effort = tab.effort;
+    session.planMode = tab.planMode;
     this.sessions.set(tab.id, session);
     void this.run(session, tab.claudeSessionId);
     return session;
@@ -602,7 +665,7 @@ export class ClaudeService {
           resume: resumeSessionId ?? undefined,
           model: session.model ?? DEFAULT_MODEL,
           effort: session.effort ?? DEFAULT_EFFORT,
-          permissionMode: 'default',
+          permissionMode: session.planMode ? 'plan' : 'default',
           canUseTool: this.makePermissionHandler(session),
           includePartialMessages: true,
           systemPrompt: { type: 'preset', preset: 'claude_code' },
@@ -910,6 +973,12 @@ export class ClaudeService {
     const tab = getTab(tabId);
     if (tab && tab.claudeState !== state) upsertTab({ ...tab, claudeState: state });
     this.emit(tabId, { kind: ChatEventKind.State, state });
+    // Fan out app-wide for the status dots. Prefer the live session's workspace,
+    // falling back to the persisted tab so a transition with no session object
+    // never broadcasts an empty id.
+    const workspaceId = this.sessions.get(tabId)?.workspaceId ?? tab?.workspaceId;
+    if (workspaceId)
+      this.stateEvents.emit('change', { tabId, workspaceId, state } satisfies TabStateChange);
   }
 
   private emit(tabId: string, event: ChatEvent): void {

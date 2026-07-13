@@ -44,6 +44,8 @@ type ChatState = {
   model: string | null;
   /** Selected reasoning effort (null = model default). */
   effort: ReasoningEffort | null;
+  /** Whether the tab is in plan mode (SDK `permissionMode: 'plan'`). */
+  planMode: boolean;
   /** Models offered by the picker (loaded lazily from the main process). */
   availableModels: ModelOption[];
   messages: ChatEntry[];
@@ -67,6 +69,7 @@ const INITIAL: ChatState = {
   cwd: null,
   model: null,
   effort: null,
+  planMode: false,
   // Seed with the curated models so the picker always shows them immediately,
   // even before (or independent of) the live SDK fetch.
   availableModels: CURATED_MODELS,
@@ -124,7 +127,11 @@ function isTabWatched(tabId: string): boolean {
  * but only for a tab the user isn't actively watching, and only if the sound is
  * enabled. Keeps the reducer readable.
  */
-function maybePingOnFinish(tabId: string, prev: ClaudeSessionState, next: ClaudeSessionState): void {
+function maybePingOnFinish(
+  tabId: string,
+  prev: ClaudeSessionState,
+  next: ClaudeSessionState,
+): void {
   const finished =
     (prev === ClaudeSessionState.Running || prev === ClaudeSessionState.Waiting) &&
     next === ClaudeSessionState.Idle;
@@ -203,7 +210,7 @@ function applyEvent(tabId: string, event: ChatEvent): void {
       set((s) => ({ pendingQuestions: s.pendingQuestions.filter((q) => q.id !== event.id) }));
       break;
     case ChatEventKind.Config:
-      set({ model: event.model, effort: event.effort });
+      set({ model: event.model, effort: event.effort, planMode: event.planMode });
       break;
     case ChatEventKind.Cwd:
       // Folder change resets the session but keeps the persisted transcript
@@ -296,6 +303,7 @@ export function useChatSync(tabId: string): void {
           cwd: snapshot.cwd,
           model: snapshot.model,
           effort: snapshot.effort,
+          planMode: snapshot.planMode,
           messages: snapshot.messages,
           pendingPermissions: snapshot.pendingPermissions,
           pendingQuestions: snapshot.pendingQuestions,
@@ -388,4 +396,15 @@ export function setModel(tabId: string, model: string): void {
 export function setEffort(tabId: string, effort: ReasoningEffort): void {
   storeFor(tabId).setState({ effort });
   void trpc().claude.setEffort.mutate({ tabId, effort });
+}
+
+/** Set a tab's plan mode (optimistic: store updates, main confirms via Config). */
+export function setPlanMode(tabId: string, planMode: boolean): void {
+  storeFor(tabId).setState({ planMode });
+  void trpc().claude.setPlanMode.mutate({ tabId, planMode });
+}
+
+/** Flip a tab's plan mode — the Shift+Tab toggle. */
+export function togglePlanMode(tabId: string): void {
+  setPlanMode(tabId, !storeFor(tabId).getState().planMode);
 }

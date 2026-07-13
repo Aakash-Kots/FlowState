@@ -17,6 +17,8 @@ export type Tab = {
   model: string | null;
   /** Per-tab reasoning effort; null inherits the model default. */
   effort: ReasoningEffort | null;
+  /** Whether the tab is in plan mode (SDK `permissionMode: 'plan'`). */
+  planMode: boolean;
   position: number;
   createdAt: string;
 };

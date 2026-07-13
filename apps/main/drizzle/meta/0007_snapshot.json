@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "c73d53a3-88d3-4fb3-8121-436e1faa9c50",
-  "prevId": "2bbca61f-024a-493c-8930-715ffa7a3fd9",
+  "id": "e3f93833-3372-4366-8506-0bb93db09632",
+  "prevId": "1436d245-d622-468c-914f-30335dbb53cb",
   "tables": {
     "claude_messages": {
       "name": "claude_messages",
@@ -281,6 +281,14 @@
           "notNull": false,
           "autoincrement": false
         },
+        "plan_mode": {
+          "name": "plan_mode",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
         "position": {
           "name": "position",
           "type": "integer",
@@ -437,6 +445,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
+          "autoincrement": false
+        },
+        "base_ref": {
+          "name": "base_ref",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
           "autoincrement": false
         },
         "linear_issue": {

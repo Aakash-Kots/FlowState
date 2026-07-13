@@ -63,7 +63,9 @@ function RepoList({
   onSelect: (repo: GithubRepo) => void;
 }) {
   if (loading) {
-    return <p className="px-1 py-6 text-center text-sm text-muted-foreground">Loading repositories…</p>;
+    return (
+      <p className="px-1 py-6 text-center text-sm text-muted-foreground">Loading repositories…</p>
+    );
   }
   if (error) {
     return <p className="px-1 py-6 text-center text-sm text-warn">{error}</p>;

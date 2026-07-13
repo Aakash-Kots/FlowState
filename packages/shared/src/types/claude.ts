@@ -121,8 +121,13 @@ export type ChatEvent =
   // Claude asked a structured question (AskUserQuestion) — answered near the input.
   | { kind: ChatEventKind.QuestionRequest; id: string; questions: QuestionItem[] }
   | { kind: ChatEventKind.QuestionResolved; id: string }
-  // The session's model/effort changed (e.g. the user picked a new one).
-  | { kind: ChatEventKind.Config; model: string | null; effort: ReasoningEffort | null }
+  // The session's model/effort/plan-mode changed (e.g. the user picked a new one).
+  | {
+      kind: ChatEventKind.Config;
+      model: string | null;
+      effort: ReasoningEffort | null;
+      planMode: boolean;
+    }
   | { kind: ChatEventKind.Cwd; cwd: string | null }
   // An auto-generated tab title derived from the conversation's first exchange.
   | { kind: ChatEventKind.Title; title: string }
@@ -130,6 +135,13 @@ export type ChatEvent =
   // from the first exchange.
   | { kind: ChatEventKind.WorktreeName; workspaceId: string; name: string; branch: string }
   | { kind: ChatEventKind.Error; message: string };
+
+/**
+ * An app-wide broadcast of a single tab's session-state transition. Streamed
+ * over `claude.onAnyState` so the renderer can show live status dots for every
+ * tab (and its worktree), not just the active one.
+ */
+export type TabStateChange = { tabId: string; workspaceId: string; state: ClaudeSessionState };
 
 /** One transcript entry in a snapshot: a message plus when it was persisted. */
 export type ChatSnapshotEntry = {
@@ -144,6 +156,7 @@ export type ChatSnapshot = {
   cwd: string | null;
   model: string | null;
   effort: ReasoningEffort | null;
+  planMode: boolean;
   messages: ChatSnapshotEntry[];
   pendingPermissions: PermissionRequest[];
   pendingQuestions: QuestionRequest[];

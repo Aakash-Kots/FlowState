@@ -2,7 +2,15 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { ClaudeSessionState } from '@flowstate/shared';
-import { interruptSession, sendPrompt, useChat, useFocusInput, useTabId } from '@/lib/chat';
+import {
+  interruptSession,
+  sendPrompt,
+  togglePlanMode,
+  useChat,
+  useFocusInput,
+  useTabId,
+} from '@/lib/chat';
+import { cn } from '../ui/cn';
 import { Button } from '../ui/Button';
 import { InlinePrompt } from './InlinePrompt';
 import { InputToolbar } from './InputToolbar';
@@ -19,6 +27,7 @@ const LINE_HEIGHT_PX = 20;
 export function InputBar({ disabled }: { disabled: boolean }) {
   const tabId = useTabId();
   const sessionState = useChat((s) => s.sessionState);
+  const planMode = useChat((s) => s.planMode);
   const error = useChat((s) => s.error);
   const hasPrompt = useChat(
     (s) => s.pendingPermissions.length > 0 || s.pendingQuestions.length > 0,
@@ -58,7 +67,12 @@ export function InputBar({ disabled }: { disabled: boolean }) {
             {error}
           </div>
         )}
-        <div className="rounded-2xl border border-border bg-muted shadow-lg shadow-black/20">
+        <div
+          className={cn(
+            'rounded-2xl border bg-secondary shadow-lg shadow-black/20',
+            planMode ? 'border-primary/40' : 'border-border',
+          )}
+        >
           {hasPrompt ? (
             <InlinePrompt />
           ) : (
@@ -67,12 +81,14 @@ export function InputBar({ disabled }: { disabled: boolean }) {
                 <textarea
                   ref={textareaRef}
                   value={text}
-                  rows={1}
+                  rows={3}
                   disabled={disabled}
                   placeholder={
                     disabled
                       ? 'Choose a folder to start…'
-                      : 'Message Claude — Enter to send, Shift+Enter for a new line'
+                      : planMode
+                        ? 'Plan this out — Claude will propose a plan first (Shift+Tab to exit)'
+                        : 'Message Claude — Enter to send, Shift+Enter for a new line'
                   }
                   onChange={(e) => {
                     setText(e.target.value);
@@ -82,12 +98,16 @@ export function InputBar({ disabled }: { disabled: boolean }) {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault();
                       submit();
+                    } else if (e.key === 'Tab' && e.shiftKey) {
+                      // Toggle plan mode without letting Tab move focus away.
+                      e.preventDefault();
+                      togglePlanMode(tabId);
                     } else if (e.key === 'Escape' && busy) {
                       e.preventDefault();
                       interruptSession(tabId);
                     }
                   }}
-                  className="max-h-48 min-h-[36px] flex-1 resize-none bg-transparent px-2 py-1.5 text-sm leading-5 text-neutral-100 placeholder:text-muted-foreground focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                  className="max-h-48 min-h-[76px] flex-1 resize-none bg-transparent px-2 py-1.5 text-sm leading-5 text-neutral-100 placeholder:text-muted-foreground focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
                 />
                 {busy ? (
                   <Button

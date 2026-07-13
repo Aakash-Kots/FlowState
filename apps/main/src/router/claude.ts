@@ -1,7 +1,12 @@
 import { observable } from '@trpc/server/observable';
 import { BrowserWindow, dialog } from 'electron';
 import { z } from 'zod';
-import { PermissionBehavior, ReasoningEffort, type ChatEvent } from '@flowstate/shared';
+import {
+  PermissionBehavior,
+  ReasoningEffort,
+  type ChatEvent,
+  type TabStateChange,
+} from '@flowstate/shared';
 import { claudeService } from '../services/claude';
 import { publicProcedure, router } from '../trpc';
 
@@ -44,6 +49,10 @@ export const claudeRouter = router({
     .mutation(({ input }) => {
       claudeService.setEffort(input.tabId, input.effort);
     }),
+
+  setPlanMode: publicProcedure
+    .input(z.object({ tabId: z.string(), planMode: z.boolean() }))
+    .mutation(({ input }) => claudeService.setPlanMode(input.tabId, input.planMode)),
 
   answerQuestion: publicProcedure
     .input(
@@ -95,4 +104,12 @@ export const claudeRouter = router({
         claudeService.onEvent(input.tabId, (event) => emit.next(event)),
       ),
     ),
+
+  // App-wide stream of every tab's state transitions — feeds the status dots on
+  // the tab strip and sidebar worktree rows (unlike `onEvent`, not tab-scoped).
+  onAnyState: publicProcedure.subscription(() =>
+    observable<TabStateChange>((emit) =>
+      claudeService.onAnyStateChange((change) => emit.next(change)),
+    ),
+  ),
 });

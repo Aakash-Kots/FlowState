@@ -60,17 +60,12 @@
       "indexes": {
         "idx_claude_messages_workspace_session": {
           "name": "idx_claude_messages_workspace_session",
-          "columns": [
-            "workspace_id",
-            "session_id"
-          ],
+          "columns": ["workspace_id", "session_id"],
           "isUnique": false
         },
         "idx_claude_messages_tab": {
           "name": "idx_claude_messages_tab",
-          "columns": [
-            "tab_id"
-          ],
+          "columns": ["tab_id"],
           "isUnique": false
         }
       },
@@ -79,12 +74,8 @@
           "name": "claude_messages_workspace_id_workspaces_id_fk",
           "tableFrom": "claude_messages",
           "tableTo": "workspaces",
-          "columnsFrom": [
-            "workspace_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["workspace_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -92,12 +83,8 @@
           "name": "claude_messages_tab_id_tabs_id_fk",
           "tableFrom": "claude_messages",
           "tableTo": "tabs",
-          "columnsFrom": [
-            "tab_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["tab_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -298,9 +285,7 @@
       "indexes": {
         "idx_tabs_workspace": {
           "name": "idx_tabs_workspace",
-          "columns": [
-            "workspace_id"
-          ],
+          "columns": ["workspace_id"],
           "isUnique": false
         }
       },
@@ -309,12 +294,8 @@
           "name": "tabs_workspace_id_workspaces_id_fk",
           "tableFrom": "tabs",
           "tableTo": "workspaces",
-          "columnsFrom": [
-            "workspace_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["workspace_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }

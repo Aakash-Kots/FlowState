@@ -14,9 +14,10 @@
     "esbuild"
   ],
   "scripts": {
-    "dev": "concurrently -k -n renderer,main -c blue,green \"bun run dev:renderer\" \"bun run dev:main\"",
+    "dev": "bun scripts/dev.mjs",
+    "dev:concurrent": "concurrently -k -n renderer,main -c blue,green \"bun run dev:renderer\" \"bun run dev:main\"",
     "dev:renderer": "bun run --filter '@flowstate/renderer' dev",
-    "dev:main": "wait-on tcp:127.0.0.1:3000 && bun run --filter '@flowstate/main' dev",
+    "dev:main": "wait-on tcp:127.0.0.1:${FLOWSTATE_DEV_PORT:-3000} && bun run --filter '@flowstate/main' dev",
     "build": "bun run build:renderer && bun run build:main",
     "build:renderer": "bun run --filter '@flowstate/renderer' build",
     "build:main": "bun run --filter '@flowstate/main' build",

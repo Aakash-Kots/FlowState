@@ -50,6 +50,13 @@
       "when": 1783920512444,
       "tag": "0006_flimsy_night_thrasher",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1783966006553,
+      "tag": "0007_soft_katie_power",
+      "breakpoints": true
     }
   ]
 }

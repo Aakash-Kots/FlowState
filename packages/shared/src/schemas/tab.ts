@@ -17,6 +17,7 @@ export const tabSchema = z.object({
   // Per-tab Claude session config (null = inherit the CLI/SDK default).
   model: z.string().nullable().default(null),
   effort: reasoningEffortSchema.nullable().default(null),
+  planMode: z.boolean().default(false),
   position: z.number().int(),
   createdAt: z.string().datetime(),
 });

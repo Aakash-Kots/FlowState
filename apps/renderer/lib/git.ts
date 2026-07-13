@@ -194,7 +194,11 @@ export async function commit(): Promise<boolean> {
   const { summary, description } = useGit.getState();
   if (!summary.trim()) return false;
   const ok = await withRefresh((workspaceId) =>
-    trpc().git.commit.mutate({ workspaceId, summary: summary.trim(), description: description.trim() || undefined }),
+    trpc().git.commit.mutate({
+      workspaceId,
+      summary: summary.trim(),
+      description: description.trim() || undefined,
+    }),
   );
   if (ok) useGit.setState({ summary: '', description: '' });
   return ok;
@@ -225,7 +229,9 @@ export async function commitAndCreatePr(): Promise<void> {
   useGit.setState({ busy: true, actionError: null });
   try {
     const pr = await trpc().git.createPr.mutate({ workspaceId, title: title || 'Changes', body });
-    await trpc().app.openExternal.mutate({ url: pr.url }).catch(() => {});
+    await trpc()
+      .app.openExternal.mutate({ url: pr.url })
+      .catch(() => {});
     useGit.setState({ busy: false });
     await refreshStatus();
     void refreshPr();
@@ -244,7 +250,9 @@ export async function createPr(title: string, body?: string): Promise<void> {
   useGit.setState({ busy: true, actionError: null });
   try {
     const pr = await trpc().git.createPr.mutate({ workspaceId, title, body });
-    await trpc().app.openExternal.mutate({ url: pr.url }).catch(() => {});
+    await trpc()
+      .app.openExternal.mutate({ url: pr.url })
+      .catch(() => {});
     useGit.setState({ busy: false });
     await refreshStatus();
     void refreshPr();

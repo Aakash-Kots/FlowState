@@ -11,6 +11,7 @@ export default {
         success: '#4ade80',
         warn: '#fbbf24',
         danger: '#f87171',
+        info: '#60a5fa',
 
         // shadcn/ui semantic tokens — resolve to the CSS variables in globals.css.
         // The full grey ramp + cream `primary` live there; use these everywhere

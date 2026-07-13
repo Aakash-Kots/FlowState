@@ -12,7 +12,10 @@ import { closeStore, getWindowBounds, initStore, setWindowBounds } from './store
 // Constants //
 ///////////////
 
-const DEV_RENDERER_URL = 'http://localhost:3000';
+// The dev orchestrator (scripts/dev.mjs) picks the first open port at/after
+// 3000 and passes it through FLOWSTATE_DEV_PORT; fall back to 3000 when the
+// main process is launched on its own.
+const DEV_RENDERER_URL = `http://localhost:${process.env.FLOWSTATE_DEV_PORT ?? '3000'}`;
 
 const DEFAULT_BOUNDS = { width: 1440, height: 900 };
 
@@ -94,6 +97,7 @@ function buildAppMenu(): void {
         item(ShortcutCommand.ToggleSidebar, 'Toggle Sidebar'),
         item(ShortcutCommand.OpenCommandPalette, 'Command Palette…'),
         item(ShortcutCommand.ShowShortcutsHelp, 'Keyboard Shortcuts'),
+        item(ShortcutCommand.OpenSettings, 'Settings…'),
         { type: 'separator' },
         { role: 'reload' },
         { role: 'toggleDevTools' },
@@ -169,6 +173,10 @@ function createWindow(): void {
 void app.whenReady().then(() => {
   // Open the local SQLite store and run migrations before any window opens.
   initStore();
+
+  // No Claude sessions run at boot — clear any tab left mid-turn so its status
+  // dot reflects reality rather than a stuck "working" state.
+  claudeService.reconcileOnStartup();
 
   // Application menu carries the keyboard accelerators; rebuild it whenever the
   // user rebinds a shortcut so the native accelerators stay in sync.

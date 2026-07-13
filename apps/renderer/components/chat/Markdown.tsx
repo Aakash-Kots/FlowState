@@ -2,6 +2,7 @@
 
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { highlightToHtml, langForFence } from '@/lib/highlight';
 
 /**
  * Assistant-message markdown styled onto the app's dark tokens. Pure
@@ -43,16 +44,28 @@ export function Markdown({ children }: { children: string }) {
           code: ({ className, children }) => {
             // Fenced blocks arrive wrapped in <pre>; inline code has no language class.
             const isBlock = /language-/.test(className ?? '');
-            return isBlock ? (
-              <code className={className}>{children}</code>
+            if (!isBlock) {
+              return (
+                <code className="rounded bg-muted px-1 py-0.5 font-mono text-[0.85em] text-neutral-100">
+                  {children}
+                </code>
+              );
+            }
+            // Syntax-highlight the block in the user's chosen code theme; fall back
+            // to plain text for unknown languages. Prism escapes the markup it emits.
+            const raw = String(children).replace(/\n$/, '');
+            const html = highlightToHtml(raw, langForFence(className));
+            return html !== null ? (
+              <code className={className} dangerouslySetInnerHTML={{ __html: html }} />
             ) : (
-              <code className="rounded bg-muted px-1 py-0.5 font-mono text-[0.85em] text-neutral-100">
-                {children}
-              </code>
+              <code className={className}>{children}</code>
             );
           },
           pre: ({ children }) => (
-            <pre className="overflow-x-auto rounded-md border border-border bg-muted p-3 font-mono text-xs leading-relaxed">
+            <pre
+              className="code-hl overflow-x-auto rounded-md border border-border p-3 font-mono text-xs leading-relaxed"
+              style={{ backgroundColor: 'var(--code-bg)', color: 'var(--code-fg)' }}
+            >
               {children}
             </pre>
           ),

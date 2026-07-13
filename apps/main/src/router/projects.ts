@@ -71,37 +71,39 @@ export const projectsRouter = router({
   }),
 
   /** Clone a repo, persist it, and make it the active working folder. */
-  add: publicProcedure.input(addProjectInputSchema).mutation(async ({ input }): Promise<Project> => {
-    let clone: { localPath: string; defaultBranch: string };
-    try {
-      clone = await githubService.cloneRepo(input);
-    } catch (err) {
-      throw new TRPCError({
-        code: 'INTERNAL_SERVER_ERROR',
-        message: err instanceof Error ? err.message : 'Failed to clone repository.',
+  add: publicProcedure
+    .input(addProjectInputSchema)
+    .mutation(async ({ input }): Promise<Project> => {
+      let clone: { localPath: string; defaultBranch: string };
+      try {
+        clone = await githubService.cloneRepo(input);
+      } catch (err) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: err instanceof Error ? err.message : 'Failed to clone repository.',
+        });
+      }
+
+      const [owner, name] = input.fullName.split('/');
+      const project = upsertProject({
+        id: randomUUID(),
+        name: name ?? input.fullName,
+        owner: owner ?? '',
+        fullName: input.fullName,
+        cloneUrl: input.cloneUrl,
+        localPath: clone.localPath,
+        defaultBranch: clone.defaultBranch,
+        private: input.private,
+        setupScript: null,
+        runScript: null,
+        createdAt: new Date().toISOString(),
       });
-    }
 
-    const [owner, name] = input.fullName.split('/');
-    const project = upsertProject({
-      id: randomUUID(),
-      name: name ?? input.fullName,
-      owner: owner ?? '',
-      fullName: input.fullName,
-      cloneUrl: input.cloneUrl,
-      localPath: clone.localPath,
-      defaultBranch: clone.defaultBranch,
-      private: input.private,
-      setupScript: null,
-      runScript: null,
-      createdAt: new Date().toISOString(),
-    });
+      // Make the freshly cloned repo the active project working folder.
+      claudeService.setCwd(DEFAULT_WORKSPACE_ID, project.localPath);
 
-    // Make the freshly cloned repo the active project working folder.
-    claudeService.setCwd(DEFAULT_WORKSPACE_ID, project.localPath);
-
-    return project;
-  }),
+      return project;
+    }),
 
   /** Set a project's Setup/Run scripts (shared by every worktree of the project). */
   setScripts: publicProcedure

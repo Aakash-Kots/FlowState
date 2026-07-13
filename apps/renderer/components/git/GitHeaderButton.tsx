@@ -3,13 +3,7 @@
 import { useState, type ReactNode } from 'react';
 import { CheckCircle2, GitPullRequestArrow, Loader2, Trash2, XCircle } from 'lucide-react';
 import { PrChecks, PrState, type PrStatus } from '@flowstate/shared';
-import {
-  autoCommitSummary,
-  commitAndPushWith,
-  createPr,
-  useGit,
-  useGitSync,
-} from '@/lib/git';
+import { autoCommitSummary, commitAndPushWith, createPr, useGit, useGitSync } from '@/lib/git';
 import { removeWorktree, useProjects } from '@/lib/projects';
 import { trpc } from '@/lib/trpc';
 import { useWorkspace } from '@/lib/workspace';
@@ -128,7 +122,11 @@ function PrBadge({ pr }: { pr: PrStatus }) {
   return (
     <button
       type="button"
-      onClick={() => void trpc().app.openExternal.mutate({ url: pr.url }).catch(() => {})}
+      onClick={() =>
+        void trpc()
+          .app.openExternal.mutate({ url: pr.url })
+          .catch(() => {})
+      }
       title={`PR #${pr.number} — open on GitHub`}
       className={cn(
         'inline-flex items-center gap-1.5 font-medium transition-opacity hover:opacity-80',
