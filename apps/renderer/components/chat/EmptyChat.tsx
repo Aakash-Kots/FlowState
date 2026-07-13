@@ -54,7 +54,7 @@ export function EmptyChat() {
             key={starter.label}
             type="button"
             onClick={() => sendPrompt(tabId, starter.prompt)}
-            className="flex items-center gap-2.5 rounded-md border border-edge bg-surface px-3 py-2 text-left text-sm text-neutral-200 transition-colors hover:bg-raised hover:text-neutral-100"
+            className="flex items-center gap-2.5 rounded-md border border-border bg-secondary px-3 py-2 text-left text-sm text-neutral-200 transition-colors hover:bg-muted hover:text-neutral-100"
           >
             <span className="shrink-0 text-muted-foreground">{starter.glyph}</span>
             {starter.label}

@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { create } from 'zustand';
 import { DEFAULT_WORKSPACE_ID, MAX_TABS_PER_WORKSPACE, type Tab } from '@flowstate/shared';
+import { WorkspaceView } from './enums/view';
 import { trpc } from './trpc';
 
 ///////////
@@ -17,6 +18,8 @@ type WorkspaceState = {
   cwd: string | null;
   tabs: Tab[];
   activeTabId: string | null;
+  /** Which surface the worktree is showing — chat tabs or terminals. */
+  viewMode: WorkspaceView;
 };
 
 ///////////////
@@ -29,7 +32,11 @@ const INITIAL: WorkspaceState = {
   cwd: null,
   tabs: [],
   activeTabId: null,
+  viewMode: WorkspaceView.Workspace,
 };
+
+/** Top-level views in cycle order (drives `cycleViewMode`). */
+const VIEW_ORDER: WorkspaceView[] = Object.values(WorkspaceView);
 
 export const useWorkspace = create<WorkspaceState>(() => INITIAL);
 
@@ -66,7 +73,14 @@ export function useWorkspaceSync(): void {
  */
 export async function selectWorkspace(workspaceId: string): Promise<void> {
   if (useWorkspace.getState().workspaceId === workspaceId) return;
-  useWorkspace.setState({ hydrated: false, workspaceId, tabs: [], activeTabId: null });
+  // A fresh worktree always lands on its chat tabs, not whatever the last one showed.
+  useWorkspace.setState({
+    hydrated: false,
+    workspaceId,
+    tabs: [],
+    activeTabId: null,
+    viewMode: WorkspaceView.Workspace,
+  });
   try {
     const [tabs, cwd] = await Promise.all([
       trpc().tabs.list.query({ workspaceId }),
@@ -80,6 +94,23 @@ export async function selectWorkspace(workspaceId: string): Promise<void> {
 
 export function selectTab(tabId: string): void {
   useWorkspace.setState({ activeTabId: tabId });
+}
+
+/** Switch the worktree's top-level surface (chat tabs ↔ terminals). */
+export function setViewMode(viewMode: WorkspaceView): void {
+  useWorkspace.setState({ viewMode });
+}
+
+/**
+ * Cycle the worktree's top-level view forward/backward, wrapping around. The
+ * order follows the `WorkspaceView` enum, so new sections (e.g. Git review) join
+ * the rotation automatically.
+ */
+export function cycleViewMode(delta: 1 | -1): void {
+  const { viewMode } = useWorkspace.getState();
+  const i = VIEW_ORDER.indexOf(viewMode);
+  const next = VIEW_ORDER[(i + delta + VIEW_ORDER.length) % VIEW_ORDER.length]!;
+  setViewMode(next);
 }
 
 /** Focus the tab at `index` (0-based), if one exists there. */

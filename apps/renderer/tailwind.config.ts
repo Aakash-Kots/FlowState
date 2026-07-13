@@ -7,25 +7,15 @@ export default {
   theme: {
     extend: {
       colors: {
-        // FlowState flat palette — kept so all existing markup keeps working.
-        // App background — neutral deep charcoal (no blue cast).
-        base: '#161718',
-        // Layered gray surfaces.
-        surface: '#1e1f21',
-        raised: '#26282a',
-        // Kept for back-compat with existing markup (== surface).
-        panel: '#1e1f21',
-        // Borders / hairlines.
-        edge: '#37383b',
-        // State accents.
+        // State accents — semantic colors with no shadcn token equivalent.
         success: '#4ade80',
         warn: '#fbbf24',
         danger: '#f87171',
 
         // shadcn/ui semantic tokens — resolve to the CSS variables in globals.css.
-        // `muted` and `accent` are objects here (they gained a `-foreground`
-        // companion), which is why existing `text-muted`/`bg-accent` usages were
-        // migrated to `text-muted-foreground`/`bg-primary` etc.
+        // The full grey ramp + cream `primary` live there; use these everywhere
+        // (`bg-background`, `bg-secondary`, `bg-muted`, `bg-accent`, `border`)
+        // rather than one-off hard-coded colors.
         border: 'hsl(var(--border))',
         input: 'hsl(var(--input))',
         ring: 'hsl(var(--ring))',

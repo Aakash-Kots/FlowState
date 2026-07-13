@@ -23,8 +23,8 @@ export function CtaIconButton({ icon: Icon, children, className, ...props }: Cta
   return (
     <button
       className={cn(
-        'flex w-full items-center gap-2 rounded-md border border-dashed border-edge px-2 py-1.5 text-sm font-medium text-muted-foreground',
-        'transition-colors hover:border-edge/80 hover:bg-raised hover:text-foreground',
+        'flex w-full items-center gap-2 rounded-md border border-dashed border-border px-2 py-1.5 text-sm font-medium text-muted-foreground',
+        'transition-colors hover:border-border/80 hover:bg-muted hover:text-foreground',
         'focus:outline-none focus-visible:ring-1 focus-visible:ring-ring/60 disabled:cursor-not-allowed disabled:opacity-50',
         'group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0',
         className,

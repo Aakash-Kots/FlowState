@@ -79,7 +79,7 @@ export function DropdownMenu({
       {open && (
         <div
           className={cn(
-            'absolute bottom-full z-50 mb-1.5 min-w-[15rem] overflow-hidden rounded-lg border border-edge bg-raised p-1 shadow-xl',
+            'absolute bottom-full z-50 mb-1.5 min-w-[15rem] overflow-hidden rounded-lg border border-border bg-muted p-1 shadow-xl',
             align === 'end' ? 'right-0' : 'left-0',
           )}
         >
@@ -99,7 +99,7 @@ export function DropdownItem({ onSelect, selected, disabled, children }: Dropdow
       onClick={onSelect}
       className={cn(
         'flex w-full items-start gap-2 rounded-md px-2.5 py-2 text-left text-xs transition-colors',
-        'hover:bg-edge focus:bg-edge focus:outline-none disabled:cursor-not-allowed disabled:opacity-50',
+        'hover:bg-accent focus:bg-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-50',
         selected ? 'text-neutral-100' : 'text-neutral-300',
       )}
     >

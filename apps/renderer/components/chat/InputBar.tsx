@@ -51,14 +51,14 @@ export function InputBar({ disabled }: { disabled: boolean }) {
   };
 
   return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-base via-base/95 to-transparent px-4 pb-4 pt-10">
+    <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-background via-background/95 to-transparent px-4 pb-4 pt-10">
       <div className="pointer-events-auto mx-auto max-w-3xl">
         {error && (
-          <div className="mb-2 rounded-md border border-danger/40 bg-raised px-3 py-2 text-xs text-danger">
+          <div className="mb-2 rounded-md border border-danger/40 bg-muted px-3 py-2 text-xs text-danger">
             {error}
           </div>
         )}
-        <div className="rounded-2xl border border-edge bg-raised shadow-lg shadow-black/20">
+        <div className="rounded-2xl border border-border bg-muted shadow-lg shadow-black/20">
           {hasPrompt ? (
             <InlinePrompt />
           ) : (

@@ -19,7 +19,7 @@ export function StatusPill({ status, label }: { status: ConnStatus; label?: stri
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-full border border-edge bg-raised px-2.5 py-1 text-xs font-medium',
+        'inline-flex items-center gap-1.5 rounded-full border border-border bg-muted px-2.5 py-1 text-xs font-medium',
         s.text,
       )}
     >

@@ -47,6 +47,28 @@ export const tabs = sqliteTable(
   (t) => [index('idx_tabs_workspace').on(t.workspaceId)],
 );
 
+// A terminal tab is one shell inside a workspace/worktree. Two default tabs
+// (Setup + Run, driven by the project's scripts) are seeded per workspace,
+// alongside up to MAX_TERMINALS_PER_WORKSPACE ad-hoc shells. The persisted row
+// outlives its pty, which is respawned (keyed by the tab id) on demand.
+export const terminalTabs = sqliteTable(
+  'terminal_tabs',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    title: text('title').notNull(),
+    // 'setup' | 'run' | 'shell' (TerminalKind).
+    kind: text('kind').notNull().default('shell'),
+    // Auto-run command for Setup/Run (resolved project script); null for a plain shell.
+    command: text('command'),
+    position: integer('position').notNull(),
+    createdAt: text('created_at').notNull(),
+  },
+  (t) => [index('idx_terminal_tabs_workspace').on(t.workspaceId)],
+);
+
 export const claudeMessages = sqliteTable(
   'claude_messages',
   {
@@ -79,6 +101,9 @@ export const projects = sqliteTable('projects', {
   localPath: text('local_path').notNull(),
   defaultBranch: text('default_branch').notNull(),
   private: integer('private', { mode: 'boolean' }).notNull(),
+  // Project-scoped shell commands for the Setup/Run default terminals; null until set.
+  setupScript: text('setup_script'),
+  runScript: text('run_script'),
   createdAt: text('created_at').notNull(),
 });
 

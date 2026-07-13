@@ -29,7 +29,7 @@ function PermissionPrompt({ request }: { request: PermissionRequest }) {
         <p className="mb-2 text-xs text-muted-foreground">{request.description}</p>
       )}
       {request.input != null && (
-        <pre className="mb-3 max-h-32 overflow-auto whitespace-pre-wrap rounded border border-edge bg-surface p-2 font-mono text-xs text-neutral-300">
+        <pre className="mb-3 max-h-32 overflow-auto whitespace-pre-wrap rounded border border-border bg-secondary p-2 font-mono text-xs text-neutral-300">
           {JSON.stringify(request.input, null, 2)}
         </pre>
       )}
@@ -93,7 +93,7 @@ function QuestionPrompt({ request }: { request: QuestionRequest }) {
         return (
           <div key={q.question} className="flex flex-col gap-2">
             <div className="flex items-center gap-2">
-              <span className="rounded bg-edge px-1.5 py-0.5 text-[11px] font-medium text-neutral-300">
+              <span className="rounded bg-accent px-1.5 py-0.5 text-[11px] font-medium text-neutral-300">
                 {q.header}
               </span>
               <span className="text-sm text-neutral-100">{q.question}</span>
@@ -108,7 +108,7 @@ function QuestionPrompt({ request }: { request: QuestionRequest }) {
                     'flex flex-col gap-0.5 rounded-md border px-3 py-2 text-left text-xs transition-colors',
                     chosen.has(opt.label)
                       ? 'border-primary/60 bg-primary/10 text-neutral-100'
-                      : 'border-edge bg-surface text-neutral-300 hover:border-edge hover:bg-raised',
+                      : 'border-border bg-secondary text-neutral-300 hover:border-border hover:bg-muted',
                   )}
                 >
                   <span className="font-medium">{opt.label}</span>
@@ -134,7 +134,7 @@ function QuestionPrompt({ request }: { request: QuestionRequest }) {
                   submit();
                 }
               }}
-              className="rounded-md border border-edge bg-surface px-3 py-2 text-xs text-neutral-100 placeholder:text-muted-foreground focus:border-primary/50 focus:outline-none"
+              className="rounded-md border border-border bg-secondary px-3 py-2 text-xs text-neutral-100 placeholder:text-muted-foreground focus:border-primary/50 focus:outline-none"
             />
           </div>
         );

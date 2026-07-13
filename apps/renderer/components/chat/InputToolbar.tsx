@@ -40,7 +40,7 @@ export function InputToolbar({ disabled }: { disabled: boolean }) {
   const effortEnabled = !disabled && (current?.supportsEffort ?? false);
   const effortLabel = EFFORT_LABELS[effort];
 
-  const triggerClass = 'px-2 py-1 text-muted-foreground hover:bg-raised hover:text-neutral-100';
+  const triggerClass = 'px-2 py-1 text-muted-foreground hover:bg-muted hover:text-neutral-100';
 
   return (
     <div className="flex items-center gap-1 px-1.5 pb-1.5 pt-1">
@@ -81,7 +81,7 @@ export function InputToolbar({ disabled }: { disabled: boolean }) {
         }
       </DropdownMenu>
 
-      <span className="text-edge">·</span>
+      <span className="text-muted-foreground">·</span>
 
       <DropdownMenu
         disabled={!effortEnabled}

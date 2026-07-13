@@ -5,7 +5,12 @@
  * (`projects.ts`) enforce the output shape.
  */
 import { z } from 'zod';
-import type { AddProjectInput, GithubRepo, Project } from '../types/project';
+import type {
+  AddProjectInput,
+  GithubRepo,
+  Project,
+  UpdateProjectScriptsInput,
+} from '../types/project';
 
 export const githubRepoSchema: z.ZodType<GithubRepo> = z.object({
   owner: z.string(),
@@ -27,6 +32,8 @@ export const projectSchema: z.ZodType<Project> = z.object({
   localPath: z.string(),
   defaultBranch: z.string(),
   private: z.boolean(),
+  setupScript: z.string().nullable(),
+  runScript: z.string().nullable(),
   createdAt: z.string().datetime(),
 });
 
@@ -35,4 +42,10 @@ export const addProjectInputSchema: z.ZodType<AddProjectInput> = z.object({
   cloneUrl: z.string(),
   defaultBranch: z.string(),
   private: z.boolean(),
+});
+
+export const updateProjectScriptsInputSchema: z.ZodType<UpdateProjectScriptsInput> = z.object({
+  projectId: z.string(),
+  setupScript: z.string().nullable(),
+  runScript: z.string().nullable(),
 });

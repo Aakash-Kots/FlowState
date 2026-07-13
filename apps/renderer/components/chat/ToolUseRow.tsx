@@ -28,13 +28,13 @@ export function ToolUseRow({ block, result }: { block: ToolUseBlock; result?: To
   const summary = summarizeInput(block.input);
 
   return (
-    <div className="overflow-hidden rounded-md border border-edge bg-surface">
+    <div className="overflow-hidden rounded-md border border-border bg-secondary">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         className={cn(
           'flex w-full items-center gap-2 px-3 py-1.5 text-left font-mono text-xs',
-          'text-muted-foreground transition-colors hover:bg-raised hover:text-neutral-200',
+          'text-muted-foreground transition-colors hover:bg-muted hover:text-neutral-200',
         )}
       >
         <span className={cn('shrink-0', result?.isError ? 'text-danger' : 'text-muted-foreground')}>
@@ -45,14 +45,14 @@ export function ToolUseRow({ block, result }: { block: ToolUseBlock; result?: To
         <span className="ml-auto shrink-0 text-[10px]">{open ? '▾' : '▸'}</span>
       </button>
       {open && (
-        <div className="space-y-2 border-t border-edge px-3 py-2">
+        <div className="space-y-2 border-t border-border px-3 py-2">
           <pre className="max-h-64 overflow-auto whitespace-pre-wrap font-mono text-xs text-neutral-300">
             {JSON.stringify(block.input, null, 2)}
           </pre>
           {result && (
             <pre
               className={cn(
-                'max-h-64 overflow-auto whitespace-pre-wrap rounded border border-edge bg-raised p-2 font-mono text-xs',
+                'max-h-64 overflow-auto whitespace-pre-wrap rounded border border-border bg-muted p-2 font-mono text-xs',
                 result.isError ? 'text-danger' : 'text-neutral-300',
               )}
             >

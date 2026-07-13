@@ -3,73 +3,75 @@
 @tailwind utilities;
 
 /*
- * shadcn/ui design tokens, mapped to FlowState's existing dark palette (see
- * tailwind.config.ts flat colors: base/surface/raised/edge/muted/accent). The
- * app is always dark, so the tokens live on :root; .dark mirrors them so
- * shadcn primitives that assume a `.dark` class still resolve.
+ * shadcn/ui design tokens — the single source of truth for FlowState's colors.
+ * The grey ramp goes darkest → lightest: `background` (near-black app canvas) →
+ * `secondary`/`card`/`sidebar` (the lighter grey surface) → `muted`/`accent`
+ * (raised fills + hover) → `border`. `primary` is a light cream accent that
+ * contrasts the dark canvas. The app is always dark, so the tokens live on
+ * :root; .dark mirrors them so shadcn primitives that assume `.dark` resolve.
  */
 :root {
-  --background: 220 4% 9%; /* base    #161718 */
+  --background: 220 5% 5%; /* near-black app canvas   #0d0d0e */
   --foreground: 220 6% 91%; /* near-white grey text */
-  --card: 220 5% 12%; /* surface #1e1f21 */
+  --card: 220 5% 9%; /* lighter grey surface    #16171a */
   --card-foreground: 220 6% 91%;
-  --popover: 220 5% 12%;
+  --popover: 220 5% 9%;
   --popover-foreground: 220 6% 91%;
-  --primary: 220 4% 84%; /* accent  #d6d7d9 (light grey) */
-  --primary-foreground: 220 4% 9%;
-  --secondary: 210 5% 16%; /* raised  #26282a */
+  --primary: 44 48% 90%; /* light cream accent      #f2ecd9 */
+  --primary-foreground: 220 5% 5%; /* dark text on cream */
+  --secondary: 220 5% 9%; /* lighter grey (sidebar)  #16171a */
   --secondary-foreground: 220 6% 91%;
-  --muted: 210 5% 16%; /* raised  #26282a */
-  --muted-foreground: 220 4% 58%; /* muted   #8f9194 */
-  --accent: 210 5% 16%; /* raised  #26282a */
+  --muted: 220 5% 12%; /* raised fill             #1d1e21 */
+  --muted-foreground: 220 4% 58%; /* dim grey text           #8f9194 */
+  --accent: 220 5% 15%; /* hover / lightest fill   #24262a */
   --accent-foreground: 220 6% 91%;
-  --destructive: 0 91% 71%; /* danger  #f87171 */
+  --destructive: 0 91% 71%; /* danger                  #f87171 */
   --destructive-foreground: 220 6% 91%;
-  --border: 225 4% 22%; /* edge    #37383b */
-  --input: 225 4% 22%;
-  --ring: 220 4% 84%;
+  --border: 225 4% 18%; /* hairline                #2c2d31 */
+  --input: 225 4% 18%;
+  --ring: 44 48% 90%; /* cream focus ring */
   --radius: 0.5rem;
 
-  /* Sidebar surface — slightly distinct from the main background. */
-  --sidebar-background: 220 5% 12%; /* surface */
+  /* Sidebar mirrors the lighter grey surface. */
+  --sidebar-background: 220 5% 9%;
   --sidebar-foreground: 220 6% 91%;
-  --sidebar-primary: 220 4% 84%;
-  --sidebar-primary-foreground: 220 4% 9%;
-  --sidebar-accent: 210 5% 16%; /* raised */
+  --sidebar-primary: 44 48% 90%;
+  --sidebar-primary-foreground: 220 5% 5%;
+  --sidebar-accent: 220 5% 15%;
   --sidebar-accent-foreground: 220 6% 91%;
-  --sidebar-border: 225 4% 22%; /* edge */
-  --sidebar-ring: 220 4% 84%;
+  --sidebar-border: 225 4% 18%;
+  --sidebar-ring: 44 48% 90%;
 }
 
 .dark {
-  --background: 220 4% 9%;
+  --background: 220 5% 5%;
   --foreground: 220 6% 91%;
-  --card: 220 5% 12%;
+  --card: 220 5% 9%;
   --card-foreground: 220 6% 91%;
-  --popover: 220 5% 12%;
+  --popover: 220 5% 9%;
   --popover-foreground: 220 6% 91%;
-  --primary: 220 4% 84%;
-  --primary-foreground: 220 4% 9%;
-  --secondary: 210 5% 16%;
+  --primary: 44 48% 90%;
+  --primary-foreground: 220 5% 5%;
+  --secondary: 220 5% 9%;
   --secondary-foreground: 220 6% 91%;
-  --muted: 210 5% 16%;
+  --muted: 220 5% 12%;
   --muted-foreground: 220 4% 58%;
-  --accent: 210 5% 16%;
+  --accent: 220 5% 15%;
   --accent-foreground: 220 6% 91%;
   --destructive: 0 91% 71%;
   --destructive-foreground: 220 6% 91%;
-  --border: 225 4% 22%;
-  --input: 225 4% 22%;
-  --ring: 220 4% 84%;
+  --border: 225 4% 18%;
+  --input: 225 4% 18%;
+  --ring: 44 48% 90%;
 
-  --sidebar-background: 220 5% 12%;
+  --sidebar-background: 220 5% 9%;
   --sidebar-foreground: 220 6% 91%;
-  --sidebar-primary: 220 4% 84%;
-  --sidebar-primary-foreground: 220 4% 9%;
-  --sidebar-accent: 210 5% 16%;
+  --sidebar-primary: 44 48% 90%;
+  --sidebar-primary-foreground: 220 5% 5%;
+  --sidebar-accent: 220 5% 15%;
   --sidebar-accent-foreground: 220 6% 91%;
-  --sidebar-border: 225 4% 22%;
-  --sidebar-ring: 220 4% 84%;
+  --sidebar-border: 225 4% 18%;
+  --sidebar-ring: 44 48% 90%;
 }
 
 /*
@@ -89,7 +91,7 @@ body {
 }
 
 body {
-  @apply bg-base text-neutral-200 antialiased;
+  @apply bg-background text-neutral-200 antialiased;
   font-family:
     ui-sans-serif,
     system-ui,
@@ -104,14 +106,14 @@ body {
 /* Thin, unobtrusive scrollbars to match the dark surfaces. */
 * {
   scrollbar-width: thin;
-  scrollbar-color: theme('colors.edge') transparent;
+  scrollbar-color: theme('colors.border') transparent;
 }
 *::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 *::-webkit-scrollbar-thumb {
-  background: theme('colors.edge');
+  background: theme('colors.border');
   border-radius: 4px;
 }
 *::-webkit-scrollbar-track {

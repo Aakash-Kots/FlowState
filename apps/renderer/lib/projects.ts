@@ -2,6 +2,7 @@
 
 import { create } from 'zustand';
 import { DEFAULT_WORKSPACE_ID, type GithubRepo, type Project, type Workspace } from '@flowstate/shared';
+import { refreshTerminals } from './terminals';
 import { trpc } from './trpc';
 import { selectWorkspace, useWorkspace } from './workspace';
 
@@ -218,6 +219,21 @@ export async function createWorktree(input: {
 /** Switch the active workspace to a worktree. */
 export function selectWorktree(workspace: Workspace): void {
   void selectWorkspace(workspace.id);
+}
+
+/**
+ * Save a project's Setup/Run scripts (shared by all its worktrees) and refresh
+ * the active worktree's terminals so the Setup/Run tabs pick up the new command.
+ */
+export async function saveProjectScripts(
+  projectId: string,
+  scripts: { setupScript: string | null; runScript: string | null },
+): Promise<void> {
+  const project = await trpc().projects.setScripts.mutate({ projectId, ...scripts });
+  useProjects.setState((s) => ({
+    projects: s.projects.map((p) => (p.id === projectId ? project : p)),
+  }));
+  await refreshTerminals();
 }
 
 /**

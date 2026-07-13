@@ -109,8 +109,8 @@ export function ConnectScreen({ onClose }: { onClose?: () => void }) {
       : ConnStatus.Idle;
 
   return (
-    <main className="flex h-screen flex-col bg-base">
-      <header className="flex items-center justify-between border-b border-edge px-6 py-4">
+    <main className="flex h-screen flex-col bg-background">
+      <header className="flex items-center justify-between border-b border-border px-6 py-4">
         <div className="flex items-baseline gap-3">
           <h1 className="text-sm font-semibold tracking-wide text-foreground">FlowState</h1>
           <span className="text-xs text-muted-foreground">Connect your tools</span>
@@ -217,7 +217,7 @@ export function ConnectScreen({ onClose }: { onClose?: () => void }) {
                         value={pat}
                         onChange={(e) => setPat(e.target.value)}
                         placeholder="ghp_… or gho_…"
-                        className="min-w-0 flex-1 rounded-md border border-edge bg-base px-2.5 py-1.5 text-sm text-neutral-100 placeholder:text-muted-foreground focus:border-primary/50 focus:outline-none"
+                        className="min-w-0 flex-1 rounded-md border border-border bg-background px-2.5 py-1.5 text-sm text-neutral-100 placeholder:text-muted-foreground focus:border-primary/50 focus:outline-none"
                       />
                       <Button
                         variant="secondary"
@@ -245,7 +245,7 @@ export function ConnectScreen({ onClose }: { onClose?: () => void }) {
             title="Terminal"
             subtitle="Your login shell — the buttons drive it for you."
           />
-          <div className="min-h-0 flex-1 bg-surface p-2">
+          <div className="min-h-0 flex-1 bg-secondary p-2">
             <TerminalView onSpawned={onSpawned} />
           </div>
         </Card>

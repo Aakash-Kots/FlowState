@@ -36,7 +36,7 @@ export function Markdown({ children }: { children: string }) {
             <h3 className="pt-1 text-sm font-semibold text-neutral-100">{children}</h3>
           ),
           blockquote: ({ children }) => (
-            <blockquote className="border-l-2 border-edge pl-3 text-muted-foreground">
+            <blockquote className="border-l-2 border-border pl-3 text-muted-foreground">
               {children}
             </blockquote>
           ),
@@ -46,13 +46,13 @@ export function Markdown({ children }: { children: string }) {
             return isBlock ? (
               <code className={className}>{children}</code>
             ) : (
-              <code className="rounded bg-raised px-1 py-0.5 font-mono text-[0.85em] text-neutral-100">
+              <code className="rounded bg-muted px-1 py-0.5 font-mono text-[0.85em] text-neutral-100">
                 {children}
               </code>
             );
           },
           pre: ({ children }) => (
-            <pre className="overflow-x-auto rounded-md border border-edge bg-raised p-3 font-mono text-xs leading-relaxed">
+            <pre className="overflow-x-auto rounded-md border border-border bg-muted p-3 font-mono text-xs leading-relaxed">
               {children}
             </pre>
           ),
@@ -60,12 +60,12 @@ export function Markdown({ children }: { children: string }) {
             <table className="w-full border-collapse text-xs">{children}</table>
           ),
           th: ({ children }) => (
-            <th className="border border-edge bg-raised px-2 py-1 text-left font-medium">
+            <th className="border border-border bg-muted px-2 py-1 text-left font-medium">
               {children}
             </th>
           ),
-          td: ({ children }) => <td className="border border-edge px-2 py-1">{children}</td>,
-          hr: () => <hr className="border-edge" />,
+          td: ({ children }) => <td className="border border-border px-2 py-1">{children}</td>,
+          hr: () => <hr className="border-border" />,
         }}
       >
         {children}

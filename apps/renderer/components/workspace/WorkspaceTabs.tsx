@@ -71,7 +71,7 @@ function TabTrigger({ tab, canClose }: { tab: Tab; canClose: boolean }) {
             e.stopPropagation();
             void closeTab(tab.id);
           }}
-          className="rounded p-0.5 text-muted-foreground opacity-60 transition-colors hover:bg-edge hover:text-foreground group-hover/tab:opacity-100"
+          className="rounded p-0.5 text-muted-foreground opacity-60 transition-colors hover:bg-accent hover:text-foreground group-hover/tab:opacity-100"
         >
           <X className="size-3" />
         </span>
@@ -96,7 +96,7 @@ function NewTabButton({ disabled }: { disabled: boolean }) {
       onClick={() => void openTab()}
       disabled={disabled}
       title={disabled ? `Up to ${MAX_TABS_PER_WORKSPACE} tabs` : 'New tab'}
-      className="ml-1 inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-raised hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+      className="ml-1 inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
     >
       <Plus className="size-4" />
     </button>
@@ -114,7 +114,7 @@ export function WorkspaceTabs() {
 
   if (!activeTabId) {
     return (
-      <div className="flex min-h-0 flex-1 items-center justify-center bg-base text-sm text-muted-foreground">
+      <div className="flex min-h-0 flex-1 items-center justify-center bg-background text-sm text-muted-foreground">
         Loading…
       </div>
     );
@@ -122,7 +122,7 @@ export function WorkspaceTabs() {
 
   return (
     <Tabs value={activeTabId} onValueChange={selectTab} className="flex min-h-0 flex-1 flex-col">
-      <div className="flex items-center border-b border-edge bg-surface px-3 py-1.5">
+      <div className="flex items-center border-b border-border bg-secondary px-3 py-1.5">
         <TooltipProvider delayDuration={300}>
           <TabsList className="h-8 gap-1 bg-transparent p-0 text-muted-foreground">
             {tabs.map((tab) => (

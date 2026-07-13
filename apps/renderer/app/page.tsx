@@ -1,16 +1,15 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { DEFAULT_WORKSPACE_ID, type AppInfo } from '@flowstate/shared';
-import { trpc } from '@/lib/trpc';
+import { DEFAULT_WORKSPACE_ID } from '@flowstate/shared';
 import { useIsOnboarded, useOnboarding, useOnboardingSync } from '@/lib/onboarding';
 import { useWorkspace, useWorkspaceSync } from '@/lib/workspace';
 import { ConnectScreen } from '@/components/ConnectScreen';
 import { AppSidebar } from '@/components/sidebar/AppSidebar';
 import { ProjectSelector } from '@/components/projects/ProjectSelector';
 import { ShortcutProvider } from '@/components/shortcuts/ShortcutProvider';
-import { WorkspaceTabs } from '@/components/workspace/WorkspaceTabs';
+import { ViewModeTabs } from '@/components/workspace/ViewModeTabs';
+import { WorkspaceViewSwitcher } from '@/components/workspace/WorkspaceViewSwitcher';
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 
 export default function Page() {
@@ -21,7 +20,7 @@ export default function Page() {
 
   if (!hydrated) {
     return (
-      <main className="flex h-screen items-center justify-center bg-base text-sm text-muted-foreground">
+      <main className="flex h-screen items-center justify-center bg-background text-sm text-muted-foreground">
         Loading…
       </main>
     );
@@ -42,37 +41,26 @@ function WorkspaceShell() {
   // No worktree selected (the startup/default state) → land on the project picker
   // instead of the empty default-workspace chat.
   const onDefaultWorkspace = useWorkspace((s) => s.workspaceId) === DEFAULT_WORKSPACE_ID;
-  const [info, setInfo] = useState<AppInfo | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    trpc()
-      .app.info.query()
-      .then(setInfo)
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
-  }, []);
 
   return (
     <SidebarProvider className="h-screen">
       <ShortcutProvider>
         <AppSidebar />
         <SidebarInset className="min-h-0">
-          <header className="flex items-center justify-between border-b border-edge px-4 py-2.5">
+          <header className="relative flex items-center justify-between border-b border-border bg-secondary px-4 py-2.5">
             <div className="flex items-center gap-2">
               <SidebarTrigger />
-              <span className="text-xs text-muted-foreground">claude code workspace</span>
-            </div>
-            <div className="flex items-center gap-4 text-xs text-muted-foreground">
-              {info ? (
-                <span>
-                  {info.name} v{info.version} · {info.platform} ·{' '}
-                  <span className="text-success">IPC connected</span>
-                </span>
-              ) : error ? (
-                <span className="text-warn">IPC: {error}</span>
-              ) : (
-                <span className="text-muted-foreground">connecting to main…</span>
+              {onDefaultWorkspace && (
+                <span className="text-xs text-muted-foreground">claude code workspace</span>
               )}
+            </div>
+            {/* Centered Workspace/Terminals toggle, independent of the side content widths. */}
+            {!onDefaultWorkspace && (
+              <div className="absolute left-1/2 -translate-x-1/2">
+                <ViewModeTabs />
+              </div>
+            )}
+            <div className="flex items-center gap-4 text-xs text-muted-foreground">
               <Link
                 href="/connect"
                 className="text-muted-foreground transition-colors hover:text-neutral-200"
@@ -82,7 +70,7 @@ function WorkspaceShell() {
             </div>
           </header>
 
-          {onDefaultWorkspace ? <ProjectSelector /> : <WorkspaceTabs />}
+          {onDefaultWorkspace ? <ProjectSelector /> : <WorkspaceViewSwitcher />}
         </SidebarInset>
       </ShortcutProvider>
     </SidebarProvider>

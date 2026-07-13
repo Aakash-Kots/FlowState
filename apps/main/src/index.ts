@@ -103,6 +103,11 @@ function buildAppMenu(): void {
     {
       label: 'Go',
       submenu: [
+        // Native accelerators so view switching works even while a focused
+        // terminal would otherwise swallow the keydown.
+        item(ShortcutCommand.NextView, 'Next View'),
+        item(ShortcutCommand.PrevView, 'Previous View'),
+        { type: 'separator' },
         item(ShortcutCommand.NextTab, 'Next Tab'),
         item(ShortcutCommand.PrevTab, 'Previous Tab'),
         { type: 'separator' },

@@ -7,9 +7,14 @@
 import { randomUUID } from 'node:crypto';
 import { TRPCError } from '@trpc/server';
 import { BrowserWindow, dialog } from 'electron';
-import { DEFAULT_WORKSPACE_ID, addProjectInputSchema, type Project } from '@flowstate/shared';
+import {
+  DEFAULT_WORKSPACE_ID,
+  addProjectInputSchema,
+  updateProjectScriptsInputSchema,
+  type Project,
+} from '@flowstate/shared';
 import { z } from 'zod';
-import { getProject, listProjects, upsertProject } from '../store';
+import { getProject, listProjects, setProjectScripts, upsertProject } from '../store';
 import { claudeService } from '../services/claude';
 import { githubService } from '../services/github';
 import { publicProcedure, router } from '../trpc';
@@ -56,6 +61,8 @@ export const projectsRouter = router({
       localPath,
       defaultBranch: meta.defaultBranch,
       private: existing?.private ?? false,
+      setupScript: existing?.setupScript ?? null,
+      runScript: existing?.runScript ?? null,
       createdAt: existing?.createdAt ?? new Date().toISOString(),
     });
 
@@ -85,6 +92,8 @@ export const projectsRouter = router({
       localPath: clone.localPath,
       defaultBranch: clone.defaultBranch,
       private: input.private,
+      setupScript: null,
+      runScript: null,
       createdAt: new Date().toISOString(),
     });
 
@@ -93,4 +102,16 @@ export const projectsRouter = router({
 
     return project;
   }),
+
+  /** Set a project's Setup/Run scripts (shared by every worktree of the project). */
+  setScripts: publicProcedure
+    .input(updateProjectScriptsInputSchema)
+    .mutation(({ input }): Project => {
+      const project = setProjectScripts(input.projectId, {
+        setupScript: input.setupScript,
+        runScript: input.runScript,
+      });
+      if (!project) throw new TRPCError({ code: 'NOT_FOUND', message: 'Project not found.' });
+      return project;
+    }),
 });

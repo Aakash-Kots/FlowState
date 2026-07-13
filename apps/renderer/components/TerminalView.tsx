@@ -3,29 +3,8 @@
 import { useEffect, useRef } from 'react';
 import type { Terminal as XTerm } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
+import { XTERM_THEME } from '@/lib/constants/terminal';
 import { trpc } from '@/lib/trpc';
-
-// xterm theme tuned to the app's dark gray-accent tokens (tailwind.config.ts).
-const THEME = {
-  background: '#1e1f21', // surface
-  foreground: '#e5e7eb',
-  cursor: '#d6d7d9', // accent
-  cursorAccent: '#1e1f21',
-  selectionBackground: '#37383b',
-  black: '#161718',
-  brightBlack: '#8f9194',
-  white: '#d6d7d9',
-  brightWhite: '#ffffff',
-  green: '#4ade80',
-  brightGreen: '#4ade80',
-  yellow: '#fbbf24',
-  brightYellow: '#fbbf24',
-  red: '#f87171',
-  brightRed: '#f87171',
-  blue: '#7aa2f7',
-  cyan: '#67e8f9',
-  magenta: '#c4b5fd',
-};
 
 /**
  * Embedded terminal backed by a main-process node-pty. xterm is imported lazily
@@ -68,7 +47,7 @@ export function TerminalView({
       if (disposed) return;
 
       const t = new Terminal({
-        theme: THEME,
+        theme: XTERM_THEME,
         fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
         fontSize: 13,
         cursorBlink: true,
