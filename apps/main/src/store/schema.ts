@@ -19,6 +19,27 @@ export const workspaces = sqliteTable('workspaces', {
   createdAt: text('created_at').notNull(),
 });
 
+// A tab is one Claude chat session inside a workspace/worktree. Up to
+// MAX_TABS_PER_WORKSPACE per workspace; each owns its transcript + resume id.
+export const tabs = sqliteTable(
+  'tabs',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    title: text('title').notNull(),
+    claudeSessionId: text('claude_session_id'),
+    claudeState: text('claude_state').notNull().default('idle'),
+    // Per-tab Claude session config; null inherits the SDK/CLI default.
+    model: text('model'),
+    effort: text('effort'),
+    position: integer('position').notNull(),
+    createdAt: text('created_at').notNull(),
+  },
+  (t) => [index('idx_tabs_workspace').on(t.workspaceId)],
+);
+
 export const claudeMessages = sqliteTable(
   'claude_messages',
   {
@@ -26,12 +47,18 @@ export const claudeMessages = sqliteTable(
     workspaceId: text('workspace_id')
       .notNull()
       .references(() => workspaces.id, { onDelete: 'cascade' }),
+    // The owning tab. Nullable for rows written before tabs existed; new writes
+    // always set it, and transcripts are read per tab. Cascades on tab close.
+    tabId: text('tab_id').references(() => tabs.id, { onDelete: 'cascade' }),
     sessionId: text('session_id').notNull(),
     role: text('role').notNull(),
     content: text('content').notNull(), // JSON of the raw SDK message
     createdAt: text('created_at').notNull(),
   },
-  (t) => [index('idx_claude_messages_workspace_session').on(t.workspaceId, t.sessionId)],
+  (t) => [
+    index('idx_claude_messages_workspace_session').on(t.workspaceId, t.sessionId),
+    index('idx_claude_messages_tab').on(t.tabId),
+  ],
 );
 
 export const settings = sqliteTable('settings', {

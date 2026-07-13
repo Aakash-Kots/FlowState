@@ -7,7 +7,11 @@ const STYLES: Record<ConnStatus, { dot: string; text: string; label: string }> =
   [ConnStatus.Connected]: { dot: 'bg-success', text: 'text-success', label: 'Connected' },
   [ConnStatus.Pending]: { dot: 'bg-warn animate-pulse', text: 'text-warn', label: 'Waiting…' },
   [ConnStatus.Error]: { dot: 'bg-danger', text: 'text-danger', label: 'Error' },
-  [ConnStatus.Idle]: { dot: 'bg-muted', text: 'text-muted', label: 'Not connected' },
+  [ConnStatus.Idle]: {
+    dot: 'bg-muted-foreground',
+    text: 'text-muted-foreground',
+    label: 'Not connected',
+  },
 };
 
 export function StatusPill({ status, label }: { status: ConnStatus; label?: string }) {

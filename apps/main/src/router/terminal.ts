@@ -29,7 +29,13 @@ export const terminalRouter = router({
     }),
 
   resize: publicProcedure
-    .input(z.object({ id: z.string(), cols: z.number().int().positive(), rows: z.number().int().positive() }))
+    .input(
+      z.object({
+        id: z.string(),
+        cols: z.number().int().positive(),
+        rows: z.number().int().positive(),
+      }),
+    )
     .mutation(({ input }) => {
       terminalService.resize(input.id, input.cols, input.rows);
     }),

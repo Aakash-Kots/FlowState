@@ -2,6 +2,87 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * shadcn/ui design tokens, mapped to FlowState's existing dark palette (see
+ * tailwind.config.ts flat colors: base/surface/raised/edge/muted/accent). The
+ * app is always dark, so the tokens live on :root; .dark mirrors them so
+ * shadcn primitives that assume a `.dark` class still resolve.
+ */
+:root {
+  --background: 220 4% 9%; /* base    #161718 */
+  --foreground: 220 6% 91%; /* near-white grey text */
+  --card: 220 5% 12%; /* surface #1e1f21 */
+  --card-foreground: 220 6% 91%;
+  --popover: 220 5% 12%;
+  --popover-foreground: 220 6% 91%;
+  --primary: 220 4% 84%; /* accent  #d6d7d9 (light grey) */
+  --primary-foreground: 220 4% 9%;
+  --secondary: 210 5% 16%; /* raised  #26282a */
+  --secondary-foreground: 220 6% 91%;
+  --muted: 210 5% 16%; /* raised  #26282a */
+  --muted-foreground: 220 4% 58%; /* muted   #8f9194 */
+  --accent: 210 5% 16%; /* raised  #26282a */
+  --accent-foreground: 220 6% 91%;
+  --destructive: 0 91% 71%; /* danger  #f87171 */
+  --destructive-foreground: 220 6% 91%;
+  --border: 225 4% 22%; /* edge    #37383b */
+  --input: 225 4% 22%;
+  --ring: 220 4% 84%;
+  --radius: 0.5rem;
+
+  /* Sidebar surface — slightly distinct from the main background. */
+  --sidebar-background: 220 5% 12%; /* surface */
+  --sidebar-foreground: 220 6% 91%;
+  --sidebar-primary: 220 4% 84%;
+  --sidebar-primary-foreground: 220 4% 9%;
+  --sidebar-accent: 210 5% 16%; /* raised */
+  --sidebar-accent-foreground: 220 6% 91%;
+  --sidebar-border: 225 4% 22%; /* edge */
+  --sidebar-ring: 220 4% 84%;
+}
+
+.dark {
+  --background: 220 4% 9%;
+  --foreground: 220 6% 91%;
+  --card: 220 5% 12%;
+  --card-foreground: 220 6% 91%;
+  --popover: 220 5% 12%;
+  --popover-foreground: 220 6% 91%;
+  --primary: 220 4% 84%;
+  --primary-foreground: 220 4% 9%;
+  --secondary: 210 5% 16%;
+  --secondary-foreground: 220 6% 91%;
+  --muted: 210 5% 16%;
+  --muted-foreground: 220 4% 58%;
+  --accent: 210 5% 16%;
+  --accent-foreground: 220 6% 91%;
+  --destructive: 0 91% 71%;
+  --destructive-foreground: 220 6% 91%;
+  --border: 225 4% 22%;
+  --input: 225 4% 22%;
+  --ring: 220 4% 84%;
+
+  --sidebar-background: 220 5% 12%;
+  --sidebar-foreground: 220 6% 91%;
+  --sidebar-primary: 220 4% 84%;
+  --sidebar-primary-foreground: 220 4% 9%;
+  --sidebar-accent: 210 5% 16%;
+  --sidebar-accent-foreground: 220 6% 91%;
+  --sidebar-border: 225 4% 22%;
+  --sidebar-ring: 220 4% 84%;
+}
+
+/*
+ * Default every element's border color to the shadcn `border` token. Without
+ * this, bare `border`/`border-r` utilities (e.g. inside the shadcn Sidebar) fall
+ * back to Tailwind's default gray-200 and render as a bright hairline.
+ */
+@layer base {
+  * {
+    @apply border-border;
+  }
+}
+
 html,
 body {
   height: 100%;
@@ -10,7 +91,14 @@ body {
 body {
   @apply bg-base text-neutral-200 antialiased;
   font-family:
-    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
 }
 
 /* Thin, unobtrusive scrollbars to match the dark surfaces. */

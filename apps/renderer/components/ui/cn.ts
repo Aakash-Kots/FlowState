@@ -1,4 +1,7 @@
-/** Tiny classnames joiner — filters falsy values, no extra deps. */
-export function cn(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(' ');
+import { type ClassValue, clsx } from 'clsx';
+import { twMerge } from 'tailwind-merge';
+
+/** Merge class names (clsx semantics) and de-conflict Tailwind utilities. */
+export function cn(...inputs: ClassValue[]): string {
+  return twMerge(clsx(inputs));
 }

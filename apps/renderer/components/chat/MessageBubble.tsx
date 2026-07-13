@@ -14,12 +14,12 @@ function ThinkingBlock({ text }: { text: string }) {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="text-xs italic text-muted transition-colors hover:text-neutral-300"
+        className="text-xs italic text-muted-foreground transition-colors hover:text-neutral-300"
       >
         {open ? '▾' : '▸'} Thinking
       </button>
       {open && (
-        <p className="mt-1 whitespace-pre-wrap border-l-2 border-edge pl-3 text-xs italic leading-relaxed text-muted">
+        <p className="mt-1 whitespace-pre-wrap border-l-2 border-edge pl-3 text-xs italic leading-relaxed text-muted-foreground">
           {text}
         </p>
       )}
@@ -64,7 +64,7 @@ export function MessageBubble({
       .join('')
       .trim();
     return (
-      <div className={cn('text-xs', meta?.isError ? 'text-danger' : 'text-muted')}>
+      <div className={cn('text-xs', meta?.isError ? 'text-danger' : 'text-muted-foreground')}>
         {meta?.isError && errorText ? (
           <p className="mb-1 whitespace-pre-wrap">{errorText}</p>
         ) : null}

@@ -9,6 +9,7 @@ import type {
   ChatMessageRole,
   ClaudeSessionState,
   PermissionBehavior,
+  ReasoningEffort,
 } from '../enums/claude';
 
 /**
@@ -63,6 +64,41 @@ export type PermissionRequest = {
   description?: string;
 };
 
+/**
+ * A selectable Claude model for a session, mirroring the subset of the SDK's
+ * `ModelInfo` the picker needs. `supportedEffortLevels` gates the effort picker.
+ */
+export type ModelOption = {
+  value: string;
+  displayName: string;
+  description: string;
+  supportsEffort: boolean;
+  supportedEffortLevels: ReasoningEffort[];
+};
+
+/** One selectable choice within a question. */
+export type QuestionOption = {
+  label: string;
+  description: string;
+};
+
+/** A single question in an `AskUserQuestion` prompt. */
+export type QuestionItem = {
+  header: string;
+  question: string;
+  multiSelect: boolean;
+  options: QuestionOption[];
+};
+
+/**
+ * A pending `AskUserQuestion` prompt from Claude, answered inline near the
+ * input (selectable options plus a free-text "Other"), mirroring the CLI.
+ */
+export type QuestionRequest = {
+  id: string;
+  questions: QuestionItem[];
+};
+
 /** Live event streamed over the `claude.onEvent` subscription. */
 export type ChatEvent =
   | { kind: ChatEventKind.Init; sessionId: string; model: string; cwd: string }
@@ -82,6 +118,11 @@ export type ChatEvent =
       description?: string;
     }
   | { kind: ChatEventKind.PermissionResolved; id: string; behavior: PermissionBehavior }
+  // Claude asked a structured question (AskUserQuestion) — answered near the input.
+  | { kind: ChatEventKind.QuestionRequest; id: string; questions: QuestionItem[] }
+  | { kind: ChatEventKind.QuestionResolved; id: string }
+  // The session's model/effort changed (e.g. the user picked a new one).
+  | { kind: ChatEventKind.Config; model: string | null; effort: ReasoningEffort | null }
   | { kind: ChatEventKind.Cwd; cwd: string | null }
   | { kind: ChatEventKind.Error; message: string };
 
@@ -97,6 +138,8 @@ export type ChatSnapshot = {
   sessionId: string | null;
   cwd: string | null;
   model: string | null;
+  effort: ReasoningEffort | null;
   messages: ChatSnapshotEntry[];
   pendingPermissions: PermissionRequest[];
+  pendingQuestions: QuestionRequest[];
 };

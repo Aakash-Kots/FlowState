@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "dist": "electron-builder --mac --config electron-builder.yml",
     "db:generate": "drizzle-kit generate",
+    "db:migrate": "ELECTRON_RUN_AS_NODE=1 electron ./node_modules/drizzle-kit/bin.cjs migrate",
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {

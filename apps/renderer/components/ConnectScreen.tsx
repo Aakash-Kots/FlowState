@@ -112,8 +112,8 @@ export function ConnectScreen({ onClose }: { onClose?: () => void }) {
     <main className="flex h-screen flex-col bg-base">
       <header className="flex items-center justify-between border-b border-edge px-6 py-4">
         <div className="flex items-baseline gap-3">
-          <h1 className="text-sm font-semibold tracking-wide text-accent">FlowState</h1>
-          <span className="text-xs text-muted">Connect your tools</span>
+          <h1 className="text-sm font-semibold tracking-wide text-foreground">FlowState</h1>
+          <span className="text-xs text-muted-foreground">Connect your tools</span>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="ghost" onClick={recheck} disabled={busy === 'refresh'}>
@@ -159,7 +159,7 @@ export function ConnectScreen({ onClose }: { onClose?: () => void }) {
                   </Button>
                 ) : null}
               </div>
-              <p className="mt-3 text-xs leading-relaxed text-muted">
+              <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
                 Runs <code className="text-neutral-300">claude auth login</code> in the terminal and
                 opens your browser. FlowState detects when you finish and stores the credential
                 securely.
@@ -203,7 +203,7 @@ export function ConnectScreen({ onClose }: { onClose?: () => void }) {
                 <div className="mt-3">
                   <button
                     type="button"
-                    className="text-xs text-muted underline-offset-2 hover:text-neutral-200 hover:underline"
+                    className="text-xs text-muted-foreground underline-offset-2 hover:text-neutral-200 hover:underline"
                     onClick={() => setShowPat((v) => !v)}
                   >
                     {hasGh === false
@@ -217,7 +217,7 @@ export function ConnectScreen({ onClose }: { onClose?: () => void }) {
                         value={pat}
                         onChange={(e) => setPat(e.target.value)}
                         placeholder="ghp_… or gho_…"
-                        className="min-w-0 flex-1 rounded-md border border-edge bg-base px-2.5 py-1.5 text-sm text-neutral-100 placeholder:text-muted focus:border-accent/50 focus:outline-none"
+                        className="min-w-0 flex-1 rounded-md border border-edge bg-base px-2.5 py-1.5 text-sm text-neutral-100 placeholder:text-muted-foreground focus:border-primary/50 focus:outline-none"
                       />
                       <Button
                         variant="secondary"
@@ -231,7 +231,7 @@ export function ConnectScreen({ onClose }: { onClose?: () => void }) {
                 </div>
               ) : null}
 
-              <p className="mt-3 text-xs leading-relaxed text-muted">
+              <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
                 Runs <code className="text-neutral-300">gh auth login</code> in the terminal. The
                 token is encrypted with your OS keychain — only ciphertext is written to disk.
               </p>

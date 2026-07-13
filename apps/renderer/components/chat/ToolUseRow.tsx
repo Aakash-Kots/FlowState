@@ -34,10 +34,12 @@ export function ToolUseRow({ block, result }: { block: ToolUseBlock; result?: To
         onClick={() => setOpen((v) => !v)}
         className={cn(
           'flex w-full items-center gap-2 px-3 py-1.5 text-left font-mono text-xs',
-          'text-muted transition-colors hover:bg-raised hover:text-neutral-200',
+          'text-muted-foreground transition-colors hover:bg-raised hover:text-neutral-200',
         )}
       >
-        <span className={cn('shrink-0', result?.isError ? 'text-danger' : 'text-muted')}>⚙</span>
+        <span className={cn('shrink-0', result?.isError ? 'text-danger' : 'text-muted-foreground')}>
+          ⚙
+        </span>
         <span className="shrink-0 font-medium text-neutral-300">{block.name}</span>
         {summary && <span className="truncate">{summary}</span>}
         <span className="ml-auto shrink-0 text-[10px]">{open ? '▾' : '▸'}</span>

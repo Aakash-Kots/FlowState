@@ -1,49 +1,76 @@
 import { observable } from '@trpc/server/observable';
 import { BrowserWindow, dialog } from 'electron';
 import { z } from 'zod';
-import { PermissionBehavior, type ChatEvent } from '@flowstate/shared';
+import { PermissionBehavior, ReasoningEffort, type ChatEvent } from '@flowstate/shared';
 import { claudeService } from '../services/claude';
 import { publicProcedure, router } from '../trpc';
 
-// Chat control plane: mutations drive the session (send / interrupt /
-// permission decisions), `snapshot` hydrates on mount, and `onEvent` streams
-// normalized ChatEvents — the same mutations + observable split as terminal.ts.
+// Chat control plane, keyed by tabId (one Claude session per tab): mutations
+// drive the session (send / interrupt / permission decisions), `snapshot`
+// hydrates on mount, and `onEvent` streams normalized ChatEvents — the same
+// mutations + observable split as terminal.ts. `pickCwd` is project-level
+// (keyed by workspaceId) since all tabs share the project's working folder.
 export const claudeRouter = router({
+  // Project-level working folder shared by all tabs (null until one is chosen).
+  cwd: publicProcedure.query(() => claudeService.getCwd()),
+
   snapshot: publicProcedure
-    .input(z.object({ workspaceId: z.string() }))
-    .query(({ input }) => claudeService.getSnapshot(input.workspaceId)),
+    .input(z.object({ tabId: z.string() }))
+    .query(({ input }) => claudeService.getSnapshot(input.tabId)),
 
   send: publicProcedure
-    .input(z.object({ workspaceId: z.string(), text: z.string().min(1) }))
+    .input(z.object({ tabId: z.string(), text: z.string().min(1) }))
     .mutation(({ input }) => {
-      claudeService.send(input.workspaceId, input.text);
+      claudeService.send(input.tabId, input.text);
     }),
 
   interrupt: publicProcedure
-    .input(z.object({ workspaceId: z.string() }))
-    .mutation(({ input }) => claudeService.interrupt(input.workspaceId)),
+    .input(z.object({ tabId: z.string() }))
+    .mutation(({ input }) => claudeService.interrupt(input.tabId)),
+
+  // Models the tab can run (live from the SDK when a session exists, else defaults).
+  supportedModels: publicProcedure
+    .input(z.object({ tabId: z.string() }))
+    .query(({ input }) => claudeService.getSupportedModels(input.tabId)),
+
+  setModel: publicProcedure
+    .input(z.object({ tabId: z.string(), model: z.string().min(1) }))
+    .mutation(({ input }) => claudeService.setModel(input.tabId, input.model)),
+
+  setEffort: publicProcedure
+    .input(z.object({ tabId: z.string(), effort: z.nativeEnum(ReasoningEffort) }))
+    .mutation(({ input }) => {
+      claudeService.setEffort(input.tabId, input.effort);
+    }),
+
+  answerQuestion: publicProcedure
+    .input(
+      z.object({
+        tabId: z.string(),
+        requestId: z.string(),
+        answers: z.record(z.string(), z.string()),
+      }),
+    )
+    .mutation(({ input }) => {
+      claudeService.answerQuestion(input.tabId, input.requestId, input.answers);
+    }),
 
   respondPermission: publicProcedure
     .input(
       z.object({
-        workspaceId: z.string(),
+        tabId: z.string(),
         requestId: z.string(),
         behavior: z.nativeEnum(PermissionBehavior),
         message: z.string().optional(),
       }),
     )
     .mutation(({ input }) => {
-      claudeService.respondPermission(
-        input.workspaceId,
-        input.requestId,
-        input.behavior,
-        input.message,
-      );
+      claudeService.respondPermission(input.tabId, input.requestId, input.behavior, input.message);
     }),
 
-  // Native folder picker for the session's working directory. Picking a new
-  // folder resets the session (a resumed conversation under a different cwd
-  // would be incoherent).
+  // Native folder picker for the project's working directory. Picking a new
+  // folder resets every tab's session (a resumed conversation under a different
+  // cwd would be incoherent).
   pickCwd: publicProcedure
     .input(z.object({ workspaceId: z.string() }))
     .mutation(async ({ input }) => {
@@ -60,10 +87,10 @@ export const claudeRouter = router({
     }),
 
   onEvent: publicProcedure
-    .input(z.object({ workspaceId: z.string() }))
+    .input(z.object({ tabId: z.string() }))
     .subscription(({ input }) =>
       observable<ChatEvent>((emit) =>
-        claudeService.onEvent(input.workspaceId, (event) => emit.next(event)),
+        claudeService.onEvent(input.tabId, (event) => emit.next(event)),
       ),
     ),
 });

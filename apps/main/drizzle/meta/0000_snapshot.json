@@ -53,10 +53,7 @@
       "indexes": {
         "idx_claude_messages_workspace_session": {
           "name": "idx_claude_messages_workspace_session",
-          "columns": [
-            "workspace_id",
-            "session_id"
-          ],
+          "columns": ["workspace_id", "session_id"],
           "isUnique": false
         }
       },
@@ -65,12 +62,8 @@
           "name": "claude_messages_workspace_id_workspaces_id_fk",
           "tableFrom": "claude_messages",
           "tableTo": "workspaces",
-          "columnsFrom": [
-            "workspace_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["workspace_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }

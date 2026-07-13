@@ -28,7 +28,7 @@ export function CardHeader({
     <div className="flex items-start justify-between gap-3 border-b border-edge px-4 py-3">
       <div className="min-w-0">
         <div className="text-sm font-semibold text-neutral-100">{title}</div>
-        {subtitle ? <div className="mt-0.5 text-xs text-muted">{subtitle}</div> : null}
+        {subtitle ? <div className="mt-0.5 text-xs text-muted-foreground">{subtitle}</div> : null}
       </div>
       {right ? <div className="shrink-0">{right}</div> : null}
     </div>

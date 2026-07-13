@@ -11,6 +11,7 @@ import {
   ChatMessageRole,
   ClaudeSessionState,
   PermissionBehavior,
+  ReasoningEffort,
 } from '../enums/claude';
 import type {
   ChatBlock,
@@ -18,10 +19,35 @@ import type {
   ChatMessage,
   ChatSnapshot,
   ClaudeMessage,
+  ModelOption,
   PermissionRequest,
+  QuestionItem,
+  QuestionRequest,
 } from '../types/claude';
 
 export const claudeSessionStateSchema = z.nativeEnum(ClaudeSessionState);
+
+export const reasoningEffortSchema = z.nativeEnum(ReasoningEffort);
+
+export const modelOptionSchema: z.ZodType<ModelOption> = z.object({
+  value: z.string(),
+  displayName: z.string(),
+  description: z.string(),
+  supportsEffort: z.boolean(),
+  supportedEffortLevels: z.array(reasoningEffortSchema),
+});
+
+export const questionItemSchema: z.ZodType<QuestionItem> = z.object({
+  header: z.string(),
+  question: z.string(),
+  multiSelect: z.boolean(),
+  options: z.array(z.object({ label: z.string(), description: z.string() })),
+});
+
+export const questionRequestSchema: z.ZodType<QuestionRequest> = z.object({
+  id: z.string(),
+  questions: z.array(questionItemSchema),
+});
 
 export const claudeMessageSchema: z.ZodType<ClaudeMessage> = z.object({
   role: z.string(),
@@ -96,6 +122,17 @@ export const chatEventSchema: z.ZodType<ChatEvent> = z.discriminatedUnion('kind'
     id: z.string(),
     behavior: z.nativeEnum(PermissionBehavior),
   }),
+  z.object({
+    kind: z.literal(ChatEventKind.QuestionRequest),
+    id: z.string(),
+    questions: z.array(questionItemSchema),
+  }),
+  z.object({ kind: z.literal(ChatEventKind.QuestionResolved), id: z.string() }),
+  z.object({
+    kind: z.literal(ChatEventKind.Config),
+    model: z.string().nullable(),
+    effort: reasoningEffortSchema.nullable(),
+  }),
   z.object({ kind: z.literal(ChatEventKind.Cwd), cwd: z.string().nullable() }),
   z.object({ kind: z.literal(ChatEventKind.Error), message: z.string() }),
 ]);
@@ -105,6 +142,8 @@ export const chatSnapshotSchema: z.ZodType<ChatSnapshot> = z.object({
   sessionId: z.string().nullable(),
   cwd: z.string().nullable(),
   model: z.string().nullable(),
+  effort: reasoningEffortSchema.nullable(),
   messages: z.array(z.object({ message: chatMessageSchema, createdAt: z.string().datetime() })),
   pendingPermissions: z.array(permissionRequestSchema),
+  pendingQuestions: z.array(questionRequestSchema),
 });

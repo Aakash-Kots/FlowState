@@ -1,8 +1,10 @@
 import { join } from 'node:path';
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, Menu, type MenuItemConstructorOptions } from 'electron';
 import { createIPCHandler } from 'electron-trpc/main';
+import { DEFAULT_KEYBINDINGS, ShortcutCommand } from '@flowstate/shared';
 import { appRouter } from './router';
 import { claudeService } from './services/claude';
+import { shortcutsService } from './services/shortcuts';
 import { terminalService } from './services/terminal';
 import { closeStore, getWindowBounds, initStore, setWindowBounds } from './store';
 
@@ -14,9 +16,111 @@ const DEV_RENDERER_URL = 'http://localhost:3000';
 
 const DEFAULT_BOUNDS = { width: 1440, height: 900 };
 
+const IS_MAC = process.platform === 'darwin';
+
+/** Chord modifier/key tokens → Electron accelerator tokens. */
+const ACCEL_MODS: Record<string, string> = {
+  mod: 'CmdOrCtrl',
+  ctrl: 'Ctrl',
+  alt: 'Alt',
+  shift: 'Shift',
+  meta: 'Super',
+};
+const ACCEL_KEYS: Record<string, string> = {
+  enter: 'Return',
+  escape: 'Esc',
+  space: 'Space',
+  tab: 'Tab',
+  up: 'Up',
+  down: 'Down',
+  left: 'Left',
+  right: 'Right',
+};
+
 /////////////
 // Helpers //
 /////////////
+
+/** Translate a shared `KeyChord` (`"mod+shift+]"`) into an Electron accelerator. */
+function chordToAccelerator(chord: string): string {
+  const parts = chord.toLowerCase().split('+');
+  const key = parts[parts.length - 1]!;
+  const mods = parts.slice(0, -1).map((m) => ACCEL_MODS[m] ?? m);
+  const keyToken = ACCEL_KEYS[key] ?? (key.length === 1 ? key.toUpperCase() : key);
+  return [...mods, keyToken].join('+');
+}
+
+/**
+ * Build the application menu, deriving accelerators from the resolved keymap
+ * (defaults + persisted overrides) so native shortcuts track the user's
+ * bindings. Menu clicks push their command to the renderer's dispatcher via
+ * `shortcutsService`, which is how a shortcut fires even when a focused terminal
+ * would swallow the web keydown. Rebuilt whenever the keymap changes.
+ */
+function buildAppMenu(): void {
+  const overrides = shortcutsService.getKeymap();
+  const accelerator = (command: ShortcutCommand): string | undefined => {
+    const chord =
+      overrides[command] ?? DEFAULT_KEYBINDINGS.find((b) => b.command === command)?.keys;
+    return chord ? chordToAccelerator(chord) : undefined;
+  };
+  const item = (command: ShortcutCommand, label: string): MenuItemConstructorOptions => ({
+    label,
+    accelerator: accelerator(command),
+    click: () => shortcutsService.trigger(command),
+  });
+
+  const template: MenuItemConstructorOptions[] = [
+    ...(IS_MAC ? [{ role: 'appMenu' } as MenuItemConstructorOptions] : []),
+    {
+      label: 'File',
+      submenu: [
+        item(ShortcutCommand.NewTab, 'New Tab'),
+        item(ShortcutCommand.CloseTab, 'Close Tab'),
+        { type: 'separator' },
+        item(ShortcutCommand.PickWorkingFolder, 'Open Working Folder…'),
+        ...(IS_MAC
+          ? []
+          : [
+              { type: 'separator' } as MenuItemConstructorOptions,
+              { role: 'quit' } as MenuItemConstructorOptions,
+            ]),
+      ],
+    },
+    { role: 'editMenu' },
+    {
+      label: 'View',
+      submenu: [
+        item(ShortcutCommand.ToggleSidebar, 'Toggle Sidebar'),
+        item(ShortcutCommand.OpenCommandPalette, 'Command Palette…'),
+        item(ShortcutCommand.ShowShortcutsHelp, 'Keyboard Shortcuts'),
+        { type: 'separator' },
+        { role: 'reload' },
+        { role: 'toggleDevTools' },
+        { role: 'togglefullscreen' },
+      ],
+    },
+    {
+      label: 'Go',
+      submenu: [
+        item(ShortcutCommand.NextTab, 'Next Tab'),
+        item(ShortcutCommand.PrevTab, 'Previous Tab'),
+        { type: 'separator' },
+        item(ShortcutCommand.GoToTab1, 'Tab 1'),
+        item(ShortcutCommand.GoToTab2, 'Tab 2'),
+        item(ShortcutCommand.GoToTab3, 'Tab 3'),
+        item(ShortcutCommand.GoToTab4, 'Tab 4'),
+        item(ShortcutCommand.GoToTab5, 'Tab 5'),
+        { type: 'separator' },
+        item(ShortcutCommand.FocusInput, 'Focus Composer'),
+        item(ShortcutCommand.InterruptSession, 'Interrupt Claude'),
+      ],
+    },
+    { role: 'windowMenu' },
+  ];
+
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
 
 function createWindow(): void {
   const saved = getWindowBounds();
@@ -60,6 +164,12 @@ function createWindow(): void {
 void app.whenReady().then(() => {
   // Open the local SQLite store and run migrations before any window opens.
   initStore();
+
+  // Application menu carries the keyboard accelerators; rebuild it whenever the
+  // user rebinds a shortcut so the native accelerators stay in sync.
+  buildAppMenu();
+  shortcutsService.onKeymapChange(buildAppMenu);
+
   createWindow();
 
   app.on('activate', () => {

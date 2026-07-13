@@ -3,7 +3,7 @@
  * shared `workspaceSchema` on the way out, so the database can never hand back a
  * malformed Workspace to the rest of the app.
  */
-import { type Workspace, workspaceSchema } from '@flowstate/shared';
+import { ClaudeSessionState, type Workspace, workspaceSchema } from '@flowstate/shared';
 import { desc, eq } from 'drizzle-orm';
 import { getDb } from './db';
 import { workspaces } from './schema';
@@ -78,4 +78,25 @@ export function upsertWorkspace(input: Workspace): Workspace {
 
 export function deleteWorkspace(id: string): void {
   getDb().delete(workspaces).where(eq(workspaces.id, id)).run();
+}
+
+/**
+ * Ensure a workspace row exists so child rows (tabs, transcripts) can reference
+ * it. Creates a minimal placeholder — its folder fields are filled in later when
+ * the user picks a working directory (`ClaudeService.setCwd`). Returns the row.
+ */
+export function ensureWorkspace(id: string): Workspace {
+  const existing = getWorkspace(id);
+  if (existing) return existing;
+  return upsertWorkspace({
+    id,
+    name: 'Workspace',
+    repoRoot: '',
+    worktreePath: '',
+    branch: '',
+    linearIssue: null,
+    claudeState: ClaudeSessionState.Idle,
+    claudeSessionId: null,
+    createdAt: new Date().toISOString(),
+  });
 }
