@@ -25,15 +25,16 @@ issue. See [README.md](README.md) for the product overview and
 
 ## Commands (this repo uses Bun, not npm/pnpm)
 
-| Command                                        | What it does                                            |
-| ---------------------------------------------- | ------------------------------------------------------- |
-| `bun install`                                  | Install deps                                            |
-| `bun run dev`                                  | Next dev server (:3000) + Electron with hot reload      |
-| `bun run typecheck`                            | Typecheck every workspace (main + renderer + shared)    |
-| `bun run lint`                                 | Lint the renderer                                       |
-| `bun run build`                                | Static-export the renderer + bundle main/preload        |
-| `bun run format`                               | Prettier over the repo                                  |
-| `bun run --filter @flowstate/main db:generate` | Generate a Drizzle SQL migration from `store/schema.ts` |
+| Command                     | What it does                                                          |
+| --------------------------- | --------------------------------------------------------------------- |
+| `bun install`               | Install deps                                                          |
+| `bun run dev`               | Next dev server (:3000) + Electron with hot reload                    |
+| `bun run typecheck`         | Typecheck every workspace (main + renderer + shared)                  |
+| `bun run lint`              | Lint the renderer                                                     |
+| `bun run build`             | Static-export the renderer + bundle main/preload                      |
+| `bun run format`            | Prettier over the repo                                                |
+| `bun run db:generate`       | Generate a Drizzle migration, serialized through `main` (see Gotchas) |
+| `bun run db:generate:local` | Raw `drizzle-kit generate` — offline, no git (escape hatch)           |
 
 CI runs `typecheck`, `lint`, and `build` — run all three before considering a
 change done.
@@ -74,5 +75,15 @@ change done.
   top-level import.
 - Native modules (`node-pty`, `better-sqlite3`) are rebuilt against Electron's
   ABI; they only load inside the Electron main process, not plain Node.
-- Migrations apply automatically on startup — edit `store/schema.ts`, run
-  `db:generate`, commit the generated SQL; there is no manual migrate step.
+- Migrations apply automatically on startup — edit `store/schema.ts`, then run
+  `bun run db:generate`; there is no manual migrate step. `db:generate` is a
+  git-aware wrapper (`scripts/db-generate.mjs`) that keeps migration numbering
+  linear across parallel worktrees: it rebases `apps/main/drizzle/` on the latest
+  `origin/main`, generates, pushes **only** the new migration commit straight to
+  `origin/main` (claiming the index; retrying off a fresh tip if another worktree
+  raced), then commits the same migration onto your feature branch. Your
+  uncommitted `schema.ts` is left staged for you. Always mint migrations through
+  this script — never hand-number one or run `drizzle-kit` directly (use
+  `db:generate:local` only for offline experiments you'll throw away), or the
+  linear-history invariant breaks. It requires a clean `apps/main/drizzle/`
+  (commit/stash any in-progress migration first).
