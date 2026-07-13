@@ -69,8 +69,8 @@ export function InputBar({ disabled }: { disabled: boolean }) {
         )}
         <div
           className={cn(
-            'rounded-2xl border bg-muted shadow-lg shadow-black/20',
-            planMode ? 'border-primary/40 bg-primary/[0.04]' : 'border-border',
+            'rounded-2xl border bg-secondary shadow-lg shadow-black/20',
+            planMode ? 'border-primary/40' : 'border-border',
           )}
         >
           {hasPrompt ? (
