@@ -44,6 +44,8 @@ export const tabs = sqliteTable(
     // Per-tab Claude session config; null inherits the SDK/CLI default.
     model: text('model'),
     effort: text('effort'),
+    // Whether the tab is in plan mode (SDK `permissionMode: 'plan'`).
+    planMode: integer('plan_mode', { mode: 'boolean' }).notNull().default(false),
     position: integer('position').notNull(),
     createdAt: text('created_at').notNull(),
   },

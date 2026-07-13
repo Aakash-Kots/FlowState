@@ -15,6 +15,7 @@
 export enum ShortcutCommand {
   OpenCommandPalette = 'open-command-palette',
   ShowShortcutsHelp = 'show-shortcuts-help',
+  OpenSettings = 'open-settings',
   ToggleSidebar = 'toggle-sidebar',
   NewTab = 'new-tab',
   CloseTab = 'close-tab',
@@ -29,6 +30,7 @@ export enum ShortcutCommand {
   GoToTab5 = 'go-to-tab-5',
   FocusInput = 'focus-input',
   InterruptSession = 'interrupt-session',
+  TogglePlanMode = 'toggle-plan-mode',
   PickWorkingFolder = 'pick-working-folder',
 }
 

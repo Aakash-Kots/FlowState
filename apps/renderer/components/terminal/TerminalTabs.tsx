@@ -66,7 +66,15 @@ function NewTerminalButton({ disabled }: { disabled: boolean }) {
 }
 
 /** The body for the active terminal tab: an inline script prompt or the live pty. */
-function TerminalBody({ tab, cwd, project }: { tab: TerminalTab; cwd: string | null; project: Project | null }) {
+function TerminalBody({
+  tab,
+  cwd,
+  project,
+}: {
+  tab: TerminalTab;
+  cwd: string | null;
+  project: Project | null;
+}) {
   // An unconfigured Setup/Run tab prompts for the project script and must never
   // spawn a pty — otherwise a plain shell would orphan itself under the tab id
   // and block the real command from running once it's set.
@@ -81,12 +89,7 @@ function TerminalBody({ tab, cwd, project }: { tab: TerminalTab; cwd: string | n
     return <ScriptSetupTab project={project} kind={tab.kind} />;
   }
   return (
-    <WorkspaceTerminal
-      key={tab.id}
-      terminalId={tab.id}
-      cwd={cwd}
-      startupCommand={tab.command}
-    />
+    <WorkspaceTerminal key={tab.id} terminalId={tab.id} cwd={cwd} startupCommand={tab.command} />
   );
 }
 

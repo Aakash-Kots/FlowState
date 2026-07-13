@@ -21,9 +21,7 @@ export function ChatView() {
   const messages = useChat((s) => s.messages);
   const streamingText = useChat((s) => s.streamingText);
   const activeIndicator = useChat((s) => s.activeIndicator);
-  const pendingCount = useChat(
-    (s) => s.pendingPermissions.length + s.pendingQuestions.length,
-  );
+  const pendingCount = useChat((s) => s.pendingPermissions.length + s.pendingQuestions.length);
   const sessionState = useChat((s) => s.sessionState);
 
   const scrollRef = useRef<HTMLDivElement>(null);

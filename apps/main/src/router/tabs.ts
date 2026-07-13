@@ -11,6 +11,7 @@ import {
   MAX_TABS_PER_WORKSPACE,
   createTabInputSchema,
   type Tab,
+  type TabStateChange,
 } from '@flowstate/shared';
 import { z } from 'zod';
 import {
@@ -18,6 +19,7 @@ import {
   deleteTabTranscript,
   ensureWorkspace,
   getTab,
+  listAllTabs,
   listTabs,
   upsertTab,
 } from '../store';
@@ -38,6 +40,7 @@ export function makeTab(workspaceId: string, title: string, position: number): T
     claudeSessionId: null,
     model: null,
     effort: null,
+    planMode: false,
     position,
     createdAt: new Date().toISOString(),
   };
@@ -52,6 +55,13 @@ export const tabsRouter = router({
     upsertTab(makeTab(input.workspaceId, DEFAULT_TAB_TITLE, 0));
     return listTabs(input.workspaceId);
   }),
+
+  // Every tab's persisted session state across all workspaces — seeds the
+  // renderer's status-dot map before the live `claude.onAnyState` stream takes
+  // over. Cheap: pure store reads, no transcripts or sessions touched.
+  states: publicProcedure.query((): TabStateChange[] =>
+    listAllTabs().map((t) => ({ tabId: t.id, workspaceId: t.workspaceId, state: t.claudeState })),
+  ),
 
   create: publicProcedure.input(createTabInputSchema).mutation(({ input }) => {
     ensureWorkspace(input.workspaceId);

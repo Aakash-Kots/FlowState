@@ -85,7 +85,11 @@ function parseGithubRemote(
   const owner = match?.[1];
   const name = match?.[2];
   if (!owner || !name) return null;
-  return { owner, fullName: `${owner}/${name}`, cloneUrl: `https://github.com/${owner}/${name}.git` };
+  return {
+    owner,
+    fullName: `${owner}/${name}`,
+    cloneUrl: `https://github.com/${owner}/${name}.git`,
+  };
 }
 
 /** Shape of the fields we read off a GitHub REST `repos` item. */
@@ -219,9 +223,7 @@ export class GithubService {
    * A worktree's GitHub `origin`, parsed. Throws with a clear message when the
    * remote is missing or not a GitHub URL (the UI gates push/PR on this).
    */
-  private async githubOrigin(
-    worktreePath: string,
-  ): Promise<{ owner: string; fullName: string }> {
+  private async githubOrigin(worktreePath: string): Promise<{ owner: string; fullName: string }> {
     const origin = await gitOutput(['-C', worktreePath, 'remote', 'get-url', 'origin']);
     const parsed = origin ? parseGithubRemote(origin) : null;
     if (!parsed) {
@@ -371,14 +373,28 @@ export class GithubService {
     // A merged/closed PR needs no CI or mergeability — the header only cares
     // that it's merged (→ offer worktree deletion).
     if (state !== PrState.Open) {
-      return { number: pr.number, url: pr.html_url, state, checks: PrChecks.None, pending: 0, mergeable: false };
+      return {
+        number: pr.number,
+        url: pr.html_url,
+        state,
+        checks: PrChecks.None,
+        pending: 0,
+        mergeable: false,
+      };
     }
 
     const [checks, mergeable] = await Promise.all([
       this.rollupChecks(fullName, pr.head.sha, headers),
       this.readMergeable(fullName, pr.number, headers),
     ]);
-    return { number: pr.number, url: pr.html_url, state, checks: checks.state, pending: checks.pending, mergeable };
+    return {
+      number: pr.number,
+      url: pr.html_url,
+      state,
+      checks: checks.state,
+      pending: checks.pending,
+      mergeable,
+    };
   }
 
   /** Standard authenticated GitHub REST headers. */
@@ -409,18 +425,24 @@ export class GithubService {
       else if (isFailing) failing += 1;
     };
 
-    const runsRes = await fetch(`${GITHUB_API}/repos/${fullName}/commits/${sha}/check-runs`, { headers });
+    const runsRes = await fetch(`${GITHUB_API}/repos/${fullName}/commits/${sha}/check-runs`, {
+      headers,
+    });
     if (runsRes.ok) {
-      const runs = ((await runsRes.json()) as { check_runs?: GithubApiCheckRun[] }).check_runs ?? [];
+      const runs =
+        ((await runsRes.json()) as { check_runs?: GithubApiCheckRun[] }).check_runs ?? [];
       for (const run of runs) {
         const done = run.status === 'completed';
         tally(!done, done && FAILED_CONCLUSIONS.includes(run.conclusion ?? ''));
       }
     }
 
-    const statusRes = await fetch(`${GITHUB_API}/repos/${fullName}/commits/${sha}/status`, { headers });
+    const statusRes = await fetch(`${GITHUB_API}/repos/${fullName}/commits/${sha}/status`, {
+      headers,
+    });
     if (statusRes.ok) {
-      const statuses = ((await statusRes.json()) as { statuses?: GithubApiCommitStatus[] }).statuses ?? [];
+      const statuses =
+        ((await statusRes.json()) as { statuses?: GithubApiCommitStatus[] }).statuses ?? [];
       for (const s of statuses) {
         tally(s.state === 'pending', s.state === 'failure' || s.state === 'error');
       }

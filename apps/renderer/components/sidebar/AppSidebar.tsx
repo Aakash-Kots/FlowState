@@ -13,11 +13,13 @@ import {
 } from '@/lib/projects';
 import { useWorktreeDiffStat } from '@/lib/git';
 import { projectName, shortenPath } from '@/lib/paths';
+import { useWorktreeState, useWorktreeUnread } from '@/lib/tabStates';
 import { pickWorkingFolder, useWorkspace } from '@/lib/workspace';
 import { AddProjectModal } from '../projects/AddProjectModal';
 import { CreateWorktreeModal } from '../projects/CreateWorktreeModal';
 import { CtaIconButton } from '../shared/CtaIconButton';
 import { cn } from '../ui/cn';
+import { StateIndicator } from '../ui/StateIndicator';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible';
 import {
   Sidebar,
@@ -73,6 +75,8 @@ function WorktreeRow({ workspace }: { workspace: Workspace }) {
   const active = useWorkspace((s) => s.workspaceId) === workspace.id;
   const stat = useWorktreeDiffStat(workspace.id);
   const hasStat = !!stat && (stat.insertions > 0 || stat.deletions > 0);
+  const state = useWorktreeState(workspace.id);
+  const unread = useWorktreeUnread(workspace.id);
   return (
     <SidebarMenuSubItem>
       <SidebarMenuSubButton asChild isActive={active}>
@@ -84,6 +88,7 @@ function WorktreeRow({ workspace }: { workspace: Workspace }) {
         >
           <GitBranch className="size-4 shrink-0" />
           <span className="flex-1 truncate">{workspace.branch}</span>
+          <StateIndicator state={state} unread={unread} />
           {/* Trailing slot: diff badge by default, remove control on hover (they
               overlap so the row width stays stable). */}
           <span className="relative flex shrink-0 items-center">
@@ -140,7 +145,11 @@ function ProjectGroup({ project }: { project: Project }) {
             </span>
           </div>
         </div>
-        <SidebarMenuAction showOnHover title="New worktree" onClick={() => openCreateWorktree(project.id)}>
+        <SidebarMenuAction
+          showOnHover
+          title="New worktree"
+          onClick={() => openCreateWorktree(project.id)}
+        >
           <Plus />
           <span className="sr-only">New worktree</span>
         </SidebarMenuAction>

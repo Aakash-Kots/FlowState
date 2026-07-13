@@ -15,6 +15,7 @@ export const KEYBINDINGS_SETTING_KEY = 'keybindings';
 export const DEFAULT_KEYBINDINGS: Keybinding[] = [
   { command: ShortcutCommand.OpenCommandPalette, keys: 'mod+k' },
   { command: ShortcutCommand.ShowShortcutsHelp, keys: 'mod+/' },
+  { command: ShortcutCommand.OpenSettings, keys: 'mod+,' },
   { command: ShortcutCommand.ToggleSidebar, keys: 'mod+b' },
   { command: ShortcutCommand.NewTab, keys: 'mod+t' },
   { command: ShortcutCommand.CloseTab, keys: 'mod+w' },
@@ -33,5 +34,9 @@ export const DEFAULT_KEYBINDINGS: Keybinding[] = [
   { command: ShortcutCommand.GoToTab5, keys: 'mod+5' },
   { command: ShortcutCommand.FocusInput, keys: 'mod+l' },
   { command: ShortcutCommand.InterruptSession, keys: 'mod+.' },
+  // Shift+Tab toggles plan mode. The composer handles it inline while focused
+  // (the engine's focus guard suppresses non-modifier chords while editing);
+  // this binding gives the command palette / cheat-sheet a discoverable entry.
+  { command: ShortcutCommand.TogglePlanMode, keys: 'shift+tab' },
   { command: ShortcutCommand.PickWorkingFolder, keys: 'mod+o' },
 ];

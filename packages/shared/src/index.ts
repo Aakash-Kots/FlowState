@@ -1,6 +1,7 @@
 // Barrel for @flowstate/shared — cross-app enums, types, zod schemas, constants.
 export * from './enums/claude';
 export * from './enums/git';
+export * from './enums/settings';
 export * from './enums/shortcut';
 export * from './enums/terminal';
 export * from './types/app';

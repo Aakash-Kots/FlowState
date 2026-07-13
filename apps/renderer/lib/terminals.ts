@@ -42,7 +42,12 @@ function shellCount(tabs: TerminalTab[]): number {
  */
 export async function loadTerminals(workspaceId: string): Promise<void> {
   if (useTerminals.getState().workspaceId === workspaceId) return;
-  useTerminals.setState({ workspaceId, hydrated: false, terminalTabs: [], activeTerminalTabId: null });
+  useTerminals.setState({
+    workspaceId,
+    hydrated: false,
+    terminalTabs: [],
+    activeTerminalTabId: null,
+  });
   try {
     const terminalTabs = await trpc().terminal.listTabs.query({ workspaceId });
     // Guard against an out-of-order response after another workspace was selected.
@@ -67,9 +72,7 @@ export async function refreshTerminals(): Promise<void> {
     useTerminals.setState((s) => ({
       terminalTabs,
       activeTerminalTabId:
-        terminalTabs.find((t) => t.id === s.activeTerminalTabId)?.id ??
-        terminalTabs[0]?.id ??
-        null,
+        terminalTabs.find((t) => t.id === s.activeTerminalTabId)?.id ?? terminalTabs[0]?.id ?? null,
     }));
   } catch {
     // Non-fatal: the strip simply keeps the tabs it already had.
@@ -108,7 +111,9 @@ export async function closeTerminal(tabId: string): Promise<void> {
   await trpc().terminal.closeTab.mutate({ tabId });
   const remaining = terminalTabs.filter((t) => t.id !== tabId);
   const nextActive =
-    activeTerminalTabId === tabId ? (remaining[remaining.length - 1]?.id ?? null) : activeTerminalTabId;
+    activeTerminalTabId === tabId
+      ? (remaining[remaining.length - 1]?.id ?? null)
+      : activeTerminalTabId;
   useTerminals.setState({ terminalTabs: remaining, activeTerminalTabId: nextActive });
 }
 

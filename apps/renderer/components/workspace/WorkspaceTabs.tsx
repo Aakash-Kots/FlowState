@@ -5,8 +5,10 @@ import { Plus, X } from 'lucide-react';
 import { ClaudeSessionState, MAX_TABS_PER_WORKSPACE, type Tab } from '@flowstate/shared';
 import { ConnStatus } from '@/lib/enums/connection';
 import { TabProvider, useChat } from '@/lib/chat';
+import { useTabState, useTabUnread } from '@/lib/tabStates';
 import { closeTab, openTab, selectTab, useWorkspace } from '@/lib/workspace';
 import { ChatWorkspace } from '../chat/ChatWorkspace';
+import { StateIndicator } from '../ui/StateIndicator';
 import { StatusPill } from '../ui/StatusPill';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
@@ -43,6 +45,8 @@ function ActiveTabStatus() {
 function TabTrigger({ tab, canClose }: { tab: Tab; canClose: boolean }) {
   const labelRef = useRef<HTMLSpanElement>(null);
   const [truncated, setTruncated] = useState(false);
+  const state = useTabState(tab.id);
+  const unread = useTabUnread(tab.id);
 
   // Only surface the tooltip when the title is actually clipped by `truncate`.
   // Re-measured when the title or the tab strip's width changes.
@@ -58,6 +62,7 @@ function TabTrigger({ tab, canClose }: { tab: Tab; canClose: boolean }) {
 
   const trigger = (
     <TabsTrigger value={tab.id} className="group/tab max-w-40 gap-1.5 pr-1.5">
+      <StateIndicator state={state} unread={unread} />
       <span ref={labelRef} className="truncate">
         {tab.title}
       </span>

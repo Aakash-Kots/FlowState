@@ -68,7 +68,10 @@ function ChangeRow({ change }: { change: GitChange }) {
         isSelected ? 'bg-accent text-neutral-100' : 'hover:bg-muted',
       )}
     >
-      <span className={cn('w-3 shrink-0 text-center font-semibold', badge.className)} title={badge.label}>
+      <span
+        className={cn('w-3 shrink-0 text-center font-semibold', badge.className)}
+        title={badge.label}
+      >
         {badge.letter}
       </span>
       <PathLabel path={change.path} />

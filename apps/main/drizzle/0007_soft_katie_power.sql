@@ -1,0 +1,1 @@
+ALTER TABLE `tabs` ADD `plan_mode` integer DEFAULT false NOT NULL;

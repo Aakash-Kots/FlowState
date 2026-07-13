@@ -7,7 +7,7 @@ import {
   ShortcutCommand,
   ShortcutScope,
 } from '@flowstate/shared';
-import { focusInput, interruptSession } from '../chat';
+import { focusInput, interruptSession, togglePlanMode } from '../chat';
 import {
   closeTab,
   cycleTab,
@@ -17,6 +17,7 @@ import {
   selectTabByIndex,
   useWorkspace,
 } from '../workspace';
+import { setSettingsOpen } from '../settings';
 import { setHelpOpen, setPaletteOpen, useShortcuts } from './store';
 
 ///////////
@@ -71,6 +72,13 @@ export const COMMANDS: Record<ShortcutCommand, CommandDef> = {
     category: ShortcutCategory.App,
     scope: ShortcutScope.Global,
     run: () => setHelpOpen(true),
+  },
+  [ShortcutCommand.OpenSettings]: {
+    command: ShortcutCommand.OpenSettings,
+    label: 'Open settings',
+    category: ShortcutCategory.App,
+    scope: ShortcutScope.Global,
+    run: () => setSettingsOpen(true),
   },
   [ShortcutCommand.ToggleSidebar]: {
     command: ShortcutCommand.ToggleSidebar,
@@ -185,6 +193,18 @@ export const COMMANDS: Record<ShortcutCommand, CommandDef> = {
     run: () => {
       const id = activeTabId();
       if (id) interruptSession(id);
+    },
+  },
+  [ShortcutCommand.TogglePlanMode]: {
+    command: ShortcutCommand.TogglePlanMode,
+    label: 'Toggle plan mode',
+    category: ShortcutCategory.Session,
+    // Editor scope: the composer handles Shift+Tab inline while focused; this
+    // entry drives the command palette / cheat-sheet and the unfocused case.
+    scope: ShortcutScope.Editor,
+    run: () => {
+      const id = activeTabId();
+      if (id) togglePlanMode(id);
     },
   },
 };

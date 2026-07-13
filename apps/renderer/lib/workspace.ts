@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { create } from 'zustand';
 import { DEFAULT_WORKSPACE_ID, MAX_TABS_PER_WORKSPACE, type Tab } from '@flowstate/shared';
 import { WorkspaceView } from './enums/view';
+import { markTabRead, registerTab, unregisterTab } from './tabStates';
 import { trpc } from './trpc';
 
 ///////////
@@ -86,7 +87,15 @@ export async function selectWorkspace(workspaceId: string): Promise<void> {
       trpc().tabs.list.query({ workspaceId }),
       trpc().claude.cwd.query({ workspaceId }),
     ]);
-    useWorkspace.setState({ hydrated: true, workspaceId, tabs, cwd, activeTabId: tabs[0]?.id ?? null });
+    useWorkspace.setState({
+      hydrated: true,
+      workspaceId,
+      tabs,
+      cwd,
+      activeTabId: tabs[0]?.id ?? null,
+    });
+    // Landing on a worktree counts as opening its focused tab.
+    if (tabs[0]) markTabRead(tabs[0].id);
   } catch {
     useWorkspace.setState({ hydrated: true });
   }
@@ -94,11 +103,17 @@ export async function selectWorkspace(workspaceId: string): Promise<void> {
 
 export function selectTab(tabId: string): void {
   useWorkspace.setState({ activeTabId: tabId });
+  markTabRead(tabId);
 }
 
 /** Switch the worktree's top-level surface (chat tabs ↔ terminals). */
 export function setViewMode(viewMode: WorkspaceView): void {
   useWorkspace.setState({ viewMode });
+  // Returning to the chat surface means you're now looking at the active tab.
+  if (viewMode === WorkspaceView.Workspace) {
+    const { activeTabId } = useWorkspace.getState();
+    if (activeTabId) markTabRead(activeTabId);
+  }
 }
 
 /**
@@ -134,6 +149,7 @@ export async function openTab(): Promise<void> {
   const { workspaceId, tabs } = useWorkspace.getState();
   if (tabs.length >= MAX_TABS_PER_WORKSPACE) return;
   const tab = await trpc().tabs.create.mutate({ workspaceId });
+  registerTab(tab.id, workspaceId);
   useWorkspace.setState((s) => ({ tabs: [...s.tabs, tab], activeTabId: tab.id }));
 }
 
@@ -142,6 +158,7 @@ export async function closeTab(tabId: string): Promise<void> {
   const { tabs, activeTabId } = useWorkspace.getState();
   if (tabs.length <= 1) return;
   await trpc().tabs.close.mutate({ tabId });
+  unregisterTab(tabId);
   const remaining = tabs.filter((t) => t.id !== tabId);
   const nextActive =
     activeTabId === tabId ? (remaining[remaining.length - 1]?.id ?? null) : activeTabId;

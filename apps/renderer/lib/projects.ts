@@ -1,7 +1,12 @@
 'use client';
 
 import { create } from 'zustand';
-import { DEFAULT_WORKSPACE_ID, type GithubRepo, type Project, type Workspace } from '@flowstate/shared';
+import {
+  DEFAULT_WORKSPACE_ID,
+  type GithubRepo,
+  type Project,
+  type Workspace,
+} from '@flowstate/shared';
 import { refreshTerminals } from './terminals';
 import { trpc } from './trpc';
 import { selectWorkspace, useWorkspace } from './workspace';

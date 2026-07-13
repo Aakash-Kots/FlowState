@@ -75,6 +75,253 @@
 }
 
 /*
+ * Code-highlighting palettes. Every code surface (the git DiffPanel, chat code
+ * blocks, the Settings preview) reads these `--code-*` variables, so switching
+ * the `data-code-theme` attribute on <html> re-themes them instantly with no JS.
+ * GitHub Dark lives on :root as the default + pre-hydration fallback; the other
+ * themes override via their own `[data-code-theme='…']` block below. Token → var
+ * mapping is defined once, under `.code-hl`, so it applies to every surface.
+ */
+:root {
+  --code-bg: #0d1117;
+  --code-fg: #c9d1d9;
+  --code-comment: #8b949e;
+  --code-punctuation: #c9d1d9;
+  --code-keyword: #ff7b72;
+  --code-tag: #7ee787;
+  --code-string: #a5d6ff;
+  --code-number: #79c0ff;
+  --code-function: #d2a8ff;
+  --code-class: #ffa657;
+  --code-variable: #79c0ff;
+  --code-operator: #ff7b72;
+  --code-add-fg: #aff5b4;
+  --code-add-bg: rgba(63, 185, 80, 0.15);
+  --code-del-fg: #ffdcd7;
+  --code-del-bg: rgba(248, 81, 73, 0.15);
+  --code-hunk-fg: #58a6ff;
+  --code-hunk-bg: rgba(56, 139, 253, 0.1);
+  --code-meta-fg: #8b949e;
+}
+
+[data-code-theme='one-dark'] {
+  --code-bg: #282c34;
+  --code-fg: #abb2bf;
+  --code-comment: #7f848e;
+  --code-punctuation: #abb2bf;
+  --code-keyword: #c678dd;
+  --code-tag: #e06c75;
+  --code-string: #98c379;
+  --code-number: #d19a66;
+  --code-function: #61afef;
+  --code-class: #e5c07b;
+  --code-variable: #e06c75;
+  --code-operator: #56b6c2;
+  --code-add-fg: #98c379;
+  --code-add-bg: rgba(152, 195, 121, 0.12);
+  --code-del-fg: #e06c75;
+  --code-del-bg: rgba(224, 108, 117, 0.12);
+  --code-hunk-fg: #61afef;
+  --code-hunk-bg: rgba(97, 175, 239, 0.1);
+  --code-meta-fg: #7f848e;
+}
+
+[data-code-theme='dracula'] {
+  --code-bg: #282a36;
+  --code-fg: #f8f8f2;
+  --code-comment: #6272a4;
+  --code-punctuation: #f8f8f2;
+  --code-keyword: #ff79c6;
+  --code-tag: #ff79c6;
+  --code-string: #f1fa8c;
+  --code-number: #bd93f9;
+  --code-function: #50fa7b;
+  --code-class: #8be9fd;
+  --code-variable: #f8f8f2;
+  --code-operator: #ff79c6;
+  --code-add-fg: #50fa7b;
+  --code-add-bg: rgba(80, 250, 123, 0.12);
+  --code-del-fg: #ff5555;
+  --code-del-bg: rgba(255, 85, 85, 0.12);
+  --code-hunk-fg: #bd93f9;
+  --code-hunk-bg: rgba(189, 147, 249, 0.1);
+  --code-meta-fg: #6272a4;
+}
+
+[data-code-theme='nord'] {
+  --code-bg: #2e3440;
+  --code-fg: #d8dee9;
+  --code-comment: #616e88;
+  --code-punctuation: #eceff4;
+  --code-keyword: #81a1c1;
+  --code-tag: #81a1c1;
+  --code-string: #a3be8c;
+  --code-number: #b48ead;
+  --code-function: #88c0d0;
+  --code-class: #8fbcbb;
+  --code-variable: #d8dee9;
+  --code-operator: #81a1c1;
+  --code-add-fg: #a3be8c;
+  --code-add-bg: rgba(163, 190, 140, 0.12);
+  --code-del-fg: #bf616a;
+  --code-del-bg: rgba(191, 97, 106, 0.12);
+  --code-hunk-fg: #88c0d0;
+  --code-hunk-bg: rgba(136, 192, 208, 0.1);
+  --code-meta-fg: #616e88;
+}
+
+[data-code-theme='monokai'] {
+  --code-bg: #272822;
+  --code-fg: #f8f8f2;
+  --code-comment: #75715e;
+  --code-punctuation: #f8f8f2;
+  --code-keyword: #f92672;
+  --code-tag: #f92672;
+  --code-string: #e6db74;
+  --code-number: #ae81ff;
+  --code-function: #a6e22e;
+  --code-class: #66d9ef;
+  --code-variable: #f8f8f2;
+  --code-operator: #f92672;
+  --code-add-fg: #a6e22e;
+  --code-add-bg: rgba(166, 226, 46, 0.12);
+  --code-del-fg: #f92672;
+  --code-del-bg: rgba(249, 38, 114, 0.12);
+  --code-hunk-fg: #66d9ef;
+  --code-hunk-bg: rgba(102, 217, 239, 0.1);
+  --code-meta-fg: #75715e;
+}
+
+[data-code-theme='tokyo-night'] {
+  --code-bg: #1a1b26;
+  --code-fg: #a9b1d6;
+  --code-comment: #565f89;
+  --code-punctuation: #a9b1d6;
+  --code-keyword: #bb9af7;
+  --code-tag: #f7768e;
+  --code-string: #9ece6a;
+  --code-number: #ff9e64;
+  --code-function: #7aa2f7;
+  --code-class: #2ac3de;
+  --code-variable: #c0caf5;
+  --code-operator: #89ddff;
+  --code-add-fg: #9ece6a;
+  --code-add-bg: rgba(158, 206, 106, 0.12);
+  --code-del-fg: #f7768e;
+  --code-del-bg: rgba(247, 118, 142, 0.12);
+  --code-hunk-fg: #7aa2f7;
+  --code-hunk-bg: rgba(122, 162, 247, 0.1);
+  --code-meta-fg: #565f89;
+}
+
+[data-code-theme='solarized-dark'] {
+  --code-bg: #002b36;
+  --code-fg: #93a1a1;
+  --code-comment: #586e75;
+  --code-punctuation: #93a1a1;
+  --code-keyword: #859900;
+  --code-tag: #268bd2;
+  --code-string: #2aa198;
+  --code-number: #d33682;
+  --code-function: #268bd2;
+  --code-class: #b58900;
+  --code-variable: #cb4b16;
+  --code-operator: #859900;
+  --code-add-fg: #859900;
+  --code-add-bg: rgba(133, 153, 0, 0.14);
+  --code-del-fg: #dc322f;
+  --code-del-bg: rgba(220, 50, 47, 0.14);
+  --code-hunk-fg: #268bd2;
+  --code-hunk-bg: rgba(38, 139, 210, 0.1);
+  --code-meta-fg: #586e75;
+}
+
+[data-code-theme='github-light'] {
+  --code-bg: #ffffff;
+  --code-fg: #24292f;
+  --code-comment: #6e7781;
+  --code-punctuation: #24292f;
+  --code-keyword: #cf222e;
+  --code-tag: #116329;
+  --code-string: #0a3069;
+  --code-number: #0550ae;
+  --code-function: #8250df;
+  --code-class: #953800;
+  --code-variable: #0550ae;
+  --code-operator: #cf222e;
+  --code-add-fg: #1a7f37;
+  --code-add-bg: rgba(74, 194, 107, 0.16);
+  --code-del-fg: #cf222e;
+  --code-del-bg: rgba(255, 129, 130, 0.2);
+  --code-hunk-fg: #0969da;
+  --code-hunk-bg: rgba(84, 174, 255, 0.12);
+  --code-meta-fg: #6e7781;
+}
+
+/* Prism token → palette mapping, scoped to our highlighted surfaces. */
+.code-hl {
+  color: var(--code-fg);
+}
+.code-hl .token.comment,
+.code-hl .token.prolog,
+.code-hl .token.cdata {
+  color: var(--code-comment);
+  font-style: italic;
+}
+.code-hl .token.punctuation {
+  color: var(--code-punctuation);
+}
+.code-hl .token.namespace {
+  opacity: 0.75;
+}
+.code-hl .token.keyword,
+.code-hl .token.atrule,
+.code-hl .token.rule,
+.code-hl .token.important {
+  color: var(--code-keyword);
+}
+.code-hl .token.tag,
+.code-hl .token.selector,
+.code-hl .token.doctype {
+  color: var(--code-tag);
+}
+.code-hl .token.string,
+.code-hl .token.char,
+.code-hl .token.attr-value,
+.code-hl .token.regex,
+.code-hl .token.url {
+  color: var(--code-string);
+}
+.code-hl .token.number,
+.code-hl .token.boolean,
+.code-hl .token.constant,
+.code-hl .token.symbol {
+  color: var(--code-number);
+}
+.code-hl .token.function {
+  color: var(--code-function);
+}
+.code-hl .token.class-name,
+.code-hl .token.builtin {
+  color: var(--code-class);
+}
+.code-hl .token.property,
+.code-hl .token.attr-name,
+.code-hl .token.variable {
+  color: var(--code-variable);
+}
+.code-hl .token.operator,
+.code-hl .token.entity {
+  color: var(--code-operator);
+}
+.code-hl .token.deleted {
+  color: var(--code-del-fg);
+}
+.code-hl .token.inserted {
+  color: var(--code-add-fg);
+}
+
+/*
  * Default every element's border color to the shadcn `border` token. Without
  * this, bare `border`/`border-r` utilities (e.g. inside the shadcn Sidebar) fall
  * back to Tailwind's default gray-200 and render as a bright hairline.
