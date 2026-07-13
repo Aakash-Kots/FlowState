@@ -90,7 +90,7 @@ function WorktreeRow({ workspace }: { workspace: Workspace }) {
               e.stopPropagation();
               void removeWorktree(workspace);
             }}
-            className="rounded p-0.5 text-muted-foreground opacity-0 transition-colors hover:bg-edge hover:text-foreground group-hover/wt:opacity-100"
+            className="rounded p-0.5 text-muted-foreground opacity-0 transition-colors hover:bg-accent hover:text-foreground group-hover/wt:opacity-100"
           >
             <Trash2 className="size-3" />
           </span>

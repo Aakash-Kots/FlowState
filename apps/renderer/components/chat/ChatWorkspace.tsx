@@ -34,19 +34,19 @@ function ChatSession() {
 
   if (!hydrated) {
     return (
-      <div className="flex min-h-0 flex-1 items-center justify-center bg-base text-sm text-muted-foreground">
+      <div className="flex min-h-0 flex-1 items-center justify-center bg-background text-sm text-muted-foreground">
         Loading session…
       </div>
     );
   }
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col bg-base">
+    <div className="relative flex min-h-0 flex-1 flex-col bg-background">
       {cwd ? (
         <ChatView />
       ) : (
         <div className="flex min-h-0 flex-1 items-center justify-center">
-          <div className="max-w-sm rounded-lg border border-edge bg-surface p-6 text-center">
+          <div className="max-w-sm rounded-lg border border-border bg-secondary p-6 text-center">
             <h2 className="mb-1 text-sm font-semibold text-neutral-100">Choose a working folder</h2>
             <p className="mb-4 text-xs leading-relaxed text-muted-foreground">
               Claude Code runs against a folder on your machine — it reads, edits, and runs commands

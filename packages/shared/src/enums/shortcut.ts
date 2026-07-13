@@ -20,6 +20,8 @@ export enum ShortcutCommand {
   CloseTab = 'close-tab',
   NextTab = 'next-tab',
   PrevTab = 'prev-tab',
+  NextView = 'next-view',
+  PrevView = 'prev-view',
   GoToTab1 = 'go-to-tab-1',
   GoToTab2 = 'go-to-tab-2',
   GoToTab3 = 'go-to-tab-3',

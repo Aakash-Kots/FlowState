@@ -21,6 +21,8 @@ function rowToProject(row: ProjectRow): Project {
     localPath: row.localPath,
     defaultBranch: row.defaultBranch,
     private: row.private,
+    setupScript: row.setupScript,
+    runScript: row.runScript,
     createdAt: row.createdAt,
   });
 }
@@ -35,6 +37,8 @@ function projectToRow(project: Project): ProjectRow {
     localPath: project.localPath,
     defaultBranch: project.defaultBranch,
     private: project.private,
+    setupScript: project.setupScript,
+    runScript: project.runScript,
     createdAt: project.createdAt,
   };
 }
@@ -67,10 +71,22 @@ export function upsertProject(input: Project): Project {
         localPath: row.localPath,
         defaultBranch: row.defaultBranch,
         private: row.private,
+        setupScript: row.setupScript,
+        runScript: row.runScript,
       },
     })
     .run();
   return project;
+}
+
+/** Set a project's Setup/Run scripts. Returns the updated record, or null if absent. */
+export function setProjectScripts(
+  projectId: string,
+  scripts: { setupScript: string | null; runScript: string | null },
+): Project | null {
+  const existing = getProject(projectId);
+  if (!existing) return null;
+  return upsertProject({ ...existing, ...scripts });
 }
 
 export function deleteProject(id: string): void {

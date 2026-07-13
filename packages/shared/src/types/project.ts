@@ -33,6 +33,10 @@ export type Project = {
   localPath: string;
   defaultBranch: string;
   private: boolean;
+  /** Shell command run in each new worktree's Setup terminal (e.g. `bun install`); null until set. */
+  setupScript: string | null;
+  /** Shell command run in a worktree's Run terminal (e.g. `bun run dev`); null until set. */
+  runScript: string | null;
   createdAt: string;
 };
 
@@ -42,4 +46,11 @@ export type AddProjectInput = {
   cloneUrl: string;
   defaultBranch: string;
   private: boolean;
+};
+
+/** Input to set a project's Setup/Run scripts (either may be cleared to null). */
+export type UpdateProjectScriptsInput = {
+  projectId: string;
+  setupScript: string | null;
+  runScript: string | null;
 };

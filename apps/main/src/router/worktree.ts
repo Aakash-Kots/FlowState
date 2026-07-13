@@ -12,6 +12,7 @@ import { TRPCError } from '@trpc/server';
 import {
   ClaudeSessionState,
   DEFAULT_TAB_TITLE,
+  TerminalKind,
   UNTITLED_WORKSPACE_NAME,
   createWorktreeInputSchema,
   type Tab,
@@ -20,9 +21,11 @@ import {
 import { z } from 'zod';
 import {
   deleteWorkspace,
+  ensureDefaults,
   getProject,
   getWorkspace,
   listTabs,
+  listTerminalTabs,
   listWorkspacesByProject,
   upsertTab,
   upsertWorkspace,
@@ -31,6 +34,7 @@ import { randomBranchName } from '../lib/branch-names';
 import { claudeService } from '../services/claude';
 import { GitService } from '../services/git';
 import { fileLinkService } from '../services/links';
+import { terminalService } from '../services/terminal';
 import { worktreeService } from '../services/worktree';
 import { makeTab } from './tabs';
 import { publicProcedure, router } from '../trpc';
@@ -95,7 +99,19 @@ export const worktreeRouter = router({
         });
         const tab = upsertTab(makeTab(workspace.id, DEFAULT_TAB_TITLE, 0));
 
-        // 4. Optionally kick off the first session with the user's prompt.
+        // 4. Seed the Setup/Run terminals; auto-run the project's setup script
+        //    in the new worktree so dependencies install the moment it exists.
+        const terminals = ensureDefaults(workspace.id, project);
+        const setupTab = terminals.find((t) => t.kind === TerminalKind.Setup);
+        if (setupTab?.command) {
+          terminalService.spawn({
+            id: setupTab.id,
+            cwd: worktreePath,
+            startupCommand: setupTab.command,
+          });
+        }
+
+        // 5. Optionally kick off the first session with the user's prompt.
         const prompt = input.initialPrompt?.trim();
         if (prompt) claudeService.send(tab.id, prompt);
 
@@ -128,6 +144,7 @@ export const worktreeRouter = router({
       }
 
       for (const tab of listTabs(ws.id)) claudeService.closeSession(tab.id);
+      for (const term of listTerminalTabs(ws.id)) terminalService.kill(term.id);
 
       try {
         await worktreeService.remove({

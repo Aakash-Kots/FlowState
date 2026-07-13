@@ -25,10 +25,10 @@ function ProjectCard({ project }: { project: Project }) {
     <button
       type="button"
       onClick={open}
-      className="group flex min-w-0 flex-col gap-3 rounded-xl border border-edge bg-surface p-4 text-left transition-colors hover:border-edge/80 hover:bg-raised focus:outline-none focus-visible:ring-1 focus-visible:ring-ring/60"
+      className="group flex min-w-0 flex-col gap-3 rounded-xl border border-border bg-secondary p-4 text-left transition-colors hover:border-border/80 hover:bg-muted focus:outline-none focus-visible:ring-1 focus-visible:ring-ring/60"
     >
       <div className="flex min-w-0 items-center gap-3">
-        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-raised text-muted-foreground transition-colors group-hover:text-foreground">
+        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground transition-colors group-hover:text-foreground">
           <Folder className="size-5" />
         </div>
         <div className="min-w-0">
@@ -58,7 +58,7 @@ function AddProjectCard() {
     <button
       type="button"
       onClick={() => setAddOpen(true)}
-      className="flex min-h-[92px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-edge p-4 text-sm font-medium text-muted-foreground transition-colors hover:border-edge/80 hover:bg-raised hover:text-foreground focus:outline-none focus-visible:ring-1 focus-visible:ring-ring/60"
+      className="flex min-h-[92px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border p-4 text-sm font-medium text-muted-foreground transition-colors hover:border-border/80 hover:bg-muted hover:text-foreground focus:outline-none focus-visible:ring-1 focus-visible:ring-ring/60"
     >
       <Plus className="size-5" />
       Add project
@@ -80,8 +80,8 @@ export function ProjectSelector() {
 
   if (projects.length === 0) {
     return (
-      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 bg-base px-6 text-center">
-        <div className="flex size-14 items-center justify-center rounded-2xl bg-surface text-muted-foreground">
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 bg-background px-6 text-center">
+        <div className="flex size-14 items-center justify-center rounded-2xl bg-secondary text-muted-foreground">
           <FolderPlus className="size-7" />
         </div>
         <div className="space-y-1">
@@ -99,7 +99,7 @@ export function ProjectSelector() {
   }
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto bg-base">
+    <div className="min-h-0 flex-1 overflow-y-auto bg-background">
       <div className="mx-auto w-full max-w-4xl px-6 py-10">
         <div className="mb-6 space-y-1">
           <h1 className="text-lg font-semibold text-foreground">Select a project</h1>

@@ -31,8 +31,8 @@ function RepoRow({
       className={cn(
         'flex w-full flex-col gap-0.5 rounded-md border px-3 py-2 text-left transition-colors',
         selected
-          ? 'border-ring/60 bg-raised'
-          : 'border-transparent hover:border-edge hover:bg-raised/60',
+          ? 'border-ring/60 bg-muted'
+          : 'border-transparent hover:border-border hover:bg-muted/60',
       )}
     >
       <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
@@ -123,7 +123,7 @@ export function AddProjectModal() {
     <DialogPrimitive.Root open={open} onOpenChange={setAddOpen}>
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/70 data-[state=open]:animate-in data-[state=open]:fade-in-0" />
-        <DialogPrimitive.Content className="fixed left-1/2 top-1/2 z-50 flex max-h-[80vh] w-full max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col rounded-xl border border-edge bg-base p-5 shadow-2xl shadow-black/40 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95">
+        <DialogPrimitive.Content className="fixed left-1/2 top-1/2 z-50 flex max-h-[80vh] w-full max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col rounded-xl border border-border bg-background p-5 shadow-2xl shadow-black/40 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95">
           <div className="mb-1 flex items-center justify-between">
             <DialogPrimitive.Title className="text-base font-semibold text-foreground">
               Add Project

@@ -69,8 +69,8 @@ function ShortcutRow({ def }: { def: CommandDef }) {
           type="button"
           onClick={() => setCapturing(true)}
           className={cn(
-            'rounded-md border border-transparent px-1 py-0.5 transition-colors hover:border-edge',
-            capturing && 'border-edge',
+            'rounded-md border border-transparent px-1 py-0.5 transition-colors hover:border-border',
+            capturing && 'border-border',
           )}
         >
           {capturing ? (
@@ -98,7 +98,7 @@ export function ShortcutsHelp() {
     <DialogPrimitive.Root open={open} onOpenChange={setHelpOpen}>
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/70 data-[state=open]:animate-in data-[state=open]:fade-in-0" />
-        <DialogPrimitive.Content className="fixed left-1/2 top-1/2 z-50 max-h-[80vh] w-full max-w-lg -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl border border-edge bg-base p-5 shadow-2xl shadow-black/40 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95">
+        <DialogPrimitive.Content className="fixed left-1/2 top-1/2 z-50 max-h-[80vh] w-full max-w-lg -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl border border-border bg-background p-5 shadow-2xl shadow-black/40 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95">
           <div className="mb-4 flex items-center justify-between">
             <DialogPrimitive.Title className="text-base font-semibold text-foreground">
               Keyboard Shortcuts
@@ -120,7 +120,7 @@ export function ShortcutsHelp() {
                   <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     {label}
                   </h3>
-                  <div className="divide-y divide-edge/50">
+                  <div className="divide-y divide-border/50">
                     {commands.map((def) => (
                       <ShortcutRow key={def.command} def={def} />
                     ))}

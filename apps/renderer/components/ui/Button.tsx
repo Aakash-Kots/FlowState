@@ -20,10 +20,10 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 
 const VARIANTS: Record<Variant, string> = {
   primary:
-    'bg-primary text-base hover:bg-white disabled:bg-raised disabled:text-muted-foreground disabled:hover:bg-raised',
+    'bg-primary text-primary-foreground hover:bg-primary/90 disabled:bg-muted disabled:text-muted-foreground disabled:hover:bg-muted',
   secondary:
-    'bg-raised text-neutral-200 border border-edge hover:bg-edge disabled:text-muted-foreground disabled:hover:bg-raised',
-  ghost: 'bg-transparent text-muted-foreground hover:text-neutral-100 hover:bg-raised',
+    'bg-muted text-neutral-200 border border-border hover:bg-accent disabled:text-muted-foreground disabled:hover:bg-muted',
+  ghost: 'bg-transparent text-muted-foreground hover:text-neutral-100 hover:bg-muted',
 };
 
 export function Button({ variant = 'primary', className, ...props }: ButtonProps) {

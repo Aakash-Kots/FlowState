@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  DEFAULT_WORKSPACE_ID,
   MAX_TABS_PER_WORKSPACE,
   ShortcutCategory,
   ShortcutCommand,
@@ -10,6 +11,7 @@ import { focusInput, interruptSession } from '../chat';
 import {
   closeTab,
   cycleTab,
+  cycleViewMode,
   openTab,
   pickWorkingFolder,
   selectTabByIndex,
@@ -39,6 +41,11 @@ export type CommandDef = {
 /** The active tab id, or null when the workspace hasn't hydrated yet. */
 function activeTabId(): string | null {
   return useWorkspace.getState().activeTabId;
+}
+
+/** View switching only applies to a selected worktree, not the project picker. */
+function onWorktree(): boolean {
+  return useWorkspace.getState().workspaceId !== DEFAULT_WORKSPACE_ID;
 }
 
 function goToTab(index: number): CommandDef['run'] {
@@ -111,6 +118,22 @@ export const COMMANDS: Record<ShortcutCommand, CommandDef> = {
     category: ShortcutCategory.Navigation,
     scope: ShortcutScope.Global,
     run: () => cycleTab(-1),
+  },
+  [ShortcutCommand.NextView]: {
+    command: ShortcutCommand.NextView,
+    label: 'Next view (Workspace/Terminals)',
+    category: ShortcutCategory.Navigation,
+    scope: ShortcutScope.Global,
+    run: () => cycleViewMode(1),
+    isEnabled: onWorktree,
+  },
+  [ShortcutCommand.PrevView]: {
+    command: ShortcutCommand.PrevView,
+    label: 'Previous view (Workspace/Terminals)',
+    category: ShortcutCategory.Navigation,
+    scope: ShortcutScope.Global,
+    run: () => cycleViewMode(-1),
+    isEnabled: onWorktree,
   },
   [ShortcutCommand.GoToTab1]: {
     command: ShortcutCommand.GoToTab1,
