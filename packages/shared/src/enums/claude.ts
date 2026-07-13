@@ -37,8 +37,24 @@ export enum ChatEventKind {
   State = 'state',
   PermissionRequest = 'permission_request',
   PermissionResolved = 'permission_resolved',
+  QuestionRequest = 'question_request',
+  QuestionResolved = 'question_resolved',
+  Config = 'config',
   Cwd = 'cwd',
   Error = 'error',
+}
+
+/**
+ * Reasoning-effort level for a Claude session — mirrors the Agent SDK's
+ * `EffortLevel`. Higher levels let the model think longer before responding;
+ * which levels a given model supports is reported per-model by the SDK.
+ */
+export enum ReasoningEffort {
+  Low = 'low',
+  Medium = 'medium',
+  High = 'high',
+  XHigh = 'xhigh',
+  Max = 'max',
 }
 
 /** Outcome of a tool-permission decision. */

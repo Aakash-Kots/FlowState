@@ -4,21 +4,21 @@ This document is the implementation blueprint for FlowState: a macOS desktop app
 
 ## 1. Tech Stack
 
-| Layer | Choice | Why |
-|---|---|---|
-| Desktop shell | **Electron** | Full Node access in the main process (ptys, git, Claude Agent SDK), mature macOS packaging/signing story |
-| UI | **Next.js (React + TypeScript)**, static export | App Router UI dev experience; exported as static assets that Electron serves — no Node server in production |
-| Styling | **Tailwind CSS + shadcn/ui** | Fast, consistent desktop-app UI |
-| State | **Zustand** (client state) + **TanStack Query** (async/server state like Linear data) | Small, composable, no boilerplate |
-| IPC | **electron-trpc** (tRPC over Electron IPC) via a `contextBridge` preload | End-to-end typed calls and subscriptions between renderer and main; no hand-rolled channel strings |
-| Claude Code | **`@anthropic-ai/claude-agent-sdk`** | Official SDK that programmatically drives Claude Code sessions (spawn, stream, interrupt, resume); reuses the user's existing Claude Code login |
-| Git | **simple-git** (wraps system `git`) + **chokidar** watching `.git` | Full worktree support via raw commands; system git means user's hooks/credentials/LFS all work |
-| Terminal | **node-pty** (main) + **xterm.js** (renderer) | The standard Electron terminal pairing (same as VS Code) |
-| Linear | **`@linear/sdk`** | Official typed GraphQL client; OAuth 2.0 or personal API key |
-| Persistence | Local **SQLite** via **Drizzle ORM** + **`better-sqlite3`** | Queryable workspace/transcript store; type-safe queries; `drizzle-kit` migrations. Local-first — no server |
-| Secrets | Electron **`safeStorage`** (Keychain-backed) | Never store Linear/GitHub/Anthropic tokens in plaintext; only ciphertext is written to SQLite |
-| Packaging | **electron-builder** + **electron-updater** | DMG output, code signing, notarization, auto-update from GitHub Releases |
-| Tooling | **pnpm workspaces**, **electron-vite** for main/preload bundling, ESLint + Prettier, Vitest + Playwright | Monorepo hygiene, fast builds |
+| Layer         | Choice                                                                                                   | Why                                                                                                                                             |
+| ------------- | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Desktop shell | **Electron**                                                                                             | Full Node access in the main process (ptys, git, Claude Agent SDK), mature macOS packaging/signing story                                        |
+| UI            | **Next.js (React + TypeScript)**, static export                                                          | App Router UI dev experience; exported as static assets that Electron serves — no Node server in production                                     |
+| Styling       | **Tailwind CSS + shadcn/ui**                                                                             | Fast, consistent desktop-app UI                                                                                                                 |
+| State         | **Zustand** (client state) + **TanStack Query** (async/server state like Linear data)                    | Small, composable, no boilerplate                                                                                                               |
+| IPC           | **electron-trpc** (tRPC over Electron IPC) via a `contextBridge` preload                                 | End-to-end typed calls and subscriptions between renderer and main; no hand-rolled channel strings                                              |
+| Claude Code   | **`@anthropic-ai/claude-agent-sdk`**                                                                     | Official SDK that programmatically drives Claude Code sessions (spawn, stream, interrupt, resume); reuses the user's existing Claude Code login |
+| Git           | **simple-git** (wraps system `git`) + **chokidar** watching `.git`                                       | Full worktree support via raw commands; system git means user's hooks/credentials/LFS all work                                                  |
+| Terminal      | **node-pty** (main) + **xterm.js** (renderer)                                                            | The standard Electron terminal pairing (same as VS Code)                                                                                        |
+| Linear        | **`@linear/sdk`**                                                                                        | Official typed GraphQL client; OAuth 2.0 or personal API key                                                                                    |
+| Persistence   | Local **SQLite** via **Drizzle ORM** + **`better-sqlite3`**                                              | Queryable workspace/transcript store; type-safe queries; `drizzle-kit` migrations. Local-first — no server                                      |
+| Secrets       | Electron **`safeStorage`** (Keychain-backed)                                                             | Never store Linear/GitHub/Anthropic tokens in plaintext; only ciphertext is written to SQLite                                                   |
+| Packaging     | **electron-builder** + **electron-updater**                                                              | DMG output, code signing, notarization, auto-update from GitHub Releases                                                                        |
+| Tooling       | **pnpm workspaces**, **electron-vite** for main/preload bundling, ESLint + Prettier, Vitest + Playwright | Monorepo hygiene, fast builds                                                                                                                   |
 
 > Note on Next.js-in-Electron: production uses `output: 'export'` (pure static assets loaded by Electron). In dev, Electron points at the Next dev server (`http://localhost:3000`) for HMR. Anything needing Node (git, ptys, SDK) lives in the **main process**, never in the renderer — Next.js API routes and SSR are not used.
 
@@ -75,27 +75,32 @@ Security posture: `contextIsolation: true`, `nodeIntegration: false`, `sandbox: 
 ## 4. Feature Design
 
 ### 4.1 Claude Code connectivity
+
 - Use the **Claude Agent SDK for TypeScript** in the main process. Each workspace gets a session created with `query({ prompt, options: { cwd: worktreePath, ... } })`; messages stream back and are forwarded to the renderer as a tRPC subscription.
 - **Auth:** the SDK resolves credentials the same way Claude Code does — the user's existing Claude Code login/OAuth profile or `ANTHROPIC_API_KEY`. FlowState should not ask for a key if a login already exists; a settings screen covers the fallback.
 - Support session lifecycle: start, stream (text, tool-use, permission requests), interrupt, resume by session ID. Permission prompts from the agent render as native-feeling dialogs in the UI.
 - Session transcripts persist per-workspace so a workspace reopens with its agent history.
 
 ### 4.2 Git management
+
 - `simple-git` instance per worktree. Expose: status, stage/unstage, commit, branch create/switch, log, diff (rendered in UI), push/pull, stash.
 - `chokidar` watches `.git/HEAD`, index, and refs to push live status updates to the renderer (debounced).
 - Diff review UI doubles as the review surface for what the Claude agent changed before committing.
 
 ### 4.3 Worktree management
+
 - Thin wrapper over `git worktree add/list/remove --porcelain` (raw commands through simple-git).
 - Creating a workspace from a Linear ticket: derive branch name from the ticket identifier (e.g. `eng-142-fix-login`), `git worktree add`, open terminals + agent in it.
 - Guard rails: block removal with uncommitted changes unless forced; prune stale worktrees on startup.
 
 ### 4.4 Terminal management
+
 - `node-pty` spawns the user's login shell (`$SHELL`, login+interactive so PATH/nvm/rbenv work) with `cwd` set to the worktree.
 - Renderer uses `xterm.js` + fit/webgl addons. Data is streamed over a dedicated high-throughput IPC channel (raw `ipcRenderer` port, not tRPC) to keep latency low.
 - Multiple tabs per workspace; ptys are killed when a workspace closes, with scrollback optionally persisted.
 
 ### 4.5 Linear connectivity
+
 - **OAuth 2.0** flow: open Linear's authorize URL in the default browser, catch the redirect on a localhost loopback (or custom `flowstate://` protocol), exchange for tokens in the main process. Personal API key supported as the simple path first.
 - Tokens encrypted with `safeStorage`; only the ciphertext is written to the local SQLite `secrets` table.
 - Features: my assigned issues, issue detail, status transitions (auto-move to "In Progress" when a workspace is created from a ticket, prompt to move to "In Review" when a PR is pushed), attach branch/PR links back to the issue.
@@ -120,6 +125,7 @@ Security posture: `contextIsolation: true`, `nodeIntegration: false`, `sandbox: 
   driver swap (e.g. libsql/Turso for embedded-replica sync), not a rewrite.
 
 ### 4.7 The unified flow (v1 golden path)
+
 1. Pick a Linear ticket → 2. FlowState creates a worktree + branch named after it → 3. Claude Code session starts in that worktree with ticket context in the prompt → 4. Review the diff in the Git panel, run tests in the terminal → 5. Commit + push → 6. Linear status updates automatically.
 
 ## 5. Packaging & Distribution (macOS DMG)

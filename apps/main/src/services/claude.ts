@@ -24,6 +24,7 @@ import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import type {
   CanUseTool,
+  ModelInfo,
   PermissionResult,
   Query,
   SDKMessage,
@@ -34,21 +35,31 @@ import {
   ChatEventKind,
   ChatMessageRole,
   ClaudeSessionState,
+  DEFAULT_EFFORT,
+  DEFAULT_MODEL,
   PermissionBehavior,
+  ReasoningEffort,
   chatMessageSchema,
+  mergeModelOptions,
   type ChatBlock,
   type ChatEvent,
   type ChatMessage,
   type ChatSnapshot,
+  type ModelOption,
   type PermissionRequest,
-  type Workspace,
+  type QuestionItem,
+  type QuestionRequest,
+  type Tab,
 } from '@flowstate/shared';
 import {
   appendMessage,
   getSetting,
+  getTab,
+  getTabTranscript,
   getWorkspace,
-  getWorkspaceTranscript,
+  listTabs,
   setSetting,
+  upsertTab,
   upsertWorkspace,
 } from '../store';
 import { authService } from './auth';
@@ -61,6 +72,12 @@ type SdkModule = typeof import('@anthropic-ai/claude-agent-sdk');
 
 type PendingPermission = {
   request: PermissionRequest;
+  resolve: (result: PermissionResult) => void;
+};
+
+/** A pending AskUserQuestion, resolved through the same canUseTool promise. */
+type PendingQuestion = {
+  request: QuestionRequest;
   resolve: (result: PermissionResult) => void;
 };
 
@@ -82,6 +99,9 @@ type RawBlock = {
 ///////////////
 
 const CWD_SETTING_KEY = 'claude.cwd';
+
+/** The built-in tool Claude uses to ask the user a structured question. */
+const ASK_USER_QUESTION_TOOL = 'AskUserQuestion';
 
 const ASSISTANT_ERROR_TEXT: Record<string, string> = {
   authentication_failed:
@@ -153,6 +173,50 @@ function normalizeToolResultBlocks(content: unknown): ChatBlock[] {
   return blocks;
 }
 
+const EFFORT_VALUES = new Set<string>(Object.values(ReasoningEffort));
+
+/** Map an SDK `ModelInfo` to the trimmed `ModelOption` the picker needs. */
+function toModelOption(info: ModelInfo): ModelOption {
+  const levels = (info.supportedEffortLevels ?? []).filter((l): l is ReasoningEffort =>
+    EFFORT_VALUES.has(l),
+  );
+  return {
+    value: info.value,
+    displayName: info.displayName,
+    description: info.description,
+    supportsEffort: info.supportsEffort === true && levels.length > 0,
+    supportedEffortLevels: levels,
+  };
+}
+
+/**
+ * Normalize an `AskUserQuestion` tool input into our `QuestionItem[]`. Defensive
+ * because the SDK input is untyped here; malformed questions are skipped.
+ */
+function parseQuestions(input: unknown): QuestionItem[] {
+  const raw = (input as { questions?: unknown })?.questions;
+  if (!Array.isArray(raw)) return [];
+  const items: QuestionItem[] = [];
+  for (const q of raw as Array<Record<string, unknown>>) {
+    if (!q || typeof q.question !== 'string') continue;
+    const options = Array.isArray(q.options)
+      ? (q.options as Array<Record<string, unknown>>)
+          .filter((o) => o && typeof o.label === 'string')
+          .map((o) => ({
+            label: String(o.label),
+            description: typeof o.description === 'string' ? o.description : '',
+          }))
+      : [];
+    items.push({
+      header: typeof q.header === 'string' ? q.header : q.question,
+      question: q.question,
+      multiSelect: q.multiSelect === true,
+      options,
+    });
+  }
+  return items;
+}
+
 /**
  * Unbounded push queue exposed as an AsyncIterable — the SDK's streaming
  * prompt input. Must never throw or reject: an error escaping the iterator
@@ -201,63 +265,83 @@ class ClaudeSession {
   readonly queue = new AsyncMessageQueue<SDKUserMessage>();
   readonly abort = new AbortController();
   readonly pendingPermissions = new Map<string, PendingPermission>();
+  readonly pendingQuestions = new Map<string, PendingQuestion>();
   query: Query | null = null;
   sessionId: string | null = null;
+  /** The user's explicit model selection (null = SDK/CLI default). */
   model: string | null = null;
+  /** The user's explicit reasoning-effort selection (null = model default). */
+  effort: ReasoningEffort | null = null;
+  /** The model the SDK actually ran (from its `init` message; display only). */
+  reportedModel: string | null = null;
   /** Set while an interrupt is in flight so error results read as a clean stop. */
   interrupted = false;
 
   constructor(
+    readonly tabId: string,
     readonly workspaceId: string,
     readonly cwd: string,
   ) {}
 }
 
 export class ClaudeService {
+  // Keyed by tabId — each tab is an independent Claude chat session.
   private readonly sessions = new Map<string, ClaudeSession>();
   private readonly events = new EventEmitter();
 
+  /** The single project working folder shared by all tabs (see setCwd). */
   getCwd(): string | null {
     return getSetting<string>(CWD_SETTING_KEY);
   }
 
   /**
-   * Point the workspace at a new folder. The old session (and its resume id)
-   * is discarded — resuming a conversation under a different cwd is incoherent.
+   * Point the project at a new folder. Project-level: every tab's session (and
+   * its resume id) is discarded — resuming under a different cwd is incoherent —
+   * while transcripts are kept. Emits Cwd to each of the workspace's tabs.
    */
   setCwd(workspaceId: string, cwd: string): void {
     setSetting(CWD_SETTING_KEY, cwd);
-    this.disposeSession(workspaceId);
     const ws = getWorkspace(workspaceId);
-    if (ws) upsertWorkspace({ ...ws, repoRoot: cwd, worktreePath: cwd, claudeSessionId: null });
-    this.emit(workspaceId, { kind: ChatEventKind.Cwd, cwd });
+    if (ws) upsertWorkspace({ ...ws, repoRoot: cwd, worktreePath: cwd });
+    for (const tab of listTabs(workspaceId)) {
+      this.disposeSession(tab.id);
+      const fresh = getTab(tab.id);
+      if (fresh) upsertTab({ ...fresh, claudeSessionId: null });
+      this.emit(tab.id, { kind: ChatEventKind.Cwd, cwd });
+    }
   }
 
-  send(workspaceId: string, text: string): void {
+  /** Send a user prompt to a tab's session, starting the session if needed. */
+  send(tabId: string, text: string): void {
     const cwd = this.getCwd();
     if (!cwd) {
-      this.emit(workspaceId, {
+      this.emit(tabId, {
         kind: ChatEventKind.Error,
         message: 'Choose a working folder first.',
       });
       return;
     }
     if (!authService.status().claudeConnected) {
-      this.emit(workspaceId, {
+      this.emit(tabId, {
         kind: ChatEventKind.Error,
         message: 'Claude Code is not connected. Open Connect and sign in first.',
       });
       return;
     }
+    const tab = getTab(tabId);
+    if (!tab) {
+      this.emit(tabId, { kind: ChatEventKind.Error, message: 'This chat tab no longer exists.' });
+      return;
+    }
 
-    const session = this.ensureSession(workspaceId, cwd);
+    const session = this.ensureSession(tab, cwd);
     const userMessage: ChatMessage = {
       id: randomUUID(),
       role: ChatMessageRole.User,
       blocks: [{ type: ChatBlockType.Text, text }],
     };
     this.persistAndEmit(session, userMessage);
-    this.setState(workspaceId, ClaudeSessionState.Running);
+    this.setState(tabId, ClaudeSessionState.Running);
     session.queue.push({
       type: 'user',
       message: { role: 'user', content: text },
@@ -265,8 +349,9 @@ export class ClaudeService {
     });
   }
 
-  async interrupt(workspaceId: string): Promise<void> {
-    const session = this.sessions.get(workspaceId);
+  /** Interrupt a tab's in-flight turn (denies any pending permission prompt). */
+  async interrupt(tabId: string): Promise<void> {
+    const session = this.sessions.get(tabId);
     if (!session) return;
     session.interrupted = true;
     // A pending permission prompt blocks the agent — deny it so the interrupt lands.
@@ -280,16 +365,17 @@ export class ClaudeService {
     } catch (err) {
       console.warn('[claude] interrupt failed', err);
     }
-    this.setState(workspaceId, ClaudeSessionState.Idle);
+    this.setState(tabId, ClaudeSessionState.Idle);
   }
 
+  /** Resolve a pending tool-permission prompt for a tab (allow / deny). */
   respondPermission(
-    workspaceId: string,
+    tabId: string,
     requestId: string,
     behavior: PermissionBehavior,
     message?: string,
   ): void {
-    const session = this.sessions.get(workspaceId);
+    const session = this.sessions.get(tabId);
     const pending = session?.pendingPermissions.get(requestId);
     if (!session || !pending) return;
     session.pendingPermissions.delete(requestId);
@@ -298,74 +384,128 @@ export class ClaudeService {
         ? { behavior: 'allow' }
         : { behavior: 'deny', message: message ?? 'The user denied this action.' },
     );
-    this.emit(workspaceId, { kind: ChatEventKind.PermissionResolved, id: requestId, behavior });
-    if (session.pendingPermissions.size === 0)
-      this.setState(workspaceId, ClaudeSessionState.Running);
+    this.emit(tabId, { kind: ChatEventKind.PermissionResolved, id: requestId, behavior });
+    this.resumeIfClear(session);
   }
 
-  onEvent(workspaceId: string, cb: (event: ChatEvent) => void): () => void {
-    this.events.on(workspaceId, cb);
-    return () => this.events.off(workspaceId, cb);
+  /** Answer a pending AskUserQuestion prompt for a tab. */
+  answerQuestion(tabId: string, requestId: string, answers: Record<string, string>): void {
+    const session = this.sessions.get(tabId);
+    const pending = session?.pendingQuestions.get(requestId);
+    if (!session || !pending) return;
+    session.pendingQuestions.delete(requestId);
+    pending.resolve(this.buildQuestionAnswer(pending.request, answers));
+    this.emit(tabId, { kind: ChatEventKind.QuestionResolved, id: requestId });
+    this.resumeIfClear(session);
   }
 
-  getSnapshot(workspaceId: string): ChatSnapshot {
-    const ws = getWorkspace(workspaceId);
-    const session = this.sessions.get(workspaceId);
+  /**
+   * Models offered to a tab's picker: the curated set always shown, plus any
+   * extra models the live SDK reports for this session (deduped by value).
+   */
+  async getSupportedModels(tabId: string): Promise<ModelOption[]> {
+    const session = this.sessions.get(tabId);
+    try {
+      const infos = await session?.query?.supportedModels();
+      return mergeModelOptions((infos ?? []).map(toModelOption));
+    } catch (err) {
+      console.warn('[claude] supportedModels failed', err);
+      return mergeModelOptions([]);
+    }
+  }
+
+  /** Set a tab's model. Persists it and applies it live if a session exists. */
+  async setModel(tabId: string, model: string): Promise<void> {
+    const tab = getTab(tabId);
+    if (tab) upsertTab({ ...tab, model });
+    const session = this.sessions.get(tabId);
+    if (session) {
+      session.model = model;
+      try {
+        // Streaming-input sessions can switch model live (no restart needed).
+        await session.query?.setModel(model);
+      } catch (err) {
+        console.warn('[claude] setModel failed', err);
+      }
+    }
+    this.emit(tabId, {
+      kind: ChatEventKind.Config,
+      model,
+      effort: session?.effort ?? tab?.effort ?? null,
+    });
+  }
+
+  /**
+   * Set a tab's reasoning effort. The SDK has no live effort setter, so an
+   * existing session is torn down; the next send() re-opens it (with `resume`,
+   * so the transcript is intact) applying the new effort from the tab record.
+   */
+  setEffort(tabId: string, effort: ReasoningEffort): void {
+    const tab = getTab(tabId);
+    if (tab) upsertTab({ ...tab, effort });
+    if (this.sessions.has(tabId)) this.disposeSession(tabId);
+    this.setState(tabId, ClaudeSessionState.Idle);
+    this.emit(tabId, { kind: ChatEventKind.Config, model: tab?.model ?? null, effort });
+  }
+
+  /** Subscribe to a tab's ChatEvents; returns an unsubscribe function. */
+  onEvent(tabId: string, cb: (event: ChatEvent) => void): () => void {
+    this.events.on(tabId, cb);
+    return () => this.events.off(tabId, cb);
+  }
+
+  /** Hydrate a tab on mount: persisted state, resume id, cwd, and transcript. */
+  getSnapshot(tabId: string): ChatSnapshot {
+    const tab = getTab(tabId);
+    const session = this.sessions.get(tabId);
     const messages: ChatSnapshot['messages'] = [];
-    for (const row of getWorkspaceTranscript(workspaceId)) {
+    for (const row of getTabTranscript(tabId)) {
       // Rows persisted by older builds may not match the normalized shape — skip them.
       const parsed = chatMessageSchema.safeParse(row.content);
       if (parsed.success) messages.push({ message: parsed.data, createdAt: row.createdAt });
     }
     return {
-      state: ws?.claudeState ?? ClaudeSessionState.Idle,
-      sessionId: ws?.claudeSessionId ?? null,
+      state: tab?.claudeState ?? ClaudeSessionState.Idle,
+      sessionId: tab?.claudeSessionId ?? null,
       cwd: this.getCwd(),
-      model: session?.model ?? null,
+      // Prefer the explicit selection; fall back to what the last turn ran as.
+      model: session ? (session.model ?? session.reportedModel) : (tab?.model ?? null),
+      effort: session?.effort ?? tab?.effort ?? null,
       messages,
       pendingPermissions: session
         ? [...session.pendingPermissions.values()].map((p) => p.request)
         : [],
+      pendingQuestions: session ? [...session.pendingQuestions.values()].map((p) => p.request) : [],
     };
+  }
+
+  /** Tear down a single tab's session — called when a tab is closed. */
+  closeSession(tabId: string): void {
+    this.disposeSession(tabId);
   }
 
   /** Tear down every session — called on app quit. */
   disposeAll(): void {
-    for (const workspaceId of this.sessions.keys()) this.disposeSession(workspaceId);
+    for (const tabId of this.sessions.keys()) this.disposeSession(tabId);
   }
 
-  private ensureSession(workspaceId: string, cwd: string): ClaudeSession {
-    const existing = this.sessions.get(workspaceId);
+  private ensureSession(tab: Tab, cwd: string): ClaudeSession {
+    const existing = this.sessions.get(tab.id);
     if (existing) return existing;
 
-    const ws = this.ensureWorkspace(workspaceId, cwd);
-    const session = new ClaudeSession(workspaceId, cwd);
-    session.sessionId = ws.claudeSessionId;
-    this.sessions.set(workspaceId, session);
-    void this.run(session, ws.claudeSessionId);
+    const session = new ClaudeSession(tab.id, tab.workspaceId, cwd);
+    session.sessionId = tab.claudeSessionId;
+    session.model = tab.model;
+    session.effort = tab.effort;
+    this.sessions.set(tab.id, session);
+    void this.run(session, tab.claudeSessionId);
     return session;
   }
 
-  private ensureWorkspace(workspaceId: string, cwd: string): Workspace {
-    const existing = getWorkspace(workspaceId);
-    if (existing) return existing;
-    return upsertWorkspace({
-      id: workspaceId,
-      name: 'Workspace',
-      repoRoot: cwd,
-      worktreePath: cwd,
-      branch: '',
-      linearIssue: null,
-      claudeState: ClaudeSessionState.Idle,
-      claudeSessionId: null,
-      createdAt: new Date().toISOString(),
-    });
-  }
-
-  private disposeSession(workspaceId: string): void {
-    const session = this.sessions.get(workspaceId);
+  private disposeSession(tabId: string): void {
+    const session = this.sessions.get(tabId);
     if (!session) return;
-    this.sessions.delete(workspaceId);
+    this.sessions.delete(tabId);
     this.resolveAllPermissions(session, {
       behavior: 'deny',
       message: 'The session was closed.',
@@ -376,7 +516,7 @@ export class ClaudeService {
   }
 
   private async run(session: ClaudeSession, resumeSessionId: string | null): Promise<void> {
-    const { workspaceId } = session;
+    const { tabId } = session;
     try {
       const sdk = await loadSdk();
       session.query = sdk.query({
@@ -384,6 +524,8 @@ export class ClaudeService {
         options: {
           cwd: session.cwd,
           resume: resumeSessionId ?? undefined,
+          model: session.model ?? DEFAULT_MODEL,
+          effort: session.effort ?? DEFAULT_EFFORT,
           permissionMode: 'default',
           canUseTool: this.makePermissionHandler(session),
           includePartialMessages: true,
@@ -399,16 +541,16 @@ export class ClaudeService {
       }
       // Stream ended cleanly (queue ended / abort). Nothing more to do.
     } catch (err) {
-      if (!this.sessions.has(workspaceId)) return; // torn down deliberately
+      if (!this.sessions.has(tabId)) return; // torn down deliberately
       const text = err instanceof Error ? err.message : String(err);
       console.error('[claude] session crashed:', text);
-      this.emit(workspaceId, {
+      this.emit(tabId, {
         kind: ChatEventKind.Error,
         message: `Claude session error: ${text}`,
       });
-      this.setState(workspaceId, ClaudeSessionState.Error);
+      this.setState(tabId, ClaudeSessionState.Error);
       // Drop the broken session; the next send() starts fresh and resumes.
-      this.sessions.delete(workspaceId);
+      this.sessions.delete(tabId);
       this.resolveAllPermissions(session, {
         behavior: 'deny',
         message: 'The session ended.',
@@ -419,15 +561,15 @@ export class ClaudeService {
   }
 
   private handleSdkMessage(session: ClaudeSession, message: SDKMessage): void {
-    const { workspaceId } = session;
+    const { tabId } = session;
     switch (message.type) {
       case 'system': {
         if (message.subtype === 'init') {
           session.sessionId = message.session_id;
-          session.model = message.model;
-          const ws = getWorkspace(workspaceId);
-          if (ws) upsertWorkspace({ ...ws, claudeSessionId: message.session_id });
-          this.emit(workspaceId, {
+          session.reportedModel = message.model;
+          const tab = getTab(tabId);
+          if (tab) upsertTab({ ...tab, claudeSessionId: message.session_id });
+          this.emit(tabId, {
             kind: ChatEventKind.Init,
             sessionId: message.session_id,
             model: message.model,
@@ -440,7 +582,7 @@ export class ClaudeService {
               : message.state === 'running'
                 ? ClaudeSessionState.Running
                 : ClaudeSessionState.Idle;
-          this.setState(workspaceId, state);
+          this.setState(tabId, state);
         }
         break;
       }
@@ -454,10 +596,10 @@ export class ClaudeService {
         };
         if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
           if (event.delta.text) {
-            this.emit(workspaceId, { kind: ChatEventKind.TextDelta, text: event.delta.text });
+            this.emit(tabId, { kind: ChatEventKind.TextDelta, text: event.delta.text });
           }
         } else if (event.type === 'content_block_start' && event.content_block?.type) {
-          this.emit(workspaceId, {
+          this.emit(tabId, {
             kind: ChatEventKind.BlockStart,
             blockType: event.content_block.type,
           });
@@ -468,12 +610,12 @@ export class ClaudeService {
       case 'assistant': {
         if (message.parent_tool_use_id !== null) break; // subagent messages
         if (message.error) {
-          this.emit(workspaceId, {
+          this.emit(tabId, {
             kind: ChatEventKind.Error,
             message:
               ASSISTANT_ERROR_TEXT[message.error] ?? `Claude returned an error: ${message.error}`,
           });
-          this.setState(workspaceId, ClaudeSessionState.Error);
+          this.setState(tabId, ClaudeSessionState.Error);
           break;
         }
         const blocks = normalizeAssistantBlocks(message.message.content);
@@ -516,7 +658,7 @@ export class ClaudeService {
           },
         });
         session.interrupted = false;
-        this.setState(workspaceId, ClaudeSessionState.Idle);
+        this.setState(tabId, ClaudeSessionState.Idle);
         break;
       }
 
@@ -527,60 +669,127 @@ export class ClaudeService {
 
   private makePermissionHandler(session: ClaudeSession): CanUseTool {
     return (toolName, input, options) =>
-      new Promise<PermissionResult>((resolve) => {
-        const request: PermissionRequest = {
-          id: randomUUID(),
-          toolName,
-          input,
-          title: options.title,
-          description: options.description,
-        };
-        session.pendingPermissions.set(request.id, { request, resolve });
-        this.setState(session.workspaceId, ClaudeSessionState.Waiting);
-        this.emit(session.workspaceId, { kind: ChatEventKind.PermissionRequest, ...request });
+      toolName === ASK_USER_QUESTION_TOOL
+        ? this.handleQuestion(session, input, options.signal)
+        : this.handlePermission(session, toolName, input, options);
+  }
 
-        options.signal.addEventListener('abort', () => {
-          if (!session.pendingPermissions.delete(request.id)) return;
-          this.emit(session.workspaceId, {
-            kind: ChatEventKind.PermissionResolved,
-            id: request.id,
-            behavior: PermissionBehavior.Deny,
-          });
-          resolve({ behavior: 'deny', message: 'The request was cancelled.' });
+  /** Park a normal tool-permission prompt until the user allows/denies it. */
+  private handlePermission(
+    session: ClaudeSession,
+    toolName: string,
+    input: unknown,
+    options: { title?: string; description?: string; signal: AbortSignal },
+  ): Promise<PermissionResult> {
+    return new Promise<PermissionResult>((resolve) => {
+      const request: PermissionRequest = {
+        id: randomUUID(),
+        toolName,
+        input,
+        title: options.title,
+        description: options.description,
+      };
+      session.pendingPermissions.set(request.id, { request, resolve });
+      this.setState(session.tabId, ClaudeSessionState.Waiting);
+      this.emit(session.tabId, { kind: ChatEventKind.PermissionRequest, ...request });
+
+      options.signal.addEventListener('abort', () => {
+        if (!session.pendingPermissions.delete(request.id)) return;
+        this.emit(session.tabId, {
+          kind: ChatEventKind.PermissionResolved,
+          id: request.id,
+          behavior: PermissionBehavior.Deny,
         });
+        resolve({ behavior: 'deny', message: 'The request was cancelled.' });
       });
+    });
+  }
+
+  /** Park an AskUserQuestion prompt until the user answers it near the input. */
+  private handleQuestion(
+    session: ClaudeSession,
+    input: unknown,
+    signal: AbortSignal,
+  ): Promise<PermissionResult> {
+    return new Promise<PermissionResult>((resolve) => {
+      const request: QuestionRequest = { id: randomUUID(), questions: parseQuestions(input) };
+      session.pendingQuestions.set(request.id, { request, resolve });
+      this.setState(session.tabId, ClaudeSessionState.Waiting);
+      this.emit(session.tabId, { kind: ChatEventKind.QuestionRequest, ...request });
+
+      signal.addEventListener('abort', () => {
+        if (!session.pendingQuestions.delete(request.id)) return;
+        this.emit(session.tabId, { kind: ChatEventKind.QuestionResolved, id: request.id });
+        resolve({ behavior: 'deny', message: 'The question was cancelled.' });
+      });
+    });
+  }
+
+  /**
+   * Turn the user's answers into the result the SDK gets for an AskUserQuestion
+   * tool call. The exact contract is undocumented in the SDK types, so the
+   * answers are fed back as a deny `message` (the reliable channel already used
+   * for permission denials) — the model reads the message and continues. If a
+   * live `{ behavior: 'allow', updatedInput }` contract is confirmed, swap it
+   * here; this is the single place that shape lives.
+   */
+  private buildQuestionAnswer(
+    request: QuestionRequest,
+    answers: Record<string, string>,
+  ): PermissionResult {
+    const lines = request.questions.map((q) => {
+      const answer = answers[q.question] ?? answers[q.header] ?? '(no answer)';
+      return `- ${q.header}: ${answer}`;
+    });
+    return {
+      behavior: 'deny',
+      message: `The user answered your question(s):\n${lines.join('\n')}\n\nContinue using these answers.`,
+    };
+  }
+
+  /** Return a tab to Running once no permission or question prompt is pending. */
+  private resumeIfClear(session: ClaudeSession): void {
+    if (session.pendingPermissions.size === 0 && session.pendingQuestions.size === 0) {
+      this.setState(session.tabId, ClaudeSessionState.Running);
+    }
   }
 
   private resolveAllPermissions(session: ClaudeSession, result: PermissionResult): void {
     for (const [id, pending] of session.pendingPermissions) {
       pending.resolve(result);
-      this.emit(session.workspaceId, {
+      this.emit(session.tabId, {
         kind: ChatEventKind.PermissionResolved,
         id,
         behavior: result.behavior === 'allow' ? PermissionBehavior.Allow : PermissionBehavior.Deny,
       });
     }
     session.pendingPermissions.clear();
+    // Any parked questions belong to the same interrupted/torn-down turn.
+    for (const [id, pending] of session.pendingQuestions) {
+      pending.resolve(result);
+      this.emit(session.tabId, { kind: ChatEventKind.QuestionResolved, id });
+    }
+    session.pendingQuestions.clear();
   }
 
   private persistAndEmit(session: ClaudeSession, message: ChatMessage): void {
     const createdAt = new Date().toISOString();
-    appendMessage(session.workspaceId, session.sessionId ?? 'pending', {
+    appendMessage(session.tabId, session.workspaceId, session.sessionId ?? 'pending', {
       role: message.role,
       content: message,
       createdAt,
     });
-    this.emit(session.workspaceId, { kind: ChatEventKind.Message, message, createdAt });
+    this.emit(session.tabId, { kind: ChatEventKind.Message, message, createdAt });
   }
 
-  private setState(workspaceId: string, state: ClaudeSessionState): void {
-    const ws = getWorkspace(workspaceId);
-    if (ws && ws.claudeState !== state) upsertWorkspace({ ...ws, claudeState: state });
-    this.emit(workspaceId, { kind: ChatEventKind.State, state });
+  private setState(tabId: string, state: ClaudeSessionState): void {
+    const tab = getTab(tabId);
+    if (tab && tab.claudeState !== state) upsertTab({ ...tab, claudeState: state });
+    this.emit(tabId, { kind: ChatEventKind.State, state });
   }
 
-  private emit(workspaceId: string, event: ChatEvent): void {
-    this.events.emit(workspaceId, event);
+  private emit(tabId: string, event: ChatEvent): void {
+    this.events.emit(tabId, event);
   }
 }
 

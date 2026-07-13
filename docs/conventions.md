@@ -24,16 +24,19 @@ every file is laid out in this fixed order:
 3. **Enums**
 4. **Constants**
 5. **Helpers** — private/module-local functions.
-6. **Primary export** — the module's reason to exist (a class, a React
-   component, a tRPC router, a store's data-access API, …).
+6. **Sub-components** — private/module-local React components used only by this
+   file's one exported component (see §8). Component files only.
+7. **Primary export** — the module's reason to exist (a class, the single
+   exported React component, a tRPC router, a store's data-access API, …).
 
 A category that has no members is simply absent — do not leave a gap or an empty
 header for it.
 
 ## 2. Section boxes
 
-Each **non-empty** category from §1 (Types / Enums / Constants / Helpers) is
-introduced by an ASCII box whose rules match the middle line's width:
+Each **non-empty** category from §1 (Types / Enums / Constants / Helpers /
+Sub-components) is introduced by an ASCII box whose rules match the middle line's
+width:
 
 ```
 ///////////
@@ -47,9 +50,16 @@ introduced by an ASCII box whose rules match the middle line's width:
 ///////////////
 ```
 
+```
+///////////////////
+// Sub-components //
+///////////////////
+```
+
 Rules:
 
-- The box label is the category name (`Types`, `Enums`, `Constants`, `Helpers`).
+- The box label is the category name (`Types`, `Enums`, `Constants`, `Helpers`,
+  `Sub-components`).
 - Emit a box **only** when that category has at least one declaration.
 - **Skip boxes entirely on trivial files** — a lone component, a single util, a
   one-declaration module (`components/ui/cn.ts`, `lib/trpc.ts`). The §1 ordering
@@ -255,7 +265,54 @@ All React components live in `apps/renderer/components/`, split by role:
 Primitives must not import from feature components or feature state — the
 dependency arrow points `feature → ui`, never back.
 
-## 9. Formatting
+### One exported component per feature file
+
+A **feature/domain component file exports exactly one component** — its primary
+export, at the end of the file (§1). It may compose any number of **local
+sub-components declared above it under the `// Sub-components //` box (§2); those
+are never exported.** When a piece of UI is reused by another file it graduates
+to its own file (or a `ui/` primitive), not an exported sub-component.
+
+```tsx
+// components/sidebar/AppSidebar.tsx
+///////////////////
+// Sub-components //
+///////////////////
+
+/** One project row: derived name + full path. */
+function ProjectItem({ cwd }: { cwd: string }) {
+  /* … */
+}
+
+/** The workspace sidebar — shows the current project/worktree. */
+export function AppSidebar() {
+  return <ProjectItem cwd={/* … */} />;
+}
+```
+
+**Carve-out — shadcn/ui primitives are exempt.** Design-system primitives in
+`components/ui/` are compound-component families that intentionally export many
+parts (`Sidebar`, `SidebarMenu`, `SidebarTrigger`, …) and keep their canonical
+upstream **lowercase filenames** (`sidebar.tsx`, `collapsible.tsx`, `tabs.tsx`).
+The one-export rule governs feature components, not primitives.
+
+## 9. Docstrings
+
+Write a short `/** … */` docstring over anything whose purpose or contract isn't
+obvious from its name — non-trivial **functions, services, tRPC procedures, store
+accessors, and the exported component** of a component file. One or two lines is
+plenty: say what it does and any contract worth knowing (side effects, what it
+keys on, when it's a no-op). This is the same style already used at the top of
+`services/claude.ts`, `store/*.ts`, and on `ClaudeService`'s methods.
+
+- **Do** document: exported/public functions and singletons, anything with a
+  non-obvious side effect or ordering requirement, the primary component export.
+- **Skip** trivial one-liners and self-evident wrappers — a docstring that just
+  restates the name is noise. Prefer a clear name over a docstring.
+- Keep the file's **top-of-file JSDoc** (module summary) as the norm for any
+  non-trivial module (§1).
+
+## 10. Formatting
 
 Prettier is the source of truth (`.prettierrc`): single quotes, semicolons,
 trailing commas, `printWidth: 100`, `tabWidth: 2`. Run `bun run format`. Verify a

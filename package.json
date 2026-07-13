@@ -21,6 +21,8 @@
     "build:renderer": "bun run --filter '@flowstate/renderer' build",
     "build:main": "bun run --filter '@flowstate/main' build",
     "dist": "bun run build && bun run --filter '@flowstate/main' dist",
+    "db:generate": "bun run --filter '@flowstate/main' db:generate",
+    "db:migrate": "bun run --filter '@flowstate/main' db:migrate",
     "typecheck": "bun run --filter '*' typecheck",
     "lint": "bun run --filter '@flowstate/renderer' lint",
     "format": "prettier --write ."

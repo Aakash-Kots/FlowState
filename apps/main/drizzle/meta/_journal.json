@@ -8,6 +8,20 @@
       "when": 1783843198885,
       "tag": "0000_broad_legion",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1783889788214,
+      "tag": "0001_warm_matthew_murdock",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1783900052754,
+      "tag": "0002_broken_jack_flag",
+      "breakpoints": true
     }
   ]
 }

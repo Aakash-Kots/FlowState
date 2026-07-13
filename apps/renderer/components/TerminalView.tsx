@@ -7,14 +7,14 @@ import { trpc } from '@/lib/trpc';
 
 // xterm theme tuned to the app's dark gray-accent tokens (tailwind.config.ts).
 const THEME = {
-  background: '#14171c', // surface
+  background: '#1e1f21', // surface
   foreground: '#e5e7eb',
-  cursor: '#d4d7dd', // accent
-  cursorAccent: '#14171c',
-  selectionBackground: '#2b3140',
-  black: '#0b0d10',
-  brightBlack: '#8b929c',
-  white: '#d4d7dd',
+  cursor: '#d6d7d9', // accent
+  cursorAccent: '#1e1f21',
+  selectionBackground: '#37383b',
+  black: '#161718',
+  brightBlack: '#8f9194',
+  white: '#d6d7d9',
   brightWhite: '#ffffff',
   green: '#4ade80',
   brightGreen: '#4ade80',
