@@ -27,7 +27,7 @@ function ProjectCard({ project }: { project: Project }) {
       onClick={open}
       className="group flex min-w-0 flex-col gap-3 rounded-xl border border-edge bg-surface p-4 text-left transition-colors hover:border-edge/80 hover:bg-raised focus:outline-none focus-visible:ring-1 focus-visible:ring-ring/60"
     >
-      <div className="flex items-center gap-3">
+      <div className="flex min-w-0 items-center gap-3">
         <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-raised text-muted-foreground transition-colors group-hover:text-foreground">
           <Folder className="size-5" />
         </div>
