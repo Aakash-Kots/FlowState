@@ -29,7 +29,7 @@ import { publicProcedure, router } from '../trpc';
 /////////////
 
 /** Build a fresh Idle tab at the given position. */
-function makeTab(workspaceId: string, title: string, position: number): Tab {
+export function makeTab(workspaceId: string, title: string, position: number): Tab {
   return {
     id: randomUUID(),
     workspaceId,

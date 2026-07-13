@@ -12,6 +12,8 @@ import type { LinearIssueRef } from './linear';
  */
 export type Workspace = {
   id: string;
+  /** Parent project (a cloned repo); null for the legacy single-workspace row. */
+  projectId: string | null;
   name: string;
   repoRoot: string; // the primary repository path
   worktreePath: string; // absolute path of this worktree
@@ -28,4 +30,15 @@ export type CreateWorkspaceInput = {
   branch: string;
   baseRef: string;
   linearIssueId?: string;
+};
+
+/**
+ * Input to create a worktree-workspace under a project: a new git worktree on
+ * its own `branch` (cut from `baseRef`, defaulting to the project's default
+ * branch), optionally seeded with a first Claude prompt.
+ */
+export type CreateWorktreeInput = {
+  projectId: string;
+  baseRef?: string;
+  initialPrompt?: string;
 };

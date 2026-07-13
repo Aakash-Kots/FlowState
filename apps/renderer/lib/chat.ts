@@ -18,7 +18,9 @@ import {
   type QuestionRequest,
 } from '@flowstate/shared';
 import { ActivityIndicator } from './enums/chat';
+import { useProjects } from './projects';
 import { trpc } from './trpc';
+import { useWorkspace } from './workspace';
 
 ///////////
 // Types //
@@ -175,6 +177,26 @@ function applyEvent(tabId: string, event: ChatEvent): void {
       // Folder change resets the session but keeps the persisted transcript
       // (which is what a restart would show anyway).
       set({ cwd: event.cwd, sessionId: null, streamingText: null, activeIndicator: null });
+      break;
+    case ChatEventKind.Title:
+      // Tab titles live in the workspace store, not the per-tab chat store.
+      useWorkspace.setState((s) => ({
+        tabs: s.tabs.map((t) => (t.id === tabId ? { ...t, title: event.title } : t)),
+      }));
+      break;
+    case ChatEventKind.WorktreeName:
+      // Worktree names live in the projects store's per-project worktree lists.
+      // The sidebar renders `branch`, so update both the name and the renamed branch.
+      useProjects.setState((s) => ({
+        worktrees: Object.fromEntries(
+          Object.entries(s.worktrees).map(([pid, list]) => [
+            pid,
+            list.map((w) =>
+              w.id === event.workspaceId ? { ...w, name: event.name, branch: event.branch } : w,
+            ),
+          ]),
+        ),
+      }));
       break;
     case ChatEventKind.Error:
       set({ error: event.message, streamingText: null, activeIndicator: null });

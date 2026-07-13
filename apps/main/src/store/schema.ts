@@ -7,17 +7,24 @@
  */
 import { blob, index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
-export const workspaces = sqliteTable('workspaces', {
-  id: text('id').primaryKey(),
-  name: text('name').notNull(),
-  repoRoot: text('repo_root').notNull(),
-  worktreePath: text('worktree_path').notNull(),
-  branch: text('branch').notNull(),
-  linearIssue: text('linear_issue'), // JSON (linearIssueRefSchema) or null
-  claudeState: text('claude_state').notNull().default('idle'),
-  claudeSessionId: text('claude_session_id'),
-  createdAt: text('created_at').notNull(),
-});
+export const workspaces = sqliteTable(
+  'workspaces',
+  {
+    id: text('id').primaryKey(),
+    // Parent project (a cloned repo). Nullable: the legacy single-workspace row
+    // predates projects, and worktrees cascade-delete with their project.
+    projectId: text('project_id').references(() => projects.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    repoRoot: text('repo_root').notNull(),
+    worktreePath: text('worktree_path').notNull(),
+    branch: text('branch').notNull(),
+    linearIssue: text('linear_issue'), // JSON (linearIssueRefSchema) or null
+    claudeState: text('claude_state').notNull().default('idle'),
+    claudeSessionId: text('claude_session_id'),
+    createdAt: text('created_at').notNull(),
+  },
+  (t) => [index('idx_workspaces_project').on(t.projectId)],
+);
 
 // A tab is one Claude chat session inside a workspace/worktree. Up to
 // MAX_TABS_PER_WORKSPACE per workspace; each owns its transcript + resume id.
@@ -60,6 +67,20 @@ export const claudeMessages = sqliteTable(
     index('idx_claude_messages_tab').on(t.tabId),
   ],
 );
+
+// A project is a GitHub repository the user has cloned into FlowState. Rows are
+// created via the "Add Project" flow; the clone lives at `local_path`.
+export const projects = sqliteTable('projects', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  owner: text('owner').notNull(),
+  fullName: text('full_name').notNull(),
+  cloneUrl: text('clone_url').notNull(),
+  localPath: text('local_path').notNull(),
+  defaultBranch: text('default_branch').notNull(),
+  private: integer('private', { mode: 'boolean' }).notNull(),
+  createdAt: text('created_at').notNull(),
+});
 
 export const settings = sqliteTable('settings', {
   key: text('key').primaryKey(),

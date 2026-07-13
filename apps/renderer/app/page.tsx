@@ -2,12 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import type { AppInfo } from '@flowstate/shared';
+import { DEFAULT_WORKSPACE_ID, type AppInfo } from '@flowstate/shared';
 import { trpc } from '@/lib/trpc';
 import { useIsOnboarded, useOnboarding, useOnboardingSync } from '@/lib/onboarding';
-import { useWorkspaceSync } from '@/lib/workspace';
+import { useWorkspace, useWorkspaceSync } from '@/lib/workspace';
 import { ConnectScreen } from '@/components/ConnectScreen';
 import { AppSidebar } from '@/components/sidebar/AppSidebar';
+import { ProjectSelector } from '@/components/projects/ProjectSelector';
 import { ShortcutProvider } from '@/components/shortcuts/ShortcutProvider';
 import { WorkspaceTabs } from '@/components/workspace/WorkspaceTabs';
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
@@ -38,6 +39,9 @@ export default function Page() {
  */
 function WorkspaceShell() {
   useWorkspaceSync();
+  // No worktree selected (the startup/default state) → land on the project picker
+  // instead of the empty default-workspace chat.
+  const onDefaultWorkspace = useWorkspace((s) => s.workspaceId) === DEFAULT_WORKSPACE_ID;
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -78,7 +82,7 @@ function WorkspaceShell() {
             </div>
           </header>
 
-          <WorkspaceTabs />
+          {onDefaultWorkspace ? <ProjectSelector /> : <WorkspaceTabs />}
         </SidebarInset>
       </ShortcutProvider>
     </SidebarProvider>

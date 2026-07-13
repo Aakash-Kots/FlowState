@@ -11,8 +11,10 @@ import { publicProcedure, router } from '../trpc';
 // mutations + observable split as terminal.ts. `pickCwd` is project-level
 // (keyed by workspaceId) since all tabs share the project's working folder.
 export const claudeRouter = router({
-  // Project-level working folder shared by all tabs (null until one is chosen).
-  cwd: publicProcedure.query(() => claudeService.getCwd()),
+  // A workspace's working folder — its worktree path (null until it has one).
+  cwd: publicProcedure
+    .input(z.object({ workspaceId: z.string() }))
+    .query(({ input }) => claudeService.getCwd(input.workspaceId)),
 
   snapshot: publicProcedure
     .input(z.object({ tabId: z.string() }))

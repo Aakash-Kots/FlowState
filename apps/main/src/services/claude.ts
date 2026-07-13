@@ -37,8 +37,10 @@ import {
   ClaudeSessionState,
   DEFAULT_EFFORT,
   DEFAULT_MODEL,
+  DEFAULT_TAB_TITLE,
   PermissionBehavior,
   ReasoningEffort,
+  UNTITLED_WORKSPACE_NAME,
   chatMessageSchema,
   mergeModelOptions,
   type ChatBlock,
@@ -53,16 +55,15 @@ import {
 } from '@flowstate/shared';
 import {
   appendMessage,
-  getSetting,
   getTab,
   getTabTranscript,
   getWorkspace,
   listTabs,
-  setSetting,
   upsertTab,
   upsertWorkspace,
 } from '../store';
 import { authService } from './auth';
+import { slugifyTitle, worktreeService } from './worktree';
 
 ///////////
 // Types //
@@ -98,8 +99,6 @@ type RawBlock = {
 // Constants //
 ///////////////
 
-const CWD_SETTING_KEY = 'claude.cwd';
-
 /** The built-in tool Claude uses to ask the user a structured question. */
 const ASK_USER_QUESTION_TOOL = 'AskUserQuestion';
 
@@ -111,6 +110,16 @@ const ASSISTANT_ERROR_TEXT: Record<string, string> = {
   overloaded: 'The Claude API is overloaded — try again shortly.',
 };
 
+/** Cheap model + limits for the one-shot auto-title summarizer. */
+const TITLE_MODEL = 'claude-haiku-4-5';
+const TITLE_TIMEOUT_MS = 20_000;
+/** Max chars fed to the summarizer, and max chars of the title it produces. */
+const TITLE_SOURCE_MAX_CHARS = 2_000;
+const TITLE_MAX_CHARS = 48;
+const TITLE_SYSTEM_PROMPT =
+  'You name a coding chat. Reply with ONLY a short 3-5 word title in Title Case ' +
+  'summarizing the topic — no quotes, punctuation, or preamble.';
+
 /////////////
 // Helpers //
 /////////////
@@ -119,6 +128,72 @@ let sdkModule: Promise<SdkModule> | null = null;
 function loadSdk(): Promise<SdkModule> {
   sdkModule ??= import('@anthropic-ai/claude-agent-sdk');
   return sdkModule;
+}
+
+/**
+ * The tab's opening exchange (first user prompt + first assistant reply) as plain
+ * text, clamped, to feed the auto-title summarizer. Returns null if there's no
+ * usable text yet. Transcript rows store the normalized `ChatMessage` in `content`.
+ */
+function firstExchangeText(tabId: string): string | null {
+  const transcript = getTabTranscript(tabId);
+  const roleText = (role: ChatMessageRole): string => {
+    const message = transcript.find((m) => (m.content as ChatMessage | undefined)?.role === role)
+      ?.content as ChatMessage | undefined;
+    return (message?.blocks ?? [])
+      .map((b) => (b.type === ChatBlockType.Text ? b.text : ''))
+      .join('')
+      .trim();
+  };
+  const user = roleText(ChatMessageRole.User);
+  const assistant = roleText(ChatMessageRole.Assistant);
+  const source = [user && `User: ${user}`, assistant && `Assistant: ${assistant}`]
+    .filter(Boolean)
+    .join('\n\n')
+    .trim();
+  return source ? source.slice(0, TITLE_SOURCE_MAX_CHARS) : null;
+}
+
+/** Normalize the model's reply into a single clean title line, or null. */
+function cleanTitle(raw: string): string | null {
+  const line = (raw.trim().split('\n')[0] ?? '').replace(/^["'`]+|["'`]+$/g, '').trim();
+  if (!line) return null;
+  return line.length > TITLE_MAX_CHARS ? `${line.slice(0, TITLE_MAX_CHARS).trim()}…` : line;
+}
+
+/**
+ * One-shot Haiku summarizer for a tab title. Reuses the SDK's bundled runtime and
+ * the user's Claude Code login (no API key), runs a single tool-less turn, and is
+ * best-effort: any failure/timeout returns null and the caller keeps "Chat".
+ */
+async function generateTitle(source: string, cwd: string): Promise<string | null> {
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), TITLE_TIMEOUT_MS);
+  try {
+    const sdk = await loadSdk();
+    let text = '';
+    const query = sdk.query({
+      prompt: `Summarize this coding chat as a short title:\n\n${source}`,
+      options: {
+        cwd,
+        model: TITLE_MODEL,
+        maxTurns: 1,
+        systemPrompt: TITLE_SYSTEM_PROMPT,
+        allowedTools: [],
+        abortController: abort,
+        stderr: () => {},
+      },
+    });
+    for await (const message of query) {
+      if (message.type === 'assistant') text += blockText(message.message.content);
+    }
+    return cleanTitle(text);
+  } catch (err) {
+    console.warn('[claude] title generation failed', err);
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function blockText(content: unknown): string {
@@ -276,6 +351,8 @@ class ClaudeSession {
   reportedModel: string | null = null;
   /** Set while an interrupt is in flight so error results read as a clean stop. */
   interrupted = false;
+  /** Guards one-shot auto-titling so it runs at most once per tab session. */
+  titled = false;
 
   constructor(
     readonly tabId: string,
@@ -289,18 +366,17 @@ export class ClaudeService {
   private readonly sessions = new Map<string, ClaudeSession>();
   private readonly events = new EventEmitter();
 
-  /** The single project working folder shared by all tabs (see setCwd). */
-  getCwd(): string | null {
-    return getSetting<string>(CWD_SETTING_KEY);
+  /** A workspace's working folder — its worktree path (null until it has one). */
+  getCwd(workspaceId: string): string | null {
+    return getWorkspace(workspaceId)?.worktreePath || null;
   }
 
   /**
-   * Point the project at a new folder. Project-level: every tab's session (and
-   * its resume id) is discarded — resuming under a different cwd is incoherent —
+   * Point a workspace at a new folder. Every one of its tabs' sessions (and
+   * resume ids) is discarded — resuming under a different cwd is incoherent —
    * while transcripts are kept. Emits Cwd to each of the workspace's tabs.
    */
   setCwd(workspaceId: string, cwd: string): void {
-    setSetting(CWD_SETTING_KEY, cwd);
     const ws = getWorkspace(workspaceId);
     if (ws) upsertWorkspace({ ...ws, repoRoot: cwd, worktreePath: cwd });
     for (const tab of listTabs(workspaceId)) {
@@ -313,11 +389,16 @@ export class ClaudeService {
 
   /** Send a user prompt to a tab's session, starting the session if needed. */
   send(tabId: string, text: string): void {
-    const cwd = this.getCwd();
+    const tab = getTab(tabId);
+    if (!tab) {
+      this.emit(tabId, { kind: ChatEventKind.Error, message: 'This chat tab no longer exists.' });
+      return;
+    }
+    const cwd = this.getCwd(tab.workspaceId);
     if (!cwd) {
       this.emit(tabId, {
         kind: ChatEventKind.Error,
-        message: 'Choose a working folder first.',
+        message: 'This workspace has no worktree folder yet.',
       });
       return;
     }
@@ -326,11 +407,6 @@ export class ClaudeService {
         kind: ChatEventKind.Error,
         message: 'Claude Code is not connected. Open Connect and sign in first.',
       });
-      return;
-    }
-    const tab = getTab(tabId);
-    if (!tab) {
-      this.emit(tabId, { kind: ChatEventKind.Error, message: 'This chat tab no longer exists.' });
       return;
     }
 
@@ -467,7 +543,7 @@ export class ClaudeService {
     return {
       state: tab?.claudeState ?? ClaudeSessionState.Idle,
       sessionId: tab?.claudeSessionId ?? null,
-      cwd: this.getCwd(),
+      cwd: tab ? this.getCwd(tab.workspaceId) : null,
       // Prefer the explicit selection; fall back to what the last turn ran as.
       model: session ? (session.model ?? session.reportedModel) : (tab?.model ?? null),
       effort: session?.effort ?? tab?.effort ?? null,
@@ -659,6 +735,8 @@ export class ClaudeService {
         });
         session.interrupted = false;
         this.setState(tabId, ClaudeSessionState.Idle);
+        // Auto-title the tab from its opening exchange (fire-and-forget, once).
+        if (message.subtype === 'success') void this.maybeGenerateTitle(session);
         break;
       }
 
@@ -770,6 +848,52 @@ export class ClaudeService {
       this.emit(session.tabId, { kind: ChatEventKind.QuestionResolved, id });
     }
     session.pendingQuestions.clear();
+  }
+
+  /**
+   * Derive a concise name from the opening exchange (one Haiku call) and apply it
+   * to both the tab title and — for a fresh worktree — the workspace's display
+   * name, at most once per session. Each target updates only while it still holds
+   * its default ("Chat" / "Untitled"), so a manual rename always wins. Best-effort:
+   * failures leave both untouched.
+   */
+  private async maybeGenerateTitle(session: ClaudeSession): Promise<void> {
+    if (session.titled) return;
+    session.titled = true;
+    const source = firstExchangeText(session.tabId);
+    if (!source) return;
+    const name = await generateTitle(source, session.cwd);
+    if (!name) return;
+    // Re-check each target after the async summarization — the user may have
+    // renamed the tab or the worktree while we were summarizing.
+    const tab = getTab(session.tabId);
+    if (tab && tab.title === DEFAULT_TAB_TITLE) {
+      upsertTab({ ...tab, title: name });
+      this.emit(session.tabId, { kind: ChatEventKind.Title, title: name });
+    }
+    const workspace = getWorkspace(session.workspaceId);
+    if (workspace && workspace.name === UNTITLED_WORKSPACE_NAME) {
+      // Rename the throwaway random branch (e.g. `brave-lark`) to a slug of the
+      // title. Best-effort: a git failure keeps the old branch and never breaks
+      // the chat.
+      let branch = workspace.branch;
+      try {
+        branch = await worktreeService.renameBranch({
+          repoRoot: workspace.repoRoot,
+          oldBranch: workspace.branch,
+          newBranch: slugifyTitle(name),
+        });
+      } catch (err) {
+        console.warn('[claude] branch rename failed', err);
+      }
+      upsertWorkspace({ ...workspace, name, branch });
+      this.emit(session.tabId, {
+        kind: ChatEventKind.WorktreeName,
+        workspaceId: workspace.id,
+        name,
+        branch,
+      });
+    }
   }
 
   private persistAndEmit(session: ClaudeSession, message: ChatMessage): void {

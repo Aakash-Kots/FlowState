@@ -41,6 +41,8 @@ export enum ChatEventKind {
   QuestionResolved = 'question_resolved',
   Config = 'config',
   Cwd = 'cwd',
+  Title = 'title',
+  WorktreeName = 'worktree_name',
   Error = 'error',
 }
 

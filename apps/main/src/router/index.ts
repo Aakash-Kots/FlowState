@@ -4,6 +4,7 @@ import { claudeRouter } from './claude';
 import { gitRouter } from './git';
 import { linearRouter } from './linear';
 import { onboardingRouter } from './onboarding';
+import { projectsRouter } from './projects';
 import { shortcutsRouter } from './shortcuts';
 import { tabsRouter } from './tabs';
 import { terminalRouter } from './terminal';
@@ -16,6 +17,7 @@ export const appRouter = router({
   tabs: tabsRouter,
   terminal: terminalRouter,
   onboarding: onboardingRouter,
+  projects: projectsRouter,
   claude: claudeRouter,
   linear: linearRouter,
   shortcuts: shortcutsRouter,

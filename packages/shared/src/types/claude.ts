@@ -124,6 +124,11 @@ export type ChatEvent =
   // The session's model/effort changed (e.g. the user picked a new one).
   | { kind: ChatEventKind.Config; model: string | null; effort: ReasoningEffort | null }
   | { kind: ChatEventKind.Cwd; cwd: string | null }
+  // An auto-generated tab title derived from the conversation's first exchange.
+  | { kind: ChatEventKind.Title; title: string }
+  // An auto-generated worktree/workspace name (and its renamed branch) derived
+  // from the first exchange.
+  | { kind: ChatEventKind.WorktreeName; workspaceId: string; name: string; branch: string }
   | { kind: ChatEventKind.Error; message: string };
 
 /** One transcript entry in a snapshot: a message plus when it was persisted. */

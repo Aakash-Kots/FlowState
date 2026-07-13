@@ -12,6 +12,7 @@ import { linearIssueRefSchema } from './linear';
 
 export const workspaceSchema = z.object({
   id: z.string(),
+  projectId: z.string().nullable().default(null),
   name: z.string(),
   repoRoot: z.string(),
   worktreePath: z.string(),
@@ -27,4 +28,10 @@ export const createWorkspaceInputSchema = z.object({
   branch: z.string(),
   baseRef: z.string().default('HEAD'),
   linearIssueId: z.string().optional(),
+});
+
+export const createWorktreeInputSchema = z.object({
+  projectId: z.string(),
+  baseRef: z.string().optional(),
+  initialPrompt: z.string().optional(),
 });
