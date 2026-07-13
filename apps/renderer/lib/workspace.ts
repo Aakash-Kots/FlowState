@@ -52,11 +52,30 @@ export function useWorkspaceSync(): void {
     void (async () => {
       const [tabs, cwd] = await Promise.all([
         trpc().tabs.list.query({ workspaceId: DEFAULT_WORKSPACE_ID }),
-        trpc().claude.cwd.query(),
+        trpc().claude.cwd.query({ workspaceId: DEFAULT_WORKSPACE_ID }),
       ]);
       useWorkspace.setState({ hydrated: true, tabs, cwd, activeTabId: tabs[0]?.id ?? null });
     })().catch(() => useWorkspace.setState({ hydrated: true }));
   }, []);
+}
+
+/**
+ * Switch the active workspace — a project's clone (the default workspace) or one
+ * of its worktrees. Loads that workspace's tabs + working folder and focuses its
+ * first tab; the top strip and chat follow `workspaceId` automatically.
+ */
+export async function selectWorkspace(workspaceId: string): Promise<void> {
+  if (useWorkspace.getState().workspaceId === workspaceId) return;
+  useWorkspace.setState({ hydrated: false, workspaceId, tabs: [], activeTabId: null });
+  try {
+    const [tabs, cwd] = await Promise.all([
+      trpc().tabs.list.query({ workspaceId }),
+      trpc().claude.cwd.query({ workspaceId }),
+    ]);
+    useWorkspace.setState({ hydrated: true, workspaceId, tabs, cwd, activeTabId: tabs[0]?.id ?? null });
+  } catch {
+    useWorkspace.setState({ hydrated: true });
+  }
 }
 
 export function selectTab(tabId: string): void {

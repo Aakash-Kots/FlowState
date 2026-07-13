@@ -1,11 +1,20 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ChevronRight, Folder, Plus } from 'lucide-react';
-import type { Project } from '@flowstate/shared';
-import { loadProjects, openProject, setAddOpen, useProjects } from '@/lib/projects';
+import { ChevronRight, Folder, GitBranch, Plus, Trash2 } from 'lucide-react';
+import { DEFAULT_WORKSPACE_ID, type Project, type Workspace } from '@flowstate/shared';
+import {
+  loadProjects,
+  openCreateWorktree,
+  openProject,
+  removeWorktree,
+  selectWorktree,
+  setAddOpen,
+  useProjects,
+} from '@/lib/projects';
 import { pickWorkingFolder, useWorkspace } from '@/lib/workspace';
 import { AddProjectModal } from '../projects/AddProjectModal';
+import { CreateWorktreeModal } from '../projects/CreateWorktreeModal';
 import { CtaIconButton } from '../shared/CtaIconButton';
 import { cn } from '../ui/cn';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible';
@@ -17,8 +26,12 @@ import {
   SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
   SidebarRail,
 } from '../ui/sidebar';
 
@@ -68,25 +81,81 @@ function FlowStateMark({ className }: { className?: string }) {
   );
 }
 
-/** A persisted project row: name over its shortened path; click to make active. */
-function ProjectRow({ project, active }: { project: Project; active: boolean }) {
+/** One worktree sub-tab: its branch, selectable, with a hover remove control. */
+function WorktreeRow({ workspace }: { workspace: Workspace }) {
+  const active = useWorkspace((s) => s.workspaceId) === workspace.id;
   return (
-    <SidebarMenuItem>
-      <SidebarMenuButton
-        className="h-auto py-2"
-        isActive={active}
-        tooltip={project.name}
-        onClick={() => void openProject(project)}
-      >
-        <Folder className="size-4 shrink-0" />
-        <div className="flex min-w-0 flex-col group-data-[collapsible=icon]:hidden">
-          <span className="truncate font-medium">{project.name}</span>
-          <span className="truncate font-mono text-xs text-sidebar-foreground/60">
-            {shortenPath(project.localPath)}
+    <SidebarMenuSubItem>
+      <SidebarMenuSubButton asChild isActive={active}>
+        <button
+          type="button"
+          onClick={() => selectWorktree(workspace)}
+          className="group/wt w-full cursor-pointer"
+        >
+          <GitBranch className="size-4 shrink-0" />
+          <span className="flex-1 truncate">{workspace.branch}</span>
+          <span
+            role="button"
+            tabIndex={-1}
+            aria-label="Remove worktree"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              void removeWorktree(workspace);
+            }}
+            className="rounded p-0.5 text-muted-foreground opacity-0 transition-colors hover:bg-edge hover:text-foreground group-hover/wt:opacity-100"
+          >
+            <Trash2 className="size-3" />
           </span>
-        </div>
-      </SidebarMenuButton>
-    </SidebarMenuItem>
+        </button>
+      </SidebarMenuSubButton>
+    </SidebarMenuSubItem>
+  );
+}
+
+/** A project header row plus its nested worktree sub-tabs. */
+function ProjectGroup({ project, active }: { project: Project; active: boolean }) {
+  const worktrees = useProjects((s) => s.worktrees[project.id] ?? []);
+  return (
+    <>
+      <SidebarMenuItem>
+        <SidebarMenuButton
+          className="h-auto py-2"
+          isActive={active}
+          tooltip={project.name}
+          onClick={() => void openProject(project)}
+        >
+          <Folder className="size-4 shrink-0" />
+          <div className="flex min-w-0 flex-col group-data-[collapsible=icon]:hidden">
+            <span className="truncate font-medium">{project.name}</span>
+            <span className="truncate font-mono text-xs text-sidebar-foreground/60">
+              {shortenPath(project.localPath)}
+            </span>
+          </div>
+        </SidebarMenuButton>
+        <SidebarMenuAction showOnHover title="New worktree" onClick={() => openCreateWorktree(project.id)}>
+          <Plus />
+          <span className="sr-only">New worktree</span>
+        </SidebarMenuAction>
+      </SidebarMenuItem>
+      <SidebarMenuSub>
+        {worktrees.map((ws) => (
+          <WorktreeRow key={ws.id} workspace={ws} />
+        ))}
+        <SidebarMenuSubItem>
+          <SidebarMenuSubButton asChild>
+            <button
+              type="button"
+              onClick={() => openCreateWorktree(project.id)}
+              className="w-full cursor-pointer text-sidebar-foreground/60"
+            >
+              <Plus className="size-4 shrink-0" />
+              <span className="truncate">New worktree</span>
+            </button>
+          </SidebarMenuSubButton>
+        </SidebarMenuSubItem>
+      </SidebarMenuSub>
+    </>
   );
 }
 
@@ -112,13 +181,14 @@ function FolderItem({ cwd }: { cwd: string }) {
   );
 }
 
-/** App sidebar: the projects the user has brought into FlowState. */
+/** App sidebar: the projects the user has brought into FlowState + their worktrees. */
 export function AppSidebar() {
   const cwd = useWorkspace((s) => s.cwd);
+  const workspaceId = useWorkspace((s) => s.workspaceId);
   const projects = useProjects((s) => s.projects);
   const [open, setOpen] = useState(true);
 
-  // Hydrate the persisted project list once for the app's lifetime.
+  // Hydrate the persisted project list (and each project's worktrees) once.
   useEffect(() => {
     void loadProjects();
   }, []);
@@ -158,7 +228,11 @@ export function AppSidebar() {
               <SidebarGroupContent>
                 <SidebarMenu>
                   {projects.map((project) => (
-                    <ProjectRow key={project.id} project={project} active={project.localPath === cwd} />
+                    <ProjectGroup
+                      key={project.id}
+                      project={project}
+                      active={workspaceId === DEFAULT_WORKSPACE_ID && project.localPath === cwd}
+                    />
                   ))}
                   {orphanCwd && <FolderItem cwd={orphanCwd} />}
                   {projects.length === 0 && !orphanCwd && (
@@ -178,6 +252,7 @@ export function AppSidebar() {
       </SidebarContent>
       <SidebarRail />
       <AddProjectModal />
+      <CreateWorktreeModal />
     </Sidebar>
   );
 }

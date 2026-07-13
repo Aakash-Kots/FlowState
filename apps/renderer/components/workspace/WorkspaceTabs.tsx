@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useRef, useState } from 'react';
 import { Plus, X } from 'lucide-react';
 import { ClaudeSessionState, MAX_TABS_PER_WORKSPACE, type Tab } from '@flowstate/shared';
 import { ConnStatus } from '@/lib/enums/connection';
@@ -8,6 +9,7 @@ import { closeTab, openTab, selectTab, useWorkspace } from '@/lib/workspace';
 import { ChatWorkspace } from '../chat/ChatWorkspace';
 import { StatusPill } from '../ui/StatusPill';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 
 ///////////////
 // Constants //
@@ -39,9 +41,26 @@ function ActiveTabStatus() {
 
 /** One tab in the strip: its title plus a close button (hidden for a lone tab). */
 function TabTrigger({ tab, canClose }: { tab: Tab; canClose: boolean }) {
-  return (
+  const labelRef = useRef<HTMLSpanElement>(null);
+  const [truncated, setTruncated] = useState(false);
+
+  // Only surface the tooltip when the title is actually clipped by `truncate`.
+  // Re-measured when the title or the tab strip's width changes.
+  useEffect(() => {
+    const el = labelRef.current;
+    if (!el) return;
+    const measure = () => setTruncated(el.scrollWidth > el.clientWidth);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [tab.title]);
+
+  const trigger = (
     <TabsTrigger value={tab.id} className="group/tab max-w-40 gap-1.5 pr-1.5">
-      <span className="truncate">{tab.title}</span>
+      <span ref={labelRef} className="truncate">
+        {tab.title}
+      </span>
       {canClose && (
         <span
           role="button"
@@ -58,6 +77,14 @@ function TabTrigger({ tab, canClose }: { tab: Tab; canClose: boolean }) {
         </span>
       )}
     </TabsTrigger>
+  );
+
+  if (!truncated) return trigger;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{trigger}</TooltipTrigger>
+      <TooltipContent side="bottom">{tab.title}</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -96,11 +123,13 @@ export function WorkspaceTabs() {
   return (
     <Tabs value={activeTabId} onValueChange={selectTab} className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-center border-b border-edge bg-surface px-3 py-1.5">
-        <TabsList className="h-8 gap-1 bg-transparent p-0 text-muted-foreground">
-          {tabs.map((tab) => (
-            <TabTrigger key={tab.id} tab={tab} canClose={tabs.length > 1} />
-          ))}
-        </TabsList>
+        <TooltipProvider delayDuration={300}>
+          <TabsList className="h-8 gap-1 bg-transparent p-0 text-muted-foreground">
+            {tabs.map((tab) => (
+              <TabTrigger key={tab.id} tab={tab} canClose={tabs.length > 1} />
+            ))}
+          </TabsList>
+        </TooltipProvider>
         <NewTabButton disabled={tabs.length >= MAX_TABS_PER_WORKSPACE} />
         <div className="ml-auto flex items-center pl-3">
           <TabProvider tabId={activeTabId}>

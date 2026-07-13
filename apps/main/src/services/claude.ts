@@ -54,12 +54,10 @@ import {
 } from '@flowstate/shared';
 import {
   appendMessage,
-  getSetting,
   getTab,
   getTabTranscript,
   getWorkspace,
   listTabs,
-  setSetting,
   upsertTab,
   upsertWorkspace,
 } from '../store';
@@ -98,8 +96,6 @@ type RawBlock = {
 ///////////////
 // Constants //
 ///////////////
-
-const CWD_SETTING_KEY = 'claude.cwd';
 
 /** The built-in tool Claude uses to ask the user a structured question. */
 const ASK_USER_QUESTION_TOOL = 'AskUserQuestion';
@@ -368,18 +364,17 @@ export class ClaudeService {
   private readonly sessions = new Map<string, ClaudeSession>();
   private readonly events = new EventEmitter();
 
-  /** The single project working folder shared by all tabs (see setCwd). */
-  getCwd(): string | null {
-    return getSetting<string>(CWD_SETTING_KEY);
+  /** A workspace's working folder — its worktree path (null until it has one). */
+  getCwd(workspaceId: string): string | null {
+    return getWorkspace(workspaceId)?.worktreePath || null;
   }
 
   /**
-   * Point the project at a new folder. Project-level: every tab's session (and
-   * its resume id) is discarded — resuming under a different cwd is incoherent —
+   * Point a workspace at a new folder. Every one of its tabs' sessions (and
+   * resume ids) is discarded — resuming under a different cwd is incoherent —
    * while transcripts are kept. Emits Cwd to each of the workspace's tabs.
    */
   setCwd(workspaceId: string, cwd: string): void {
-    setSetting(CWD_SETTING_KEY, cwd);
     const ws = getWorkspace(workspaceId);
     if (ws) upsertWorkspace({ ...ws, repoRoot: cwd, worktreePath: cwd });
     for (const tab of listTabs(workspaceId)) {
@@ -392,11 +387,16 @@ export class ClaudeService {
 
   /** Send a user prompt to a tab's session, starting the session if needed. */
   send(tabId: string, text: string): void {
-    const cwd = this.getCwd();
+    const tab = getTab(tabId);
+    if (!tab) {
+      this.emit(tabId, { kind: ChatEventKind.Error, message: 'This chat tab no longer exists.' });
+      return;
+    }
+    const cwd = this.getCwd(tab.workspaceId);
     if (!cwd) {
       this.emit(tabId, {
         kind: ChatEventKind.Error,
-        message: 'Choose a working folder first.',
+        message: 'This workspace has no worktree folder yet.',
       });
       return;
     }
@@ -405,11 +405,6 @@ export class ClaudeService {
         kind: ChatEventKind.Error,
         message: 'Claude Code is not connected. Open Connect and sign in first.',
       });
-      return;
-    }
-    const tab = getTab(tabId);
-    if (!tab) {
-      this.emit(tabId, { kind: ChatEventKind.Error, message: 'This chat tab no longer exists.' });
       return;
     }
 
@@ -546,7 +541,7 @@ export class ClaudeService {
     return {
       state: tab?.claudeState ?? ClaudeSessionState.Idle,
       sessionId: tab?.claudeSessionId ?? null,
-      cwd: this.getCwd(),
+      cwd: tab ? this.getCwd(tab.workspaceId) : null,
       // Prefer the explicit selection; fall back to what the last turn ran as.
       model: session ? (session.model ?? session.reportedModel) : (tab?.model ?? null),
       effort: session?.effort ?? tab?.effort ?? null,
