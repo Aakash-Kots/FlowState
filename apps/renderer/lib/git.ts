@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { create } from 'zustand';
-import { DEFAULT_WORKSPACE_ID, GitFileStatus } from '@flowstate/shared';
+import { DEFAULT_WORKSPACE_ID, GitFileStatus, PrState } from '@flowstate/shared';
 import type { GitChange, GitDiffStat, GitFileDiff, GitStatus, PrStatus } from '@flowstate/shared';
 import { trpc } from './trpc';
 import { useWorkspace } from './workspace';
@@ -300,6 +300,37 @@ export function useWorktreeDiffStat(workspaceId: string): GitDiffStat | null {
   }, [workspaceId]);
 
   return stat;
+}
+
+/**
+ * Whether this worktree's branch has a merged PR — gates the sidebar's Archive
+ * control. Self-contained per row (mirrors `useWorktreeDiffStat`): a best-effort
+ * `git.prStatus` read on mount/worktree-change and on window focus. One GitHub
+ * call per row; failures/no-PR read as not-merged.
+ */
+export function useWorktreePrMerged(workspaceId: string): boolean {
+  const [merged, setMerged] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const pr = await trpc().git.prStatus.query({ workspaceId });
+        if (!cancelled) setMerged(pr?.state === PrState.Merged);
+      } catch {
+        if (!cancelled) setMerged(false);
+      }
+    };
+    void load();
+    const onFocus = () => void load();
+    window.addEventListener('focus', onFocus);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [workspaceId]);
+
+  return merged;
 }
 
 /**

@@ -21,6 +21,7 @@ export const workspaceSchema = z.object({
   linearIssue: linearIssueRefSchema.nullable().default(null),
   claudeState: claudeSessionStateSchema.default(ClaudeSessionState.Idle),
   claudeSessionId: z.string().nullable().default(null),
+  archivedAt: z.string().nullable().default(null),
   createdAt: z.string().datetime(),
 });
 

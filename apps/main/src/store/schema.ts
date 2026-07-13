@@ -24,9 +24,16 @@ export const workspaces = sqliteTable(
     linearIssue: text('linear_issue'), // JSON (linearIssueRefSchema) or null
     claudeState: text('claude_state').notNull().default('idle'),
     claudeSessionId: text('claude_session_id'),
+    // When the user archived this worktree (ISO timestamp) or null while active.
+    // Archived rows are hidden from the sidebar and force-removed from disk by
+    // the background reaper once the retention delay elapses.
+    archivedAt: text('archived_at'),
     createdAt: text('created_at').notNull(),
   },
-  (t) => [index('idx_workspaces_project').on(t.projectId)],
+  (t) => [
+    index('idx_workspaces_project').on(t.projectId),
+    index('idx_workspaces_archived').on(t.archivedAt),
+  ],
 );
 
 // A tab is one Claude chat session inside a workspace/worktree. Up to

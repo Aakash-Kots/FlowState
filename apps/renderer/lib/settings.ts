@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { create } from 'zustand';
-import { CodeTheme } from '@flowstate/shared';
+import { ArchiveRetention, CodeTheme } from '@flowstate/shared';
 import { trpc } from './trpc';
 
 ///////////
@@ -16,6 +16,8 @@ type SettingsState = {
   soundEnabled: boolean;
   /** The syntax-highlighting palette for code surfaces (diffs, chat blocks). */
   codeTheme: CodeTheme;
+  /** How long an archived worktree lingers on disk before the reaper deletes it. */
+  archiveRetention: ArchiveRetention;
   /** Whether the full-screen Settings surface is open (UI-only, not persisted). */
   settingsOpen: boolean;
 };
@@ -28,6 +30,7 @@ const INITIAL: SettingsState = {
   hydrated: false,
   soundEnabled: true,
   codeTheme: CodeTheme.GithubDark,
+  archiveRetention: ArchiveRetention.OneDay,
   settingsOpen: false,
 };
 
@@ -55,8 +58,8 @@ export function useSettingsSync(): void {
     started = true;
     trpc()
       .settings.get.query()
-      .then(({ soundEnabled, codeTheme }) => {
-        useSettings.setState({ hydrated: true, soundEnabled, codeTheme });
+      .then(({ soundEnabled, codeTheme, archiveRetention }) => {
+        useSettings.setState({ hydrated: true, soundEnabled, codeTheme, archiveRetention });
         applyCodeTheme(codeTheme);
       })
       .catch(() => useSettings.setState({ hydrated: true }));
@@ -74,6 +77,12 @@ export function setCodeTheme(theme: CodeTheme): void {
   useSettings.setState({ codeTheme: theme });
   applyCodeTheme(theme);
   void trpc().settings.setCodeTheme.mutate({ theme });
+}
+
+/** Choose how long archived worktrees linger before deletion (optimistic). */
+export function setArchiveRetention(retention: ArchiveRetention): void {
+  useSettings.setState({ archiveRetention: retention });
+  void trpc().settings.setArchiveRetention.mutate({ retention });
 }
 
 /** Open or close the Settings surface. */

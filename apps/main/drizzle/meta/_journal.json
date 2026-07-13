@@ -57,6 +57,13 @@
       "when": 1783966006553,
       "tag": "0007_soft_katie_power",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1783975828717,
+      "tag": "0008_little_orphan",
+      "breakpoints": true
     }
   ]
 }

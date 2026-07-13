@@ -4,6 +4,7 @@ export * from './enums/git';
 export * from './enums/settings';
 export * from './enums/shortcut';
 export * from './enums/terminal';
+export * from './enums/worktree';
 export * from './types/app';
 export * from './types/claude';
 export * from './types/git';

@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ChevronRight, Folder, GitBranch, Plus, Trash2 } from 'lucide-react';
+import { Archive, ChevronRight, Folder, GitBranch, Plus, Trash2 } from 'lucide-react';
 import { DEFAULT_WORKSPACE_ID, type Project, type Workspace } from '@flowstate/shared';
 import {
+  archiveWorktree,
   loadProjects,
   openCreateWorktree,
   removeWorktree,
@@ -11,7 +12,7 @@ import {
   setAddOpen,
   useProjects,
 } from '@/lib/projects';
-import { useWorktreeDiffStat } from '@/lib/git';
+import { useWorktreeDiffStat, useWorktreePrMerged } from '@/lib/git';
 import { projectName, shortenPath } from '@/lib/paths';
 import { useWorktreeState, useWorktreeUnread } from '@/lib/tabStates';
 import { pickWorkingFolder, useWorkspace } from '@/lib/workspace';
@@ -77,6 +78,8 @@ function WorktreeRow({ workspace }: { workspace: Workspace }) {
   const hasStat = !!stat && (stat.insertions > 0 || stat.deletions > 0);
   const state = useWorktreeState(workspace.id);
   const unread = useWorktreeUnread(workspace.id);
+  // The Archive control appears only once the branch's PR is merged.
+  const merged = useWorktreePrMerged(workspace.id);
   return (
     <SidebarMenuSubItem>
       <SidebarMenuSubButton asChild isActive={active}>
@@ -89,8 +92,8 @@ function WorktreeRow({ workspace }: { workspace: Workspace }) {
           <GitBranch className="size-4 shrink-0" />
           <span className="flex-1 truncate">{workspace.branch}</span>
           <StateIndicator state={state} unread={unread} />
-          {/* Trailing slot: diff badge by default, remove control on hover (they
-              overlap so the row width stays stable). */}
+          {/* Trailing slot: diff badge by default, hover controls (archive when
+              merged, remove) on hover — they overlap so row width stays stable. */}
           <span className="relative flex shrink-0 items-center">
             {hasStat && (
               <span className="font-mono text-[10px] tabular-nums leading-none transition-opacity group-hover/wt:opacity-0">
@@ -103,20 +106,40 @@ function WorktreeRow({ workspace }: { workspace: Workspace }) {
               </span>
             )}
             <span
-              role="button"
-              tabIndex={-1}
-              aria-label="Remove worktree"
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.stopPropagation();
-                void removeWorktree(workspace);
-              }}
               className={cn(
-                'rounded p-0.5 text-muted-foreground opacity-0 transition-colors hover:bg-accent hover:text-foreground group-hover/wt:opacity-100',
+                'flex items-center gap-0.5 opacity-0 transition-opacity group-hover/wt:opacity-100',
                 hasStat && 'absolute right-0 top-1/2 -translate-y-1/2',
               )}
             >
-              <Trash2 className="size-3" />
+              {merged && (
+                <span
+                  role="button"
+                  tabIndex={-1}
+                  aria-label="Archive worktree"
+                  title="Archive (PR merged) — deletes after the retention delay"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void archiveWorktree(workspace);
+                  }}
+                  className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                >
+                  <Archive className="size-3" />
+                </span>
+              )}
+              <span
+                role="button"
+                tabIndex={-1}
+                aria-label="Remove worktree"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void removeWorktree(workspace);
+                }}
+                className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              >
+                <Trash2 className="size-3" />
+              </span>
             </span>
           </span>
         </button>
