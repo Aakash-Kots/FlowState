@@ -11,6 +11,7 @@ import {
   setAddOpen,
   useProjects,
 } from '@/lib/projects';
+import { useWorktreeDiffStat } from '@/lib/git';
 import { projectName, shortenPath } from '@/lib/paths';
 import { pickWorkingFolder, useWorkspace } from '@/lib/workspace';
 import { AddProjectModal } from '../projects/AddProjectModal';
@@ -70,6 +71,8 @@ function FlowStateMark({ className }: { className?: string }) {
 /** One worktree sub-tab: its branch, selectable, with a hover remove control. */
 function WorktreeRow({ workspace }: { workspace: Workspace }) {
   const active = useWorkspace((s) => s.workspaceId) === workspace.id;
+  const stat = useWorktreeDiffStat(workspace.id);
+  const hasStat = !!stat && (stat.insertions > 0 || stat.deletions > 0);
   return (
     <SidebarMenuSubItem>
       <SidebarMenuSubButton asChild isActive={active}>
@@ -81,18 +84,35 @@ function WorktreeRow({ workspace }: { workspace: Workspace }) {
         >
           <GitBranch className="size-4 shrink-0" />
           <span className="flex-1 truncate">{workspace.branch}</span>
-          <span
-            role="button"
-            tabIndex={-1}
-            aria-label="Remove worktree"
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              void removeWorktree(workspace);
-            }}
-            className="rounded p-0.5 text-muted-foreground opacity-0 transition-colors hover:bg-accent hover:text-foreground group-hover/wt:opacity-100"
-          >
-            <Trash2 className="size-3" />
+          {/* Trailing slot: diff badge by default, remove control on hover (they
+              overlap so the row width stays stable). */}
+          <span className="relative flex shrink-0 items-center">
+            {hasStat && (
+              <span className="font-mono text-[10px] tabular-nums leading-none transition-opacity group-hover/wt:opacity-0">
+                {stat.insertions > 0 && (
+                  <span className="text-green-600 dark:text-green-500">+{stat.insertions}</span>
+                )}
+                {stat.deletions > 0 && (
+                  <span className="ml-1 text-red-600 dark:text-red-500">-{stat.deletions}</span>
+                )}
+              </span>
+            )}
+            <span
+              role="button"
+              tabIndex={-1}
+              aria-label="Remove worktree"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                void removeWorktree(workspace);
+              }}
+              className={cn(
+                'rounded p-0.5 text-muted-foreground opacity-0 transition-colors hover:bg-accent hover:text-foreground group-hover/wt:opacity-100',
+                hasStat && 'absolute right-0 top-1/2 -translate-y-1/2',
+              )}
+            >
+              <Trash2 className="size-3" />
+            </span>
           </span>
         </button>
       </SidebarMenuSubButton>
@@ -125,7 +145,7 @@ function ProjectGroup({ project }: { project: Project }) {
           <span className="sr-only">New worktree</span>
         </SidebarMenuAction>
       </SidebarMenuItem>
-      <SidebarMenuSub>
+      <SidebarMenuSub className="mx-0 border-l-0 pl-4 pr-1">
         {worktrees.map((ws) => (
           <WorktreeRow key={ws.id} workspace={ws} />
         ))}

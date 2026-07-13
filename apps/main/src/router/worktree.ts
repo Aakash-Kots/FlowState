@@ -92,6 +92,7 @@ export const worktreeRouter = router({
           repoRoot,
           worktreePath,
           branch,
+          baseRef,
           linearIssue: null,
           claudeState: ClaudeSessionState.Idle,
           claudeSessionId: null,

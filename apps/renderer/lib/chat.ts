@@ -18,7 +18,10 @@ import {
   type QuestionRequest,
 } from '@flowstate/shared';
 import { ActivityIndicator } from './enums/chat';
+import { WorkspaceView } from './enums/view';
+import { playPing } from './notify';
 import { useProjects } from './projects';
+import { useSettings } from './settings';
 import { trpc } from './trpc';
 import { useWorkspace } from './workspace';
 
@@ -105,6 +108,32 @@ function pushMessage(state: ChatState, entry: ChatEntry): Partial<ChatState> {
   };
 }
 
+/** True when the user is actively watching `tabId`'s chat right now. */
+function isTabWatched(tabId: string): boolean {
+  const { activeTabId, viewMode } = useWorkspace.getState();
+  return (
+    tabId === activeTabId &&
+    viewMode === WorkspaceView.Workspace &&
+    typeof document !== 'undefined' &&
+    document.hasFocus()
+  );
+}
+
+/**
+ * Ping when an agent finishes a turn — the `Running`/`Waiting` → `Idle` edge —
+ * but only for a tab the user isn't actively watching, and only if the sound is
+ * enabled. Keeps the reducer readable.
+ */
+function maybePingOnFinish(tabId: string, prev: ClaudeSessionState, next: ClaudeSessionState): void {
+  const finished =
+    (prev === ClaudeSessionState.Running || prev === ClaudeSessionState.Waiting) &&
+    next === ClaudeSessionState.Idle;
+  if (!finished) return;
+  if (!useSettings.getState().soundEnabled) return;
+  if (isTabWatched(tabId)) return;
+  playPing();
+}
+
 /** Fold one ChatEvent into a tab's store. */
 function applyEvent(tabId: string, event: ChatEvent): void {
   const set = storeFor(tabId).setState;
@@ -128,7 +157,8 @@ function applyEvent(tabId: string, event: ChatEvent): void {
     case ChatEventKind.Message:
       set((s) => pushMessage(s, { message: event.message, createdAt: event.createdAt }));
       break;
-    case ChatEventKind.State:
+    case ChatEventKind.State: {
+      const prev = storeFor(tabId).getState().sessionState;
       set({
         sessionState: event.state,
         // A finished or failed turn has nothing in flight anymore.
@@ -140,7 +170,9 @@ function applyEvent(tabId: string, event: ChatEvent): void {
           ? { pendingPermissions: [], pendingQuestions: [] }
           : {}),
       });
+      maybePingOnFinish(tabId, prev, event.state);
       break;
+    }
     case ChatEventKind.PermissionRequest:
       set((s) => ({
         pendingPermissions: s.pendingPermissions.some((p) => p.id === event.id)

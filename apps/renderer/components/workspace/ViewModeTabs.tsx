@@ -17,6 +17,9 @@ export function ViewModeTabs() {
         <TabsTrigger value={WorkspaceView.Workspace} className="h-6 px-2.5 text-xs">
           Workspace
         </TabsTrigger>
+        <TabsTrigger value={WorkspaceView.Git} className="h-6 px-2.5 text-xs">
+          Git
+        </TabsTrigger>
         <TabsTrigger value={WorkspaceView.Terminals} className="h-6 px-2.5 text-xs">
           Terminals
         </TabsTrigger>

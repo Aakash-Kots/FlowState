@@ -85,6 +85,15 @@
   }
 }
 
+/*
+ * Nudge the whole UI up a notch. Tailwind's text + spacing scales are rem-based,
+ * so raising the root font size scales everything proportionally — the default
+ * 16px felt a touch small.
+ */
+html {
+  font-size: 17px;
+}
+
 html,
 body {
   height: 100%;

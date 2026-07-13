@@ -18,6 +18,8 @@ export type Workspace = {
   repoRoot: string; // the primary repository path
   worktreePath: string; // absolute path of this worktree
   branch: string;
+  /** The branch this worktree was cut from (the PR base); null for legacy rows. */
+  baseRef: string | null;
   linearIssue: LinearIssueRef | null;
   claudeState: ClaudeSessionState;
   claudeSessionId: string | null;

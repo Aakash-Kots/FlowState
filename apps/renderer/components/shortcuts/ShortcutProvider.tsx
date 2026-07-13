@@ -3,6 +3,7 @@
 import { useEffect, type ReactNode } from 'react';
 import { ShortcutScope } from '@flowstate/shared';
 import { trpc } from '@/lib/trpc';
+import { DispatchSource } from '@/lib/enums/shortcut';
 import { COMMANDS } from '@/lib/shortcuts/commands';
 import { dispatch } from '@/lib/shortcuts/dispatch';
 import { hasModifier, isEditableTarget, matchesChord } from '@/lib/shortcuts/keys';
@@ -44,14 +45,14 @@ export function ShortcutProvider({ children }: { children: ReactNode }) {
       const editing = isEditableTarget(e.target);
       if (editing && (def.scope === ShortcutScope.Editor || !hasModifier(match.keys))) return;
       e.preventDefault();
-      dispatch(match.command);
+      dispatch(match.command, DispatchSource.Keydown);
     };
     window.addEventListener('keydown', handleKeyDown);
 
     if (!menuChannelStarted) {
       menuChannelStarted = true;
       trpc().shortcuts.onCommand.subscribe(undefined, {
-        onData: (command) => dispatch(command),
+        onData: (command) => dispatch(command, DispatchSource.Menu),
         onError: () => {},
       });
     }

@@ -20,11 +20,12 @@ export const DEFAULT_KEYBINDINGS: Keybinding[] = [
   { command: ShortcutCommand.CloseTab, keys: 'mod+w' },
   { command: ShortcutCommand.NextTab, keys: 'mod+shift+]' },
   { command: ShortcutCommand.PrevTab, keys: 'mod+shift+[' },
-  // Top-level views (Workspace / Terminals / …). ⌘J toggles/cycles forward, ⌘⇧J
-  // back — a single easy key for a heavily-used switch (mirrors VS Code's panel
-  // toggle). Numbers stay reserved for the inner chat tabs above.
-  { command: ShortcutCommand.NextView, keys: 'mod+j' },
-  { command: ShortcutCommand.PrevView, keys: 'mod+shift+j' },
+  // Top-level views (Workspace / Git / Terminals / …). ⌘D cycles back, ⌘F
+  // forward — an adjacent, single-key pair for a heavily-used switch. Both are
+  // free of native-menu accelerators (no Find/Save role). Numbers stay reserved
+  // for the inner chat tabs above.
+  { command: ShortcutCommand.NextView, keys: 'mod+f' },
+  { command: ShortcutCommand.PrevView, keys: 'mod+d' },
   { command: ShortcutCommand.GoToTab1, keys: 'mod+1' },
   { command: ShortcutCommand.GoToTab2, keys: 'mod+2' },
   { command: ShortcutCommand.GoToTab3, keys: 'mod+3' },

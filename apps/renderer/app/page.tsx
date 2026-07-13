@@ -3,10 +3,13 @@
 import Link from 'next/link';
 import { DEFAULT_WORKSPACE_ID } from '@flowstate/shared';
 import { useIsOnboarded, useOnboarding, useOnboardingSync } from '@/lib/onboarding';
+import { useSettingsSync } from '@/lib/settings';
 import { useWorkspace, useWorkspaceSync } from '@/lib/workspace';
 import { ConnectScreen } from '@/components/ConnectScreen';
+import { SoundToggle } from '@/components/settings/SoundToggle';
 import { AppSidebar } from '@/components/sidebar/AppSidebar';
 import { ProjectSelector } from '@/components/projects/ProjectSelector';
+import { GitHeaderButton } from '@/components/git/GitHeaderButton';
 import { ShortcutProvider } from '@/components/shortcuts/ShortcutProvider';
 import { ViewModeTabs } from '@/components/workspace/ViewModeTabs';
 import { WorkspaceViewSwitcher } from '@/components/workspace/WorkspaceViewSwitcher';
@@ -38,6 +41,7 @@ export default function Page() {
  */
 function WorkspaceShell() {
   useWorkspaceSync();
+  useSettingsSync();
   // No worktree selected (the startup/default state) → land on the project picker
   // instead of the empty default-workspace chat.
   const onDefaultWorkspace = useWorkspace((s) => s.workspaceId) === DEFAULT_WORKSPACE_ID;
@@ -46,7 +50,7 @@ function WorkspaceShell() {
     <SidebarProvider className="h-screen">
       <ShortcutProvider>
         <AppSidebar />
-        <SidebarInset className="min-h-0">
+        <SidebarInset className="min-h-0 min-w-0">
           <header className="relative flex items-center justify-between border-b border-border bg-secondary px-4 py-2.5">
             <div className="flex items-center gap-2">
               <SidebarTrigger />
@@ -61,6 +65,8 @@ function WorkspaceShell() {
               </div>
             )}
             <div className="flex items-center gap-4 text-xs text-muted-foreground">
+              {!onDefaultWorkspace && <GitHeaderButton />}
+              <SoundToggle />
               <Link
                 href="/connect"
                 className="text-muted-foreground transition-colors hover:text-neutral-200"

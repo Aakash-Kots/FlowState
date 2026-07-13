@@ -7,8 +7,9 @@ import { cn } from './cn';
 // Types //
 ///////////
 
-// Presentational alignment prop — intentionally a string-literal union, not an enum (conventions §4).
+// Presentational props — intentionally string-literal unions, not enums (conventions §4).
 type Align = 'start' | 'end';
+type Placement = 'top' | 'bottom';
 
 type DropdownMenuProps = {
   /** Rendered inside the trigger button. */
@@ -16,6 +17,8 @@ type DropdownMenuProps = {
   triggerClassName?: string;
   /** Which edge the panel aligns to. */
   align?: Align;
+  /** Whether the panel opens above (`top`) or below (`bottom`) the trigger. */
+  placement?: Placement;
   disabled?: boolean;
   /** Panel body. Receives a `close` callback to dismiss after a selection. */
   children: (close: () => void) => ReactNode;
@@ -41,6 +44,7 @@ export function DropdownMenu({
   trigger,
   triggerClassName,
   align = 'start',
+  placement = 'top',
   disabled,
   children,
 }: DropdownMenuProps) {
@@ -79,7 +83,8 @@ export function DropdownMenu({
       {open && (
         <div
           className={cn(
-            'absolute bottom-full z-50 mb-1.5 min-w-[15rem] overflow-hidden rounded-lg border border-border bg-muted p-1 shadow-xl',
+            'absolute z-50 min-w-[15rem] overflow-hidden rounded-lg border border-border bg-muted p-1 shadow-xl',
+            placement === 'bottom' ? 'top-full mt-1.5' : 'bottom-full mb-1.5',
             align === 'end' ? 'right-0' : 'left-0',
           )}
         >
