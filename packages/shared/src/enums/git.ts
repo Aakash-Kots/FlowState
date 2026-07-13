@@ -16,3 +16,23 @@ export enum GitFileStatus {
   Untracked = 'untracked',
   Conflicted = 'conflicted',
 }
+
+/** Lifecycle of the pull request opened for a worktree's branch. */
+export enum PrState {
+  Open = 'open',
+  Merged = 'merged',
+  /** Closed without merging. */
+  Closed = 'closed',
+}
+
+/** Rolled-up CI state across an open PR's head-commit checks. */
+export enum PrChecks {
+  /** No checks/statuses are configured on the head commit. */
+  None = 'none',
+  /** At least one check is still queued or running. */
+  Pending = 'pending',
+  /** Every check finished successfully. */
+  Passing = 'passing',
+  /** At least one check failed. */
+  Failing = 'failing',
+}

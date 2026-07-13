@@ -13,7 +13,8 @@ import { mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
 import { promisify } from 'node:util';
-import type { AddProjectInput, CreatePrResult, GithubRepo } from '@flowstate/shared';
+import type { AddProjectInput, CreatePrResult, GithubRepo, PrStatus } from '@flowstate/shared';
+import { PrChecks, PrState } from '@flowstate/shared';
 import { SecretName } from '../lib/enums/secret';
 import { getSecret } from '../store/secrets';
 import { authService } from './auth';
@@ -53,6 +54,28 @@ async function gitOutput(args: string[]): Promise<string | null> {
   }
 }
 
+/**
+ * Pull the human-readable reason out of a failed GitHub REST response. A 422
+ * carries a top-level `message` plus an `errors[]` array (e.g. "No commits
+ * between main and my-branch", or an invalid `base` field) — far more useful
+ * than the bare status code. Returns '' when the body isn't the expected JSON.
+ */
+async function githubErrorDetail(res: Response): Promise<string> {
+  try {
+    const body = (await res.json()) as {
+      message?: string;
+      errors?: { message?: string; field?: string; code?: string }[];
+    };
+    const parts = [
+      body.message,
+      ...(body.errors ?? []).map((e) => e.message ?? [e.field, e.code].filter(Boolean).join(' ')),
+    ].filter((p): p is string => !!p && p !== 'Validation Failed');
+    return parts.join(' — ');
+  } catch {
+    return '';
+  }
+}
+
 /** Parse a GitHub remote (https or ssh) into owner/name + a clean https clone URL. */
 function parseGithubRemote(
   remote: string,
@@ -76,6 +99,24 @@ type GithubApiRepo = {
   updated_at: string;
   owner: { login: string };
 };
+
+/** The `pulls` list fields we read to locate + classify a branch's PR. */
+type GithubApiPull = {
+  number: number;
+  html_url: string;
+  state: 'open' | 'closed';
+  merged_at: string | null;
+  head: { sha: string };
+};
+
+/** A GitHub check-run (the Checks API) — `status` is the run's lifecycle. */
+type GithubApiCheckRun = { status: string; conclusion: string | null };
+
+/** A legacy commit status (the Statuses API) rolled into the combined endpoint. */
+type GithubApiCommitStatus = { state: string };
+
+/** Conclusions that count a completed check as failed. */
+const FAILED_CONCLUSIONS = ['failure', 'timed_out', 'cancelled', 'action_required', 'stale'];
 
 function toGithubRepo(r: GithubApiRepo): GithubRepo {
   return {
@@ -261,7 +302,14 @@ export class GithubService {
       const existing = await this.findOpenPr(fullName, owner, input.head, token);
       if (existing) return existing;
     }
-    throw new Error(`GitHub API error (${res.status}): failed to open pull request.`);
+    // Surface GitHub's actual reason (no commits vs base, invalid base branch,
+    // etc.) rather than a bare status code.
+    const detail = await githubErrorDetail(res);
+    throw new Error(
+      detail
+        ? `Couldn't open the pull request: ${detail}.`
+        : `Couldn't open the pull request (GitHub API error ${res.status}).`,
+    );
   }
 
   /** The open PR whose head is `owner:branch`, if any. */
@@ -285,6 +333,129 @@ export class GithubService {
     const prs = (await res.json()) as { html_url: string; number: number }[];
     const pr = prs[0];
     return pr ? { url: pr.html_url, number: pr.number } : null;
+  }
+
+  /////////////////////////
+  // PR status (header)
+  /////////////////////////
+
+  /**
+   * The pull request for `branch` (the most recently updated open-or-merged one)
+   * with its rolled-up CI + merge signal, or `null` when the branch has no PR.
+   * Drives the worktree header: "N checks pending" / "Ready to merge" / merged →
+   * "Delete Worktree". Checks are only rolled up while the PR is open.
+   */
+  async prStatus(worktreePath: string, branch: string): Promise<PrStatus | null> {
+    const token = await this.token();
+    const { owner, fullName } = await this.githubOrigin(worktreePath);
+    const headers = this.apiHeaders(token);
+
+    const url = new URL(`/repos/${fullName}/pulls`, GITHUB_API);
+    url.searchParams.set('head', `${owner}:${branch}`);
+    url.searchParams.set('state', 'all');
+    url.searchParams.set('sort', 'updated');
+    url.searchParams.set('direction', 'desc');
+    url.searchParams.set('per_page', '1');
+
+    const res = await fetch(url, { headers });
+    if (!res.ok) return null;
+    const pr = ((await res.json()) as GithubApiPull[])[0];
+    if (!pr) return null;
+
+    const state = pr.merged_at
+      ? PrState.Merged
+      : pr.state === 'closed'
+        ? PrState.Closed
+        : PrState.Open;
+
+    // A merged/closed PR needs no CI or mergeability — the header only cares
+    // that it's merged (→ offer worktree deletion).
+    if (state !== PrState.Open) {
+      return { number: pr.number, url: pr.html_url, state, checks: PrChecks.None, pending: 0, mergeable: false };
+    }
+
+    const [checks, mergeable] = await Promise.all([
+      this.rollupChecks(fullName, pr.head.sha, headers),
+      this.readMergeable(fullName, pr.number, headers),
+    ]);
+    return { number: pr.number, url: pr.html_url, state, checks: checks.state, pending: checks.pending, mergeable };
+  }
+
+  /** Standard authenticated GitHub REST headers. */
+  private apiHeaders(token: string): Record<string, string> {
+    return {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+    };
+  }
+
+  /**
+   * Roll up a head commit's checks across both the Checks API (`check-runs`) and
+   * the legacy combined Statuses API, since repos use one or the other. Failing
+   * beats pending beats passing; no checks at all → `None`.
+   */
+  private async rollupChecks(
+    fullName: string,
+    sha: string,
+    headers: Record<string, string>,
+  ): Promise<{ state: PrChecks; pending: number }> {
+    let total = 0;
+    let pending = 0;
+    let failing = 0;
+    const tally = (isPending: boolean, isFailing: boolean) => {
+      total += 1;
+      if (isPending) pending += 1;
+      else if (isFailing) failing += 1;
+    };
+
+    const runsRes = await fetch(`${GITHUB_API}/repos/${fullName}/commits/${sha}/check-runs`, { headers });
+    if (runsRes.ok) {
+      const runs = ((await runsRes.json()) as { check_runs?: GithubApiCheckRun[] }).check_runs ?? [];
+      for (const run of runs) {
+        const done = run.status === 'completed';
+        tally(!done, done && FAILED_CONCLUSIONS.includes(run.conclusion ?? ''));
+      }
+    }
+
+    const statusRes = await fetch(`${GITHUB_API}/repos/${fullName}/commits/${sha}/status`, { headers });
+    if (statusRes.ok) {
+      const statuses = ((await statusRes.json()) as { statuses?: GithubApiCommitStatus[] }).statuses ?? [];
+      for (const s of statuses) {
+        tally(s.state === 'pending', s.state === 'failure' || s.state === 'error');
+      }
+    }
+
+    const state =
+      failing > 0
+        ? PrChecks.Failing
+        : pending > 0
+          ? PrChecks.Pending
+          : total > 0
+            ? PrChecks.Passing
+            : PrChecks.None;
+    return { state, pending };
+  }
+
+  /**
+   * Whether the PR merges cleanly (no conflicts). GitHub returns `mergeable:
+   * null` while it computes the check (common right after a PR opens), so retry
+   * once after a short wait before giving up rather than flashing a false
+   * "conflict" in the header.
+   */
+  private async readMergeable(
+    fullName: string,
+    number: number,
+    headers: Record<string, string>,
+  ): Promise<boolean> {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const res = await fetch(`${GITHUB_API}/repos/${fullName}/pulls/${number}`, { headers });
+      if (!res.ok) return false;
+      const { mergeable } = (await res.json()) as { mergeable: boolean | null };
+      if (mergeable !== null) return mergeable;
+      if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 1200));
+    }
+    return false;
   }
 }
 

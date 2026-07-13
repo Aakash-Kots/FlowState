@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { create } from 'zustand';
 import { DEFAULT_WORKSPACE_ID, GitFileStatus } from '@flowstate/shared';
-import type { GitChange, GitDiffStat, GitFileDiff, GitStatus } from '@flowstate/shared';
+import type { GitChange, GitDiffStat, GitFileDiff, GitStatus, PrStatus } from '@flowstate/shared';
 import { trpc } from './trpc';
 import { useWorkspace } from './workspace';
 
@@ -19,6 +19,8 @@ type GitStoreState = {
   workspaceId: string | null;
   loading: boolean;
   status: GitStatus | null;
+  /** The PR opened for this worktree's branch (CI/merge signal), or null if none. */
+  pr: PrStatus | null;
   error: string | null;
   selected: Selection | null;
   diff: GitFileDiff | null;
@@ -39,6 +41,7 @@ const INITIAL: GitStoreState = {
   workspaceId: null,
   loading: false,
   status: null,
+  pr: null,
   error: null,
   selected: null,
   diff: null,
@@ -112,6 +115,24 @@ export async function refreshStatus(): Promise<void> {
   }
 }
 
+/**
+ * (Re)load the active worktree's PR status (CI + merge signal) from GitHub. A
+ * best-effort network read: failures just clear the PR. No-op on the default
+ * (non-worktree) workspace.
+ */
+export async function refreshPr(): Promise<void> {
+  const workspaceId = activeWorkspaceId();
+  if (workspaceId === DEFAULT_WORKSPACE_ID) return;
+  try {
+    const pr = await trpc().git.prStatus.query({ workspaceId });
+    if (activeWorkspaceId() !== workspaceId) return;
+    useGit.setState({ pr });
+  } catch {
+    if (activeWorkspaceId() !== workspaceId) return;
+    useGit.setState({ pr: null });
+  }
+}
+
 /** Select a file and load its diff into the panel. */
 export async function selectFile(path: string, staged: boolean): Promise<void> {
   const workspaceId = activeWorkspaceId();
@@ -142,6 +163,7 @@ async function withRefresh(fn: (workspaceId: string) => Promise<unknown>): Promi
   try {
     await fn(workspaceId);
     await refreshStatus();
+    void refreshPr();
     useGit.setState({ busy: false });
     return true;
   } catch (err) {
@@ -206,6 +228,7 @@ export async function commitAndCreatePr(): Promise<void> {
     await trpc().app.openExternal.mutate({ url: pr.url }).catch(() => {});
     useGit.setState({ busy: false });
     await refreshStatus();
+    void refreshPr();
   } catch (err) {
     useGit.setState({ busy: false, actionError: message(err) });
   }
@@ -224,10 +247,18 @@ export async function createPr(title: string, body?: string): Promise<void> {
     await trpc().app.openExternal.mutate({ url: pr.url }).catch(() => {});
     useGit.setState({ busy: false });
     await refreshStatus();
+    void refreshPr();
   } catch (err) {
     useGit.setState({ busy: false, actionError: message(err) });
   }
 }
+
+///////////////
+// Constants //
+///////////////
+
+/** How often to re-poll the PR's CI/merge status while a worktree is active. */
+const PR_POLL_MS = 20_000;
 
 ///////////
 // Hooks //
@@ -264,11 +295,12 @@ export function useWorktreeDiffStat(workspaceId: string): GitDiffStat | null {
 }
 
 /**
- * Keep the git store in sync with the active worktree: reset + load status when
- * the worktree changes, and refresh when the window regains focus (git state can
- * change from a terminal or the Claude session). Mounted once by the always-
- * present header button so status is ready even when the Git view isn't open.
- * No-op on the default (non-worktree) workspace.
+ * Keep the git store in sync with the active worktree: reset + load status (and
+ * the branch's PR status) when the worktree changes, refresh both on window
+ * focus (git state can change from a terminal or the Claude session), and poll
+ * the PR status so CI progress shows without a manual refresh. Mounted once by
+ * the always-present header button so status is ready even when the Git view
+ * isn't open. No-op on the default (non-worktree) workspace.
  */
 export function useGitSync(): void {
   const workspaceId = useWorkspace((s) => s.workspaceId);
@@ -277,12 +309,22 @@ export function useGitSync(): void {
     if (workspaceId === DEFAULT_WORKSPACE_ID) return;
     resetGit(workspaceId);
     void refreshStatus();
+    void refreshPr();
   }, [workspaceId]);
 
   useEffect(() => {
     if (workspaceId === DEFAULT_WORKSPACE_ID) return;
-    const onFocus = () => void refreshStatus();
+    const onFocus = () => {
+      void refreshStatus();
+      void refreshPr();
+    };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
+  }, [workspaceId]);
+
+  useEffect(() => {
+    if (workspaceId === DEFAULT_WORKSPACE_ID) return;
+    const id = setInterval(() => void refreshPr(), PR_POLL_MS);
+    return () => clearInterval(id);
   }, [workspaceId]);
 }

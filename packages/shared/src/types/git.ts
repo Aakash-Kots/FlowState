@@ -4,7 +4,7 @@
  * worktree, so every shape here is keyed by `workspaceId` at the router
  * boundary. Validation lives in `../schemas/git`.
  */
-import type { GitFileStatus } from '../enums/git';
+import type { GitFileStatus, PrChecks, PrState } from '../enums/git';
 
 /** One changed path in the worktree, on either the staged or unstaged side. */
 export type GitChange = {
@@ -47,6 +47,23 @@ export type GitFileDiff = {
   /** Unified-diff text (empty for a binary or unchanged file). */
   patch: string;
   binary: boolean;
+};
+
+/**
+ * The pull request opened for a worktree's branch, with just enough CI/merge
+ * signal to drive the header status ("N checks pending" / "Ready to merge" /
+ * "Delete Worktree"). `null` from the router means no PR exists yet.
+ */
+export type PrStatus = {
+  number: number;
+  url: string;
+  state: PrState;
+  /** Rolled-up CI state across the head commit (only meaningful while open). */
+  checks: PrChecks;
+  /** How many checks are still queued/running — drives the "N checks pending" label. */
+  pending: number;
+  /** No merge conflicts against the base branch (GitHub's `mergeable`). */
+  mergeable: boolean;
 };
 
 /** Input to commit the staged changes of a worktree. */

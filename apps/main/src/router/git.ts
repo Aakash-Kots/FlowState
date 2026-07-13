@@ -10,6 +10,7 @@ import {
   type GitDiffStat,
   type GitFileDiff,
   type GitStatus,
+  type PrStatus,
   type Workspace,
   commitInputSchema,
   createPrInputSchema,
@@ -59,6 +60,22 @@ export const gitRouter = router({
       const base = ws.baseRef ?? (ws.projectId ? getProject(ws.projectId)?.defaultBranch : null);
       if (!base) return Promise.resolve({ insertions: 0, deletions: 0, filesChanged: 0 });
       return new GitService(ws.worktreePath).diffStat(base);
+    }),
+
+  /**
+   * The PR opened for this worktree's branch (CI + merge signal), or null if none.
+   * Best-effort: any GitHub/remote failure resolves to null so the header degrades
+   * gracefully instead of erroring.
+   */
+  prStatus: publicProcedure
+    .input(gitWorkspaceInputSchema)
+    .query(async ({ input }): Promise<PrStatus | null> => {
+      const ws = requireWorkspace(input.workspaceId);
+      try {
+        return await githubService.prStatus(ws.worktreePath, ws.branch);
+      } catch {
+        return null;
+      }
     }),
 
   /** A single file's unified diff (staged or working-tree side). */
