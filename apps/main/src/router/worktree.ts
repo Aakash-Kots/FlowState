@@ -103,6 +103,9 @@ export const worktreeRouter = router({
       // not a stale local one. Best-effort: local-only repos (no GitHub origin)
       // throw here and fall back to the local base ref inside `create`.
       await githubService.fetch(repoRoot).catch(() => {});
+      // Advance the local base branch to match the remote too, so it isn't left
+      // stale after cutting the worktree from `origin/<base>`. Best-effort.
+      await githubService.syncBaseBranch(repoRoot, baseRef).catch(() => {});
 
       // 1. Create the worktree + branch.
       try {

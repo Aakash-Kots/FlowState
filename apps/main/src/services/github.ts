@@ -267,6 +267,32 @@ export class GithubService {
     await git(['-C', worktreePath, ...auth, 'fetch', 'origin']);
   }
 
+  /**
+   * Best-effort fast-forward of local `base` to `origin/<base>`, so new worktrees
+   * are cut from an up-to-date base. Never rewrites history and never touches a
+   * dirty tree: if `base` is checked out in this repo it's ff-merged only when the
+   * tree is clean; otherwise the ref is fast-forwarded directly (git refuses a
+   * non-fast-forward, protecting a diverged local base). All failures are swallowed.
+   */
+  async syncBaseBranch(repoRoot: string, base: string): Promise<void> {
+    const auth = await this.authHeaderArgs();
+    try {
+      // `base` not checked out anywhere → FF the ref directly (refuses non-FF).
+      await git(['-C', repoRoot, ...auth, 'fetch', 'origin', `${base}:${base}`]);
+    } catch {
+      // `base` is checked out here → ff-only merge, but only if the tree is clean.
+      try {
+        const head = await gitOutput(['-C', repoRoot, 'rev-parse', '--abbrev-ref', 'HEAD']);
+        const dirty = await gitOutput(['-C', repoRoot, 'status', '--porcelain']);
+        if (head === base && !dirty) {
+          await git(['-C', repoRoot, 'merge', '--ff-only', `origin/${base}`]);
+        }
+      } catch {
+        // give up quietly — the badge fix keeps the sidebar correct regardless.
+      }
+    }
+  }
+
   /** Fast-forward the current branch from its upstream. */
   async pull(worktreePath: string): Promise<void> {
     await this.githubOrigin(worktreePath);

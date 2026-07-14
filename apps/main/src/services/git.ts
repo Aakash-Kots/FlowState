@@ -141,16 +141,18 @@ export class GitService {
   }
 
   /**
-   * Total tracked line changes in this worktree relative to `baseRef`, taken
-   * from the merge-base so it counts the work done on this branch (committed +
-   * uncommitted) and ignores commits the base has since gained. Untracked files
-   * aren't in a `git diff`, so they don't count. Returns zeros if `baseRef` can't
-   * be resolved (e.g. not fetched locally).
+   * Total tracked line changes in this worktree relative to `baseRef` (measured
+   * against the remote-tracking `origin/<baseRef>` when it exists — see
+   * `resolveBaseRef`), taken from the merge-base so it counts the work done on
+   * this branch (committed + uncommitted) and ignores commits the base has since
+   * gained. Untracked files aren't in a `git diff`, so they don't count. Returns
+   * zeros if the base can't be resolved (e.g. not fetched locally).
    */
   async diffStat(baseRef: string): Promise<GitDiffStat> {
     const git = this.git;
     try {
-      const mergeBase = (await git.raw(['merge-base', baseRef, 'HEAD'])).trim();
+      const base = await this.resolveBaseRef(baseRef);
+      const mergeBase = (await git.raw(['merge-base', base, 'HEAD'])).trim();
       const summary = await git.diffSummary([mergeBase]);
       return {
         insertions: summary.insertions,
@@ -159,6 +161,20 @@ export class GitService {
       };
     } catch {
       return { insertions: 0, deletions: 0, filesChanged: 0 };
+    }
+  }
+
+  /**
+   * Prefer the remote-tracking `origin/<baseRef>` when it exists, mirroring how
+   * `WorktreeService.create` cuts new worktrees, so the badge measures against the
+   * same start point the branch was actually cut from — not a stale local branch.
+   */
+  private async resolveBaseRef(baseRef: string): Promise<string> {
+    try {
+      await this.git.raw(['rev-parse', '--verify', '--quiet', `refs/remotes/origin/${baseRef}`]);
+      return `origin/${baseRef}`;
+    } catch {
+      return baseRef;
     }
   }
 
