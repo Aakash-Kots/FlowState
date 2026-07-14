@@ -3,6 +3,7 @@ import { BrowserWindow, dialog } from 'electron';
 import { z } from 'zod';
 import {
   PermissionBehavior,
+  PermissionMode,
   ReasoningEffort,
   type ChatEvent,
   type TabStateChange,
@@ -50,9 +51,9 @@ export const claudeRouter = router({
       claudeService.setEffort(input.tabId, input.effort);
     }),
 
-  setPlanMode: publicProcedure
-    .input(z.object({ tabId: z.string(), planMode: z.boolean() }))
-    .mutation(({ input }) => claudeService.setPlanMode(input.tabId, input.planMode)),
+  setPermissionMode: publicProcedure
+    .input(z.object({ tabId: z.string(), permissionMode: z.nativeEnum(PermissionMode) }))
+    .mutation(({ input }) => claudeService.setPermissionMode(input.tabId, input.permissionMode)),
 
   answerQuestion: publicProcedure
     .input(
@@ -73,10 +74,19 @@ export const claudeRouter = router({
         requestId: z.string(),
         behavior: z.nativeEnum(PermissionBehavior),
         message: z.string().optional(),
+        // Applied on an Allow — the plan-approval buttons use this to switch the
+        // session into auto-accept / normal mode as the plan is approved.
+        permissionMode: z.nativeEnum(PermissionMode).optional(),
       }),
     )
     .mutation(({ input }) => {
-      claudeService.respondPermission(input.tabId, input.requestId, input.behavior, input.message);
+      claudeService.respondPermission(
+        input.tabId,
+        input.requestId,
+        input.behavior,
+        input.message,
+        input.permissionMode,
+      );
     }),
 
   // Native folder picker for the project's working directory. Picking a new

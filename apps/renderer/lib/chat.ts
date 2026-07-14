@@ -10,6 +10,7 @@ import {
   CURATED_MODELS,
   mergeModelOptions,
   PermissionBehavior,
+  PermissionMode,
   ReasoningEffort,
   type ChatEvent,
   type ChatMessage,
@@ -38,14 +39,16 @@ type ChatState = {
   /** True once the snapshot query has seeded the store. */
   hydrated: boolean;
   sessionState: ClaudeSessionState;
+  /** When the current turn started running (`Date.now()`), for the live timer; null when idle. */
+  runStartedAt: number | null;
   sessionId: string | null;
   cwd: string | null;
   /** Effective model for the picker (explicit selection, else last-run default). */
   model: string | null;
   /** Selected reasoning effort (null = model default). */
   effort: ReasoningEffort | null;
-  /** Whether the tab is in plan mode (SDK `permissionMode: 'plan'`). */
-  planMode: boolean;
+  /** The tab's SDK permission mode (default / plan / auto-accept). */
+  permissionMode: PermissionMode;
   /** Models offered by the picker (loaded lazily from the main process). */
   availableModels: ModelOption[];
   messages: ChatEntry[];
@@ -65,11 +68,12 @@ type ChatState = {
 const INITIAL: ChatState = {
   hydrated: false,
   sessionState: ClaudeSessionState.Idle,
+  runStartedAt: null,
   sessionId: null,
   cwd: null,
   model: null,
   effort: null,
-  planMode: false,
+  permissionMode: PermissionMode.Default,
   // Seed with the curated models so the picker always shows them immediately,
   // even before (or independent of) the live SDK fetch.
   availableModels: CURATED_MODELS,
@@ -166,8 +170,19 @@ function applyEvent(tabId: string, event: ChatEvent): void {
       break;
     case ChatEventKind.State: {
       const prev = storeFor(tabId).getState().sessionState;
+      // Start the live timer on the fresh-turn edge only — keep it running when
+      // resuming from a permission/question prompt (Waiting → Running) so it
+      // reflects total turn time; clear it once the turn finishes or errors.
+      const startsTurn =
+        event.state === ClaudeSessionState.Running &&
+        prev !== ClaudeSessionState.Running &&
+        prev !== ClaudeSessionState.Waiting;
       set({
         sessionState: event.state,
+        ...(startsTurn ? { runStartedAt: Date.now() } : {}),
+        ...(event.state === ClaudeSessionState.Idle || event.state === ClaudeSessionState.Error
+          ? { runStartedAt: null }
+          : {}),
         // A finished or failed turn has nothing in flight anymore.
         ...(event.state === ClaudeSessionState.Idle || event.state === ClaudeSessionState.Error
           ? { streamingText: null, activeIndicator: null }
@@ -210,7 +225,7 @@ function applyEvent(tabId: string, event: ChatEvent): void {
       set((s) => ({ pendingQuestions: s.pendingQuestions.filter((q) => q.id !== event.id) }));
       break;
     case ChatEventKind.Config:
-      set({ model: event.model, effort: event.effort, planMode: event.planMode });
+      set({ model: event.model, effort: event.effort, permissionMode: event.permissionMode });
       break;
     case ChatEventKind.Cwd:
       // Folder change resets the session but keeps the persisted transcript
@@ -303,7 +318,7 @@ export function useChatSync(tabId: string): void {
           cwd: snapshot.cwd,
           model: snapshot.model,
           effort: snapshot.effort,
-          planMode: snapshot.planMode,
+          permissionMode: snapshot.permissionMode,
           messages: snapshot.messages,
           pendingPermissions: snapshot.pendingPermissions,
           pendingQuestions: snapshot.pendingQuestions,
@@ -361,8 +376,17 @@ export function respondPermission(
   tabId: string,
   requestId: string,
   behavior: PermissionBehavior,
+  message?: string,
+  // Applied on an Allow — the plan-approval buttons pass the mode to switch into.
+  permissionMode?: PermissionMode,
 ): void {
-  void trpc().claude.respondPermission.mutate({ tabId, requestId, behavior });
+  void trpc().claude.respondPermission.mutate({
+    tabId,
+    requestId,
+    behavior,
+    message,
+    permissionMode,
+  });
 }
 
 /** Answer a pending AskUserQuestion (question text → chosen/typed answer). */
@@ -398,13 +422,23 @@ export function setEffort(tabId: string, effort: ReasoningEffort): void {
   void trpc().claude.setEffort.mutate({ tabId, effort });
 }
 
-/** Set a tab's plan mode (optimistic: store updates, main confirms via Config). */
-export function setPlanMode(tabId: string, planMode: boolean): void {
-  storeFor(tabId).setState({ planMode });
-  void trpc().claude.setPlanMode.mutate({ tabId, planMode });
+/** Set a tab's permission mode (optimistic: store updates, main confirms via Config). */
+export function setPermissionMode(tabId: string, permissionMode: PermissionMode): void {
+  storeFor(tabId).setState({ permissionMode });
+  void trpc().claude.setPermissionMode.mutate({ tabId, permissionMode });
 }
 
-/** Flip a tab's plan mode — the Shift+Tab toggle. */
-export function togglePlanMode(tabId: string): void {
-  setPlanMode(tabId, !storeFor(tabId).getState().planMode);
+// The Shift+Tab cycle order (Claude Code style): normal → auto-accept → plan → …
+const PERMISSION_MODE_CYCLE: PermissionMode[] = [
+  PermissionMode.Default,
+  PermissionMode.BypassPermissions,
+  PermissionMode.Plan,
+];
+
+/** Advance a tab to the next permission mode — the Shift+Tab cycle. */
+export function cyclePermissionMode(tabId: string): void {
+  const current = storeFor(tabId).getState().permissionMode;
+  const idx = PERMISSION_MODE_CYCLE.indexOf(current);
+  const next = PERMISSION_MODE_CYCLE[(idx + 1) % PERMISSION_MODE_CYCLE.length];
+  setPermissionMode(tabId, next);
 }

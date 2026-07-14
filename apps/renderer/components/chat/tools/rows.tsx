@@ -2,10 +2,7 @@
 
 import {
   Bot,
-  Eye,
-  FilePen,
-  FilePlus,
-  FileStack,
+  ClipboardList,
   FolderSearch,
   Globe,
   ListTodo,
@@ -13,11 +10,14 @@ import {
   Search,
   Terminal,
 } from 'lucide-react';
+import { fileTypeForPath } from '@/lib/constants/fileTypes';
+import { colorForTool } from '@/lib/constants/tools';
 import { buildEditPatch, buildMultiEditPatch } from '@/lib/diff';
 import { langForPath } from '@/lib/highlight';
 import {
   bashInputSchema,
   editInputSchema,
+  exitPlanModeInputSchema,
   globInputSchema,
   grepInputSchema,
   multiEditInputSchema,
@@ -29,7 +29,7 @@ import {
 } from '@/lib/schemas/toolInput';
 import type { ToolRowProps } from '@/lib/types/chat';
 import { DefaultToolRow } from './DefaultToolRow';
-import { CodePreview, DiffPreview, TextPreview, TodoPreview } from './previews';
+import { CodePreview, DiffPreview, PlanPreview, TextPreview, TodoPreview } from './previews';
 import { ToolRowShell } from './ToolRowShell';
 
 /////////////
@@ -76,10 +76,13 @@ export function EditToolRow({ block, result }: ToolRowProps) {
   const parsed = editInputSchema.safeParse(block.input);
   if (!parsed.success) return <DefaultToolRow block={block} result={result} />;
   const { file_path, old_string, new_string } = parsed.data;
+  const { Icon, color } = fileTypeForPath(file_path);
   return (
     <ToolRowShell
-      icon={<FilePen className={ICON} />}
+      icon={<Icon className={ICON} />}
       name="Edit"
+      iconColor={color}
+      nameColor={colorForTool('Edit')}
       target={basename(file_path)}
       targetTitle={file_path}
       isError={result?.isError}
@@ -98,10 +101,13 @@ export function MultiEditToolRow({ block, result }: ToolRowProps) {
     file_path,
     edits.map((e) => ({ oldString: e.old_string, newString: e.new_string })),
   );
+  const { Icon, color } = fileTypeForPath(file_path);
   return (
     <ToolRowShell
-      icon={<FileStack className={ICON} />}
+      icon={<Icon className={ICON} />}
       name="Edit"
+      iconColor={color}
+      nameColor={colorForTool('Edit')}
       target={basename(file_path)}
       targetTitle={file_path}
       meta={`${edits.length} edit${edits.length === 1 ? '' : 's'}`}
@@ -122,10 +128,13 @@ export function ReadToolRow({ block, result }: ToolRowProps) {
   ) : (
     <TextPreview>Reading…</TextPreview>
   );
+  const { Icon, color } = fileTypeForPath(file_path);
   return (
     <ToolRowShell
-      icon={<Eye className={ICON} />}
+      icon={<Icon className={ICON} />}
       name="Read"
+      iconColor={color}
+      nameColor={colorForTool('Read')}
       target={basename(file_path)}
       targetTitle={file_path}
       isError={result?.isError}
@@ -138,10 +147,13 @@ export function WriteToolRow({ block, result }: ToolRowProps) {
   const parsed = writeInputSchema.safeParse(block.input);
   if (!parsed.success) return <DefaultToolRow block={block} result={result} />;
   const { file_path, content } = parsed.data;
+  const { Icon, color } = fileTypeForPath(file_path);
   return (
     <ToolRowShell
-      icon={<FilePlus className={ICON} />}
+      icon={<Icon className={ICON} />}
       name="Write"
+      iconColor={color}
+      nameColor={colorForTool('Write')}
       target={basename(file_path)}
       targetTitle={file_path}
       isError={result?.isError}
@@ -163,6 +175,8 @@ export function GrepToolRow({ block, result }: ToolRowProps) {
     <ToolRowShell
       icon={<Search className={ICON} />}
       name="Grep"
+      iconColor={colorForTool('Grep')}
+      nameColor={colorForTool('Grep')}
       target={pattern}
       targetTitle={pattern}
       meta={scope}
@@ -180,6 +194,8 @@ export function GlobToolRow({ block, result }: ToolRowProps) {
     <ToolRowShell
       icon={<FolderSearch className={ICON} />}
       name="Glob"
+      iconColor={colorForTool('Glob')}
+      nameColor={colorForTool('Glob')}
       target={pattern}
       targetTitle={pattern}
       meta={path ? `in ${basename(path)}` : undefined}
@@ -202,6 +218,8 @@ export function BashToolRow({ block, result }: ToolRowProps) {
     <ToolRowShell
       icon={<Terminal className={ICON} />}
       name="Bash"
+      iconColor={colorForTool('Bash')}
+      nameColor={colorForTool('Bash')}
       target={command.split('\n')[0]}
       targetTitle={description ?? command}
       isError={result?.isError}
@@ -219,6 +237,8 @@ export function WebFetchToolRow({ block, result }: ToolRowProps) {
     <ToolRowShell
       icon={<Globe className={ICON} />}
       name="Fetch"
+      iconColor={colorForTool('WebFetch')}
+      nameColor={colorForTool('WebFetch')}
       target={hostOf(url)}
       targetTitle={url}
       isError={result?.isError}
@@ -236,6 +256,8 @@ export function TaskToolRow({ block, result }: ToolRowProps) {
     <ToolRowShell
       icon={<Bot className={ICON} />}
       name="Task"
+      iconColor={colorForTool('Task')}
+      nameColor={colorForTool('Task')}
       target={description}
       targetTitle={prompt}
       meta={subagent_type}
@@ -260,10 +282,33 @@ export function McpToolRow({ block, result }: ToolRowProps) {
     <ToolRowShell
       icon={<Plug className={ICON} />}
       name={server}
+      iconColor={colorForTool(block.name)}
+      nameColor={colorForTool(block.name)}
       target={tool}
       targetTitle={block.name}
       isError={result?.isError}
       preview={<CodePreview code={`${input}\n\n---\n\n${body}`} lang="json" />}
+    />
+  );
+}
+
+//////////////
+// Planning //
+//////////////
+
+export function ExitPlanModeToolRow({ block, result }: ToolRowProps) {
+  const parsed = exitPlanModeInputSchema.safeParse(block.input);
+  if (!parsed.success) return <DefaultToolRow block={block} result={result} />;
+  const { plan } = parsed.data;
+  return (
+    <ToolRowShell
+      icon={<ClipboardList className={ICON} />}
+      name="Plan"
+      iconColor={colorForTool('ExitPlanMode')}
+      nameColor={colorForTool('ExitPlanMode')}
+      target="View plan"
+      isError={result?.isError}
+      preview={<PlanPreview plan={plan} />}
     />
   );
 }
@@ -277,6 +322,8 @@ export function TodoWriteToolRow({ block, result }: ToolRowProps) {
     <ToolRowShell
       icon={<ListTodo className={ICON} />}
       name="Update todos"
+      iconColor={colorForTool('TodoWrite')}
+      nameColor={colorForTool('TodoWrite')}
       target={`${done}/${todos.length} done`}
       isError={result?.isError}
       preview={<TodoPreview todos={todos} />}

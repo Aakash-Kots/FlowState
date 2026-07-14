@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { colorForTool } from '@/lib/constants/tools';
 import type { ToolRowProps } from '@/lib/types/chat';
 import { cn } from '../../ui/cn';
 
@@ -41,24 +42,24 @@ export function DefaultToolRow({ block, result }: ToolRowProps) {
   const summary = summarizeInput(block.input);
 
   return (
-    <div className="overflow-hidden rounded-md border border-border bg-secondary">
+    <div className="font-mono text-xs">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          'flex w-full items-center gap-2 px-3 py-1.5 text-left font-mono text-xs',
-          'text-muted-foreground transition-colors hover:bg-muted hover:text-neutral-200',
+          'flex w-full items-center gap-2 text-left',
+          'text-muted-foreground transition-colors hover:text-neutral-200',
         )}
       >
         <span className={cn('shrink-0', result?.isError ? 'text-danger' : 'text-muted-foreground')}>
           ⚙
         </span>
-        <span className="shrink-0 font-medium text-neutral-300">{block.name}</span>
+        <span className={cn('shrink-0 font-medium', colorForTool(block.name))}>{block.name}</span>
         {summary && <span className="truncate">{summary}</span>}
         <span className="ml-auto shrink-0 text-[10px]">{open ? '▾' : '▸'}</span>
       </button>
       {open && (
-        <div className="space-y-2 border-t border-border px-3 py-2">
+        <div className="mt-1 space-y-2 border-l-2 border-border pl-3">
           <pre className="max-h-64 overflow-auto whitespace-pre-wrap font-mono text-xs text-neutral-300">
             {JSON.stringify(block.input, null, 2)}
           </pre>

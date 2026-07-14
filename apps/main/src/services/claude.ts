@@ -25,6 +25,7 @@ import { randomUUID } from 'node:crypto';
 import type {
   CanUseTool,
   ModelInfo,
+  PermissionMode as SdkPermissionMode,
   PermissionResult,
   Query,
   SDKMessage,
@@ -39,6 +40,7 @@ import {
   DEFAULT_MODEL,
   DEFAULT_TAB_TITLE,
   PermissionBehavior,
+  PermissionMode,
   ReasoningEffort,
   UNTITLED_WORKSPACE_NAME,
   chatMessageSchema,
@@ -53,6 +55,7 @@ import {
   type QuestionRequest,
   type Tab,
   type TabStateChange,
+  type TurnFileChange,
 } from '@flowstate/shared';
 import {
   appendMessage,
@@ -65,6 +68,7 @@ import {
   upsertWorkspace,
 } from '../store';
 import { authService } from './auth';
+import { GitService } from './git';
 import { slugifyTitle, worktreeService } from './worktree';
 
 ///////////
@@ -349,14 +353,20 @@ class ClaudeSession {
   model: string | null = null;
   /** The user's explicit reasoning-effort selection (null = model default). */
   effort: ReasoningEffort | null = null;
-  /** Whether this session runs in plan mode (SDK `permissionMode: 'plan'`). */
-  planMode = false;
+  /** This session's SDK permission mode (default / plan / auto-accept). */
+  permissionMode: PermissionMode = PermissionMode.Default;
   /** The model the SDK actually ran (from its `init` message; display only). */
   reportedModel: string | null = null;
   /** Set while an interrupt is in flight so error results read as a clean stop. */
   interrupted = false;
   /** Guards one-shot auto-titling so it runs at most once per tab session. */
   titled = false;
+  /**
+   * Git tree snapshot taken when the current turn started, used to compute the
+   * turn's changed files at its `result`. Null between turns; resolves to null if
+   * the snapshot failed (best-effort — the summary is simply omitted).
+   */
+  turnBaseline: Promise<string | null> | null = null;
 
   constructor(
     readonly tabId: string,
@@ -442,6 +452,9 @@ export class ClaudeService {
     };
     this.persistAndEmit(session, userMessage);
     this.setState(tabId, ClaudeSessionState.Running);
+    // Snapshot the worktree now (before the agent's first edit) so the turn's
+    // `result` can report exactly which files this run changed. Best-effort.
+    session.turnBaseline = new GitService(cwd).snapshotTree().catch(() => null);
     session.queue.push({
       type: 'user',
       message: { role: 'user', content: text },
@@ -468,12 +481,21 @@ export class ClaudeService {
     this.setState(tabId, ClaudeSessionState.Idle);
   }
 
-  /** Resolve a pending tool-permission prompt for a tab (allow / deny). */
+  /**
+   * Resolve a pending tool-permission prompt for a tab (allow / deny).
+   *
+   * `permissionMode`, when set with an `Allow`, is applied right after the
+   * approval resolves — this is how the plan-approval buttons switch the session
+   * into auto-accept or normal mode. Applying it here (rather than as a separate
+   * renderer call) also beats the SDK's own plan→default transition, which
+   * otherwise clobbers a pre-set mode when ExitPlanMode is approved.
+   */
   respondPermission(
     tabId: string,
     requestId: string,
     behavior: PermissionBehavior,
     message?: string,
+    permissionMode?: PermissionMode,
   ): void {
     const session = this.sessions.get(tabId);
     const pending = session?.pendingPermissions.get(requestId);
@@ -485,6 +507,9 @@ export class ClaudeService {
         : { behavior: 'deny', message: message ?? 'The user denied this action.' },
     );
     this.emit(tabId, { kind: ChatEventKind.PermissionResolved, id: requestId, behavior });
+    if (behavior === PermissionBehavior.Allow && permissionMode !== undefined) {
+      void this.setPermissionMode(tabId, permissionMode);
+    }
     this.resumeIfClear(session);
   }
 
@@ -532,7 +557,7 @@ export class ClaudeService {
       kind: ChatEventKind.Config,
       model,
       effort: session?.effort ?? tab?.effort ?? null,
-      planMode: session?.planMode ?? tab?.planMode ?? false,
+      permissionMode: session?.permissionMode ?? tab?.permissionMode ?? PermissionMode.Default,
     });
   }
 
@@ -550,23 +575,24 @@ export class ClaudeService {
       kind: ChatEventKind.Config,
       model: tab?.model ?? null,
       effort,
-      planMode: tab?.planMode ?? false,
+      permissionMode: tab?.permissionMode ?? PermissionMode.Default,
     });
   }
 
   /**
-   * Toggle a tab's plan mode. Persists it and applies it live if a session
+   * Set a tab's permission mode. Persists it and applies it live if a session
    * exists — the SDK supports switching `permissionMode` on a running session
    * (like `setModel`), so no teardown is needed.
    */
-  async setPlanMode(tabId: string, planMode: boolean): Promise<void> {
+  async setPermissionMode(tabId: string, permissionMode: PermissionMode): Promise<void> {
     const tab = getTab(tabId);
-    if (tab) upsertTab({ ...tab, planMode });
+    if (tab) upsertTab({ ...tab, permissionMode });
     const session = this.sessions.get(tabId);
     if (session) {
-      session.planMode = planMode;
+      session.permissionMode = permissionMode;
       try {
-        await session.query?.setPermissionMode(planMode ? 'plan' : 'default');
+        // The enum's values are the SDK's `permissionMode` wire strings.
+        await session.query?.setPermissionMode(permissionMode as SdkPermissionMode);
       } catch (err) {
         console.warn('[claude] setPermissionMode failed', err);
       }
@@ -575,7 +601,7 @@ export class ClaudeService {
       kind: ChatEventKind.Config,
       model: session?.model ?? tab?.model ?? null,
       effort: session?.effort ?? tab?.effort ?? null,
-      planMode,
+      permissionMode,
     });
   }
 
@@ -608,7 +634,7 @@ export class ClaudeService {
       // Prefer the explicit selection; fall back to what the last turn ran as.
       model: session ? (session.model ?? session.reportedModel) : (tab?.model ?? null),
       effort: session?.effort ?? tab?.effort ?? null,
-      planMode: session?.planMode ?? tab?.planMode ?? false,
+      permissionMode: session?.permissionMode ?? tab?.permissionMode ?? PermissionMode.Default,
       messages,
       pendingPermissions: session
         ? [...session.pendingPermissions.values()].map((p) => p.request)
@@ -635,7 +661,7 @@ export class ClaudeService {
     session.sessionId = tab.claudeSessionId;
     session.model = tab.model;
     session.effort = tab.effort;
-    session.planMode = tab.planMode;
+    session.permissionMode = tab.permissionMode;
     this.sessions.set(tab.id, session);
     void this.run(session, tab.claudeSessionId);
     return session;
@@ -665,7 +691,8 @@ export class ClaudeService {
           resume: resumeSessionId ?? undefined,
           model: session.model ?? DEFAULT_MODEL,
           effort: session.effort ?? DEFAULT_EFFORT,
-          permissionMode: session.planMode ? 'plan' : 'default',
+          // The enum's values are the SDK's `permissionMode` wire strings.
+          permissionMode: session.permissionMode as SdkPermissionMode,
           canUseTool: this.makePermissionHandler(session),
           includePartialMessages: true,
           systemPrompt: { type: 'preset', preset: 'claude_code' },
@@ -676,7 +703,7 @@ export class ClaudeService {
       });
 
       for await (const message of session.query) {
-        this.handleSdkMessage(session, message);
+        await this.handleSdkMessage(session, message);
       }
       // Stream ended cleanly (queue ended / abort). Nothing more to do.
     } catch (err) {
@@ -699,7 +726,7 @@ export class ClaudeService {
     }
   }
 
-  private handleSdkMessage(session: ClaudeSession, message: SDKMessage): void {
+  private async handleSdkMessage(session: ClaudeSession, message: SDKMessage): Promise<void> {
     const { tabId } = session;
     switch (message.type) {
       case 'system': {
@@ -785,6 +812,7 @@ export class ClaudeService {
                   text: message.errors.join('\n') || `Run failed: ${message.subtype}`,
                 },
               ];
+        const fileChanges = await this.turnFileChanges(session);
         this.persistAndEmit(session, {
           id: message.uuid,
           role: ChatMessageRole.Result,
@@ -794,6 +822,7 @@ export class ClaudeService {
             durationMs: message.duration_ms,
             numTurns: message.num_turns,
             isError,
+            ...(fileChanges ? { fileChanges } : {}),
           },
         });
         session.interrupted = false;
@@ -956,6 +985,26 @@ export class ClaudeService {
         name,
         branch,
       });
+    }
+  }
+
+  /**
+   * The files the just-finished turn changed, diffing the worktree against the
+   * snapshot taken in `send()`. Best-effort: returns undefined when there was no
+   * baseline, nothing changed, or git failed — the summary is then omitted.
+   */
+  private async turnFileChanges(session: ClaudeSession): Promise<TurnFileChange[] | undefined> {
+    const baseline = session.turnBaseline;
+    session.turnBaseline = null;
+    if (!baseline) return undefined;
+    try {
+      const from = await baseline;
+      if (!from) return undefined;
+      const changes = await new GitService(session.cwd).turnDiff(from);
+      return changes.length > 0 ? changes : undefined;
+    } catch (err) {
+      console.warn('[claude] turn diff failed', err);
+      return undefined;
     }
   }
 

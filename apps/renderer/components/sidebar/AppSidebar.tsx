@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Archive, ChevronRight, Folder, GitBranch, Plus, Trash2 } from 'lucide-react';
+import Link from 'next/link';
+import { Archive, ChevronRight, Folder, GitBranch, Plug, Plus, Settings, Trash2 } from 'lucide-react';
 import { DEFAULT_WORKSPACE_ID, type Project, type Workspace } from '@flowstate/shared';
 import {
   archiveWorktree,
@@ -14,6 +15,7 @@ import {
 } from '@/lib/projects';
 import { useWorktreeDiffStat, useWorktreePrMerged } from '@/lib/git';
 import { projectName, shortenPath } from '@/lib/paths';
+import { setSettingsOpen, useSettings } from '@/lib/settings';
 import { useWorktreeState, useWorktreeUnread } from '@/lib/tabStates';
 import { pickWorkingFolder, useWorkspace } from '@/lib/workspace';
 import { AddProjectModal } from '../projects/AddProjectModal';
@@ -25,6 +27,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/colla
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
@@ -225,6 +228,7 @@ export function AppSidebar() {
   const cwd = useWorkspace((s) => s.cwd);
   const workspaceId = useWorkspace((s) => s.workspaceId);
   const projects = useProjects((s) => s.projects);
+  const settingsOpen = useSettings((s) => s.settingsOpen);
   const [open, setOpen] = useState(true);
 
   // Hydrate the persisted project list (and each project's worktrees) once.
@@ -290,6 +294,28 @@ export function AppSidebar() {
           </SidebarGroup>
         </Collapsible>
       </SidebarContent>
+      <SidebarFooter>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              onClick={() => setSettingsOpen(!settingsOpen)}
+              isActive={settingsOpen}
+              tooltip="Settings"
+            >
+              <Settings className="size-4 shrink-0" />
+              <span>Settings</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton asChild tooltip="Connect">
+              <Link href="/connect">
+                <Plug className="size-4 shrink-0" />
+                <span>Connect</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarFooter>
       <SidebarRail />
       <AddProjectModal />
       <CreateWorktreeModal />

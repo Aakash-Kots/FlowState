@@ -74,3 +74,8 @@ export type TaskInput = {
   prompt: string;
   subagent_type?: string;
 };
+
+/** ExitPlanMode's input: the plan is a markdown string we render as a plan. */
+export type ExitPlanModeInput = {
+  plan: string;
+};

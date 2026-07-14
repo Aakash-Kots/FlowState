@@ -3,7 +3,7 @@ import animate from 'tailwindcss-animate';
 
 export default {
   darkMode: ['class'],
-  content: ['./app/**/*.{ts,tsx}', './components/**/*.{ts,tsx}'],
+  content: ['./app/**/*.{ts,tsx}', './components/**/*.{ts,tsx}', './lib/**/*.{ts,tsx}'],
   theme: {
     extend: {
       colors: {
@@ -12,6 +12,10 @@ export default {
         warn: '#fbbf24',
         danger: '#f87171',
         info: '#60a5fa',
+        // Auto-accept (bypass-permissions) mode accent — the purple "hands-off"
+        // cue on the composer border/pill. Kebab-named to avoid colliding with
+        // Tailwind's built-in `bg-auto` (background-size) utility.
+        'auto-accept': '#a78bfa',
 
         // shadcn/ui semantic tokens — resolve to the CSS variables in globals.css.
         // The full grey ramp + cream `primary` live there; use these everywhere

@@ -1,10 +1,8 @@
 'use client';
 
-import Link from 'next/link';
-import { Settings } from 'lucide-react';
 import { DEFAULT_WORKSPACE_ID } from '@flowstate/shared';
 import { useIsOnboarded, useOnboarding, useOnboardingSync } from '@/lib/onboarding';
-import { setSettingsOpen, useSettings, useSettingsSync } from '@/lib/settings';
+import { useSettings, useSettingsSync } from '@/lib/settings';
 import { useTabStatesSync } from '@/lib/tabStates';
 import { useWorkspace, useWorkspaceSync } from '@/lib/workspace';
 import { ConnectScreen } from '@/components/ConnectScreen';
@@ -17,7 +15,6 @@ import { ShortcutProvider } from '@/components/shortcuts/ShortcutProvider';
 import { ViewModeTabs } from '@/components/workspace/ViewModeTabs';
 import { WorkspaceViewSwitcher } from '@/components/workspace/WorkspaceViewSwitcher';
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
-import { cn } from '@/components/ui/cn';
 
 export default function Page() {
   // Keep onboarding status live for the whole app and drive the first-run gate.
@@ -75,25 +72,6 @@ function WorkspaceShell() {
             <div className="flex items-center gap-4 text-xs text-muted-foreground">
               {!onDefaultWorkspace && <GitHeaderButton />}
               <SoundToggle />
-              <button
-                type="button"
-                onClick={() => setSettingsOpen(!settingsOpen)}
-                title="Settings"
-                aria-pressed={settingsOpen}
-                className={cn(
-                  'transition-colors hover:text-neutral-200',
-                  settingsOpen ? 'text-neutral-200' : 'text-muted-foreground',
-                )}
-              >
-                <Settings className="size-4" />
-                <span className="sr-only">Settings</span>
-              </button>
-              <Link
-                href="/connect"
-                className="text-muted-foreground transition-colors hover:text-neutral-200"
-              >
-                Connect
-              </Link>
             </div>
           </header>
 

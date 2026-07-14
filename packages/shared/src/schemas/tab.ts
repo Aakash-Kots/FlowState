@@ -5,7 +5,7 @@
  * the store's `parse()`-and-return sites (`tabs.ts`) enforce the output shape.
  */
 import { z } from 'zod';
-import { ClaudeSessionState } from '../enums/claude';
+import { ClaudeSessionState, PermissionMode } from '../enums/claude';
 import { claudeSessionStateSchema, reasoningEffortSchema } from './claude';
 
 export const tabSchema = z.object({
@@ -17,7 +17,7 @@ export const tabSchema = z.object({
   // Per-tab Claude session config (null = inherit the CLI/SDK default).
   model: z.string().nullable().default(null),
   effort: reasoningEffortSchema.nullable().default(null),
-  planMode: z.boolean().default(false),
+  permissionMode: z.nativeEnum(PermissionMode).default(PermissionMode.Default),
   position: z.number().int(),
   createdAt: z.string().datetime(),
 });

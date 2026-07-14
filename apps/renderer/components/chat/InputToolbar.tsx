@@ -1,8 +1,15 @@
 'use client';
 
 import { ChevronDown } from 'lucide-react';
-import { CURATED_MODELS, DEFAULT_EFFORT, DEFAULT_MODEL, ReasoningEffort } from '@flowstate/shared';
-import { setEffort, setModel, togglePlanMode, useChat, useTabId } from '@/lib/chat';
+import {
+  CURATED_MODELS,
+  DEFAULT_EFFORT,
+  DEFAULT_MODEL,
+  PermissionMode,
+  ReasoningEffort,
+} from '@flowstate/shared';
+import { cyclePermissionMode, setEffort, setModel, useChat, useTabId } from '@/lib/chat';
+import { cn } from '../ui/cn';
 import { DropdownItem, DropdownMenu } from '../ui/dropdown-menu';
 
 ///////////////
@@ -15,6 +22,19 @@ const EFFORT_LABELS: Record<ReasoningEffort, string> = {
   [ReasoningEffort.High]: 'High',
   [ReasoningEffort.XHigh]: 'Extra high',
   [ReasoningEffort.Max]: 'Max',
+};
+
+// The active-mode pill shown left of the model picker — only non-default modes
+// get one. Default mode shows nothing. Clicking the pill cycles the mode.
+const MODE_PILL: Partial<Record<PermissionMode, { label: string; className: string }>> = {
+  [PermissionMode.Plan]: {
+    label: 'Plan',
+    className: 'border-primary/60 bg-primary/10 text-primary hover:bg-primary/20',
+  },
+  [PermissionMode.BypassPermissions]: {
+    label: 'Auto-accept',
+    className: 'border-auto-accept/60 bg-auto-accept/10 text-auto-accept hover:bg-auto-accept/20',
+  },
 };
 
 // The models offered in the picker are hardcoded (see @flowstate/shared) so the
@@ -32,7 +52,8 @@ export function InputToolbar({ disabled }: { disabled: boolean }) {
   // effort (Opus 4.8 / High) until the user changes it.
   const model = useChat((s) => s.model) ?? DEFAULT_MODEL;
   const effort = useChat((s) => s.effort) ?? DEFAULT_EFFORT;
-  const planMode = useChat((s) => s.planMode);
+  const permissionMode = useChat((s) => s.permissionMode);
+  const modePill = MODE_PILL[permissionMode];
   const models = MODELS;
 
   const current = models.find((m) => m.value === model);
@@ -45,15 +66,18 @@ export function InputToolbar({ disabled }: { disabled: boolean }) {
 
   return (
     <div className="flex items-center gap-1 px-1.5 pb-1.5 pt-1">
-      {planMode && (
+      {modePill && (
         <button
           type="button"
-          onClick={() => togglePlanMode(tabId)}
-          title="Plan mode — Shift+Tab to exit"
-          className="mr-0.5 inline-flex items-center gap-1.5 rounded-full border border-primary/60 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
+          onClick={() => cyclePermissionMode(tabId)}
+          title={`${modePill.label} mode — Shift+Tab to cycle`}
+          className={cn(
+            'mr-0.5 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors',
+            modePill.className,
+          )}
         >
           <span className="text-[10px] leading-none">◆</span>
-          Plan
+          {modePill.label}
         </button>
       )}
 

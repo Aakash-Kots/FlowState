@@ -7,7 +7,7 @@ import {
   ShortcutCommand,
   ShortcutScope,
 } from '@flowstate/shared';
-import { focusInput, interruptSession, togglePlanMode } from '../chat';
+import { cyclePermissionMode, focusInput, interruptSession } from '../chat';
 import {
   closeTab,
   cycleTab,
@@ -197,14 +197,14 @@ export const COMMANDS: Record<ShortcutCommand, CommandDef> = {
   },
   [ShortcutCommand.TogglePlanMode]: {
     command: ShortcutCommand.TogglePlanMode,
-    label: 'Toggle plan mode',
+    label: 'Cycle permission mode',
     category: ShortcutCategory.Session,
     // Editor scope: the composer handles Shift+Tab inline while focused; this
     // entry drives the command palette / cheat-sheet and the unfocused case.
     scope: ShortcutScope.Editor,
     run: () => {
       const id = activeTabId();
-      if (id) togglePlanMode(id);
+      if (id) cyclePermissionMode(id);
     },
   },
 };

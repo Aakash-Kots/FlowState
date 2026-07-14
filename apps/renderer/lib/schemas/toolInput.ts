@@ -8,6 +8,7 @@ import { z } from 'zod';
 import type {
   BashInput,
   EditInput,
+  ExitPlanModeInput,
   GlobInput,
   GrepInput,
   MultiEditInput,
@@ -107,5 +108,11 @@ export const taskInputSchema: z.ZodType<TaskInput> = z
     description: z.string(),
     prompt: z.string(),
     subagent_type: z.string().optional(),
+  })
+  .passthrough();
+
+export const exitPlanModeInputSchema: z.ZodType<ExitPlanModeInput> = z
+  .object({
+    plan: z.string(),
   })
   .passthrough();

@@ -6,6 +6,7 @@ import { DefaultToolRow } from './DefaultToolRow';
 import {
   BashToolRow,
   EditToolRow,
+  ExitPlanModeToolRow,
   GlobToolRow,
   GrepToolRow,
   McpToolRow,
@@ -35,6 +36,7 @@ const TOOL_ROWS: Record<string, ComponentType<ToolRowProps>> = {
   TodoWrite: TodoWriteToolRow,
   WebFetch: WebFetchToolRow,
   Task: TaskToolRow,
+  ExitPlanMode: ExitPlanModeToolRow,
 };
 
 ////////////
