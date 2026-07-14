@@ -7,7 +7,7 @@
  * blocks break a run and stay inline; user/result messages render whole.
  */
 import { ChatBlockType, ChatMessageRole, type ChatSnapshotEntry } from '@flowstate/shared';
-import { ASK_USER_QUESTION_TOOL } from '@/lib/constants/tools';
+import { ASK_USER_QUESTION_TOOL, EXIT_PLAN_MODE_TOOL } from '@/lib/constants/tools';
 import { ChatItemKind } from '@/lib/enums/chat';
 import type { ChatItem, ToolUseBlock } from '@/lib/types/chat';
 
@@ -48,7 +48,15 @@ export function groupChatItems(entries: ChatSnapshotEntry[], toolUseIds: Set<str
           // transcript row; its paired result is suppressed via `toolUseIds`.
           // A subagent's call (parentToolUseId set) renders nested inside its
           // Task row, not as a top-level run — skip it here.
-          if (block.name !== ASK_USER_QUESTION_TOOL && !block.parentToolUseId) run.push(block);
+          if (block.name === ASK_USER_QUESTION_TOOL || block.parentToolUseId) break;
+          // A proposed plan breaks the run and renders inline as its own markdown
+          // message, not collapsed into the `▸ N tool calls` summary bar.
+          if (block.name === EXIT_PLAN_MODE_TOOL) {
+            flush();
+            items.push({ kind: ChatItemKind.Plan, key: `plan:${block.id}`, block });
+            break;
+          }
+          run.push(block);
           break;
         case ChatBlockType.ToolResult:
           // Paired results render inside their call's row; only orphans surface.

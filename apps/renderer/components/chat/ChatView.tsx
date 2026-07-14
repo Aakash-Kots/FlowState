@@ -10,6 +10,7 @@ import { formatDuration } from '@/lib/format';
 import { EmptyChat } from './EmptyChat';
 import { Markdown } from './Markdown';
 import { MessageBubble } from './MessageBubble';
+import { PlanMessage } from './PlanMessage';
 import { ThinkingBlock } from './ThinkingBlock';
 import { ToolGroup } from './ToolGroup';
 
@@ -108,7 +109,13 @@ export function ChatView() {
       data-chat-scroll
       className="min-h-0 flex-1 overflow-y-auto"
     >
-      <div className="mx-auto flex max-w-3xl flex-col gap-4 px-5 pb-40 pt-6">
+      <div
+        className="mx-auto flex max-w-3xl flex-col gap-4 px-5 pt-6"
+        // Reserve room for the floating composer (its live height is published as
+        // `--input-h`) plus a small gap, so content rests just above the textbox
+        // instead of scrolling under it. Falls back before the bar first measures.
+        style={{ paddingBottom: 'calc(var(--input-h, 9rem) + 0.75rem)' }}
+      >
         {messages.length === 0 && !streamingText && <EmptyChat />}
 
         {items.map((item) => {
@@ -124,6 +131,8 @@ export function ChatView() {
                   childrenByParent={childrenByParent}
                 />
               );
+            case ChatItemKind.Plan:
+              return <PlanMessage key={item.key} block={item.block} />;
             case ChatItemKind.Block:
               switch (item.block.type) {
                 case ChatBlockType.Text:

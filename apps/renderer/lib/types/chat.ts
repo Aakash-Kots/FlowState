@@ -23,4 +23,5 @@ export type ToolRowProps = { block: ToolUseBlock; result?: ToolResultBlock };
 export type ChatItem =
   | { kind: ChatItemKind.Message; key: string; entry: ChatSnapshotEntry }
   | { kind: ChatItemKind.Block; key: string; block: TextBlock | ThinkingBlock | ToolResultBlock }
-  | { kind: ChatItemKind.ToolGroup; key: string; blocks: ToolUseBlock[] };
+  | { kind: ChatItemKind.ToolGroup; key: string; blocks: ToolUseBlock[] }
+  | { kind: ChatItemKind.Plan; key: string; block: ToolUseBlock };
