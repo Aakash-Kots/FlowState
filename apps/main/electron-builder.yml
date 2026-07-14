@@ -37,7 +37,10 @@ extraFiles:
   - from: ../renderer/out
     to: Resources/renderer/out
 
-# publish:
-#   provider: github
-#   owner: <your-org>
-#   repo: FlowState
+# Release channel for electron-updater. `bun run dist --publish always` (with
+# GH_TOKEN set) uploads the dmg/zip + latest-mac.yml to a GitHub release tagged
+# with this build's version; installed apps poll it via services/update.ts.
+publish:
+  provider: github
+  owner: Aakash-Kots
+  repo: FlowState

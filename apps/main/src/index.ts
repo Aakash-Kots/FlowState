@@ -7,6 +7,7 @@ import { archiveReaperService } from './services/archive';
 import { claudeService } from './services/claude';
 import { shortcutsService } from './services/shortcuts';
 import { terminalService } from './services/terminal';
+import { updateService } from './services/update';
 import { closeStore, getWindowBounds, initStore, setWindowBounds } from './store';
 
 ///////////////
@@ -189,6 +190,10 @@ void app.whenReady().then(() => {
   shortcutsService.onKeymapChange(buildAppMenu);
 
   createWindow();
+
+  // Poll GitHub for a newer release and download it in the background. Only
+  // meaningful in a packaged build; skipped in dev.
+  if (app.isPackaged) updateService.start();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

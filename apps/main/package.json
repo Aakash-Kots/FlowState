@@ -1,6 +1,6 @@
 {
   "name": "@flowstate/main",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "main": "./out/main/index.js",
   "scripts": {
@@ -21,6 +21,7 @@
     "chokidar": "^5.0.0",
     "drizzle-orm": "^0.44.5",
     "electron-trpc": "^0.7.1",
+    "electron-updater": "^6.8.9",
     "node-pty": "^1.1.0",
     "simple-git": "^3.36.0",
     "zod": "^3.23.8"
