@@ -1,19 +1,7 @@
 'use client';
 
-import {
-  Bot,
-  ClipboardList,
-  Eye,
-  FilePlus,
-  FolderSearch,
-  Globe,
-  ListTodo,
-  Pencil,
-  Plug,
-  Search,
-  Terminal,
-} from 'lucide-react';
-import { colorForTool } from '@/lib/constants/tools';
+import { useChat } from '@/lib/chat';
+import { colorForTool, EXIT_PLAN_MODE_TOOL, iconForTool } from '@/lib/constants/tools';
 import { buildEditPatch, buildMultiEditPatch } from '@/lib/diff';
 import { langForPath } from '@/lib/highlight';
 import {
@@ -32,7 +20,14 @@ import {
 import type { ToolRowProps } from '@/lib/types/chat';
 import { FileRef } from '../FileRef';
 import { DefaultToolRow } from './DefaultToolRow';
-import { CodePreview, DiffPreview, PlanPreview, TextPreview, TodoPreview } from './previews';
+import {
+  CodePreview,
+  DiffPreview,
+  PlanDocument,
+  PlanPreview,
+  TextPreview,
+  TodoPreview,
+} from './previews';
 import { ToolRowShell } from './ToolRowShell';
 
 /////////////
@@ -40,6 +35,13 @@ import { ToolRowShell } from './ToolRowShell';
 /////////////
 
 const ICON = 'size-3.5';
+
+/** The tool's signature lucide icon (from the shared `iconForTool` map), sized
+ * for a compact row. */
+function ToolIcon({ name }: { name: string }) {
+  const Icon = iconForTool(name);
+  return <Icon className={ICON} />;
+}
 
 /** Trailing path segment (filename) for a compact row label. */
 function basename(path: string): string {
@@ -81,7 +83,7 @@ export function EditToolRow({ block, result }: ToolRowProps) {
   const { file_path, old_string, new_string } = parsed.data;
   return (
     <ToolRowShell
-      icon={<Pencil className={ICON} />}
+      icon={<ToolIcon name="Edit" />}
       name="Edit"
       nameColor={colorForTool('Edit')}
       target={<FileRef path={file_path} />}
@@ -105,7 +107,7 @@ export function MultiEditToolRow({ block, result }: ToolRowProps) {
   );
   return (
     <ToolRowShell
-      icon={<Pencil className={ICON} />}
+      icon={<ToolIcon name="MultiEdit" />}
       name="Edit"
       nameColor={colorForTool('Edit')}
       target={<FileRef path={file_path} />}
@@ -131,7 +133,7 @@ export function ReadToolRow({ block, result }: ToolRowProps) {
   );
   return (
     <ToolRowShell
-      icon={<Eye className={ICON} />}
+      icon={<ToolIcon name="Read" />}
       name="Read"
       nameColor={colorForTool('Read')}
       target={<FileRef path={file_path} />}
@@ -149,7 +151,7 @@ export function WriteToolRow({ block, result }: ToolRowProps) {
   const { file_path, content } = parsed.data;
   return (
     <ToolRowShell
-      icon={<FilePlus className={ICON} />}
+      icon={<ToolIcon name="Write" />}
       name="Write"
       nameColor={colorForTool('Write')}
       target={<FileRef path={file_path} />}
@@ -172,7 +174,7 @@ export function GrepToolRow({ block, result }: ToolRowProps) {
   const scope = glob ? `glob ${glob}` : path ? `in ${basename(path)}` : undefined;
   return (
     <ToolRowShell
-      icon={<Search className={ICON} />}
+      icon={<ToolIcon name="Grep" />}
       name="Grep"
       iconColor={colorForTool('Grep')}
       nameColor={colorForTool('Grep')}
@@ -191,7 +193,7 @@ export function GlobToolRow({ block, result }: ToolRowProps) {
   const { pattern, path } = parsed.data;
   return (
     <ToolRowShell
-      icon={<FolderSearch className={ICON} />}
+      icon={<ToolIcon name="Glob" />}
       name="Glob"
       iconColor={colorForTool('Glob')}
       nameColor={colorForTool('Glob')}
@@ -215,7 +217,7 @@ export function BashToolRow({ block, result }: ToolRowProps) {
   const output = result ? result.content || '(no output)' : '(running…)';
   return (
     <ToolRowShell
-      icon={<Terminal className={ICON} />}
+      icon={<ToolIcon name="Bash" />}
       name="Bash"
       iconColor={colorForTool('Bash')}
       nameColor={colorForTool('Bash')}
@@ -234,7 +236,7 @@ export function WebFetchToolRow({ block, result }: ToolRowProps) {
   const body = result ? result.content || '(no output)' : '(fetching…)';
   return (
     <ToolRowShell
-      icon={<Globe className={ICON} />}
+      icon={<ToolIcon name="WebFetch" />}
       name="Fetch"
       iconColor={colorForTool('WebFetch')}
       nameColor={colorForTool('WebFetch')}
@@ -253,7 +255,7 @@ export function TaskToolRow({ block, result }: ToolRowProps) {
   const body = result ? result.content || '(no output)' : '(running…)';
   return (
     <ToolRowShell
-      icon={<Bot className={ICON} />}
+      icon={<ToolIcon name="Task" />}
       name="Task"
       iconColor={colorForTool('Task')}
       nameColor={colorForTool('Task')}
@@ -279,7 +281,7 @@ export function McpToolRow({ block, result }: ToolRowProps) {
   const body = result ? result.content || '(no output)' : '(running…)';
   return (
     <ToolRowShell
-      icon={<Plug className={ICON} />}
+      icon={<ToolIcon name={block.name} />}
       name={server}
       iconColor={colorForTool(block.name)}
       nameColor={colorForTool(block.name)}
@@ -297,11 +299,23 @@ export function McpToolRow({ block, result }: ToolRowProps) {
 
 export function ExitPlanModeToolRow({ block, result }: ToolRowProps) {
   const parsed = exitPlanModeInputSchema.safeParse(block.input);
-  if (!parsed.success) return <DefaultToolRow block={block} result={result} />;
-  const { plan } = parsed.data;
+  const plan = parsed.success ? parsed.data.plan : null;
+  // The tool_use block and its permission request are separate events with no
+  // shared id, so correlate on tool name + plan text — there's at most one plan
+  // awaiting a decision at a time. While pending, the plan reads as an opened
+  // document in the stream; once resolved it collapses to the compact row.
+  const pending = useChat((s) =>
+    s.pendingPermissions.some((p) => {
+      if (p.toolName !== EXIT_PLAN_MODE_TOOL) return false;
+      const pp = exitPlanModeInputSchema.safeParse(p.input);
+      return pp.success && pp.data.plan === plan;
+    }),
+  );
+  if (plan == null) return <DefaultToolRow block={block} result={result} />;
+  if (pending) return <PlanDocument plan={plan} />;
   return (
     <ToolRowShell
-      icon={<ClipboardList className={ICON} />}
+      icon={<ToolIcon name="ExitPlanMode" />}
       name="Plan"
       iconColor={colorForTool('ExitPlanMode')}
       nameColor={colorForTool('ExitPlanMode')}
@@ -319,7 +333,7 @@ export function TodoWriteToolRow({ block, result }: ToolRowProps) {
   const done = todos.filter((t) => t.status === 'completed').length;
   return (
     <ToolRowShell
-      icon={<ListTodo className={ICON} />}
+      icon={<ToolIcon name="TodoWrite" />}
       name="Update todos"
       iconColor={colorForTool('TodoWrite')}
       nameColor={colorForTool('TodoWrite')}

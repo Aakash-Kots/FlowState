@@ -1,14 +1,17 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ChatBlockType, ChatMessageRole, ClaudeSessionState } from '@flowstate/shared';
-import { ActivityIndicator } from '@/lib/enums/chat';
+import { ChatBlockType, ClaudeSessionState } from '@flowstate/shared';
+import { ActivityIndicator, ChatItemKind } from '@/lib/enums/chat';
 import type { ToolResultBlock } from '@/lib/types/chat';
+import { groupChatItems } from '@/lib/chatItems';
 import { useChat } from '@/lib/chat';
 import { formatDuration } from '@/lib/format';
 import { EmptyChat } from './EmptyChat';
 import { Markdown } from './Markdown';
 import { MessageBubble } from './MessageBubble';
+import { ThinkingBlock } from './ThinkingBlock';
+import { ToolGroup } from './ToolGroup';
 
 const NEAR_BOTTOM_PX = 80;
 
@@ -59,6 +62,10 @@ export function ChatView() {
     return { toolResults: results, toolUseIds: ids };
   }, [messages]);
 
+  // Flatten the transcript into render items: whole-message bubbles, standalone
+  // text/thinking blocks, and collapsed runs of tool calls.
+  const items = useMemo(() => groupChatItems(messages, toolUseIds), [messages, toolUseIds]);
+
   const handleScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
@@ -101,25 +108,33 @@ export function ChatView() {
       <div className="mx-auto flex max-w-3xl flex-col gap-4 px-5 pb-40 pt-6">
         {messages.length === 0 && !streamingText && <EmptyChat />}
 
-        {messages.map(({ message }) => {
-          // Tool messages whose results all render inside a tool_use row
-          // produce empty bubbles — skip them entirely.
-          if (
-            message.role === ChatMessageRole.Tool &&
-            message.blocks.every(
-              (b) => b.type === ChatBlockType.ToolResult && toolUseIds.has(b.toolUseId),
-            )
-          ) {
-            return null;
+        {items.map((item) => {
+          switch (item.kind) {
+            case ChatItemKind.Message:
+              return <MessageBubble key={item.key} message={item.entry.message} />;
+            case ChatItemKind.ToolGroup:
+              return <ToolGroup key={item.key} blocks={item.blocks} toolResults={toolResults} />;
+            case ChatItemKind.Block:
+              switch (item.block.type) {
+                case ChatBlockType.Text:
+                  return <Markdown key={item.key}>{item.block.text}</Markdown>;
+                case ChatBlockType.Thinking:
+                  return <ThinkingBlock key={item.key} text={item.block.text} />;
+                case ChatBlockType.ToolResult:
+                  return (
+                    <pre
+                      key={item.key}
+                      className="max-h-48 overflow-auto whitespace-pre-wrap rounded border border-border bg-muted p-2 font-mono text-xs text-neutral-300"
+                    >
+                      {item.block.content}
+                    </pre>
+                  );
+                default:
+                  return null;
+              }
+            default:
+              return null;
           }
-          return (
-            <MessageBubble
-              key={message.id}
-              message={message}
-              toolResults={toolResults}
-              toolUseIds={toolUseIds}
-            />
-          );
         })}
 
         {streamingText && <Markdown>{streamingText}</Markdown>}

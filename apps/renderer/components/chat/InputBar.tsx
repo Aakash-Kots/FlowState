@@ -1,18 +1,25 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { ClaudeSessionState, PermissionMode, type SkillOption } from '@flowstate/shared';
+import {
+  ClaudeSessionState,
+  PermissionBehavior,
+  PermissionMode,
+  type SkillOption,
+} from '@flowstate/shared';
 import {
   clearChat,
   cyclePermissionMode,
   interruptSession,
   loadSupportedSkills,
+  respondPermission,
   sendPrompt,
   useChat,
   useFocusInput,
   usePrefillComposer,
   useTabId,
 } from '@/lib/chat';
+import { EXIT_PLAN_MODE_TOOL } from '@/lib/constants/tools';
 import { cn } from '../ui/cn';
 import { Button } from '../ui/Button';
 import { InlinePrompt } from './InlinePrompt';
@@ -33,8 +40,17 @@ export function InputBar({ disabled }: { disabled: boolean }) {
   const sessionState = useChat((s) => s.sessionState);
   const permissionMode = useChat((s) => s.permissionMode);
   const error = useChat((s) => s.error);
+  // A pending ExitPlanMode plan no longer hijacks the composer — the plan renders
+  // inline in the stream and the textarea stays live so the user can approve via
+  // the action bar or just type to keep planning. Questions and every other
+  // tool-permission prompt still take the composer over.
+  const pendingPlan = useChat(
+    (s) => s.pendingPermissions.find((p) => p.toolName === EXIT_PLAN_MODE_TOOL) ?? null,
+  );
   const hasPrompt = useChat(
-    (s) => s.pendingPermissions.length > 0 || s.pendingQuestions.length > 0,
+    (s) =>
+      s.pendingQuestions.length > 0 ||
+      s.pendingPermissions.some((p) => p.toolName !== EXIT_PLAN_MODE_TOOL),
   );
   const [text, setText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -146,6 +162,15 @@ export function InputBar({ disabled }: { disabled: boolean }) {
       requestAnimationFrame(resize);
       return;
     }
+    // While a plan awaits a decision, a typed message means "keep planning":
+    // deny the plan and hand Claude the note so it revises without leaving plan
+    // mode (the reply-to-keep-planning path from the old inline prompt).
+    if (pendingPlan) {
+      respondPermission(tabId, pendingPlan.id, PermissionBehavior.Deny, text.trim());
+      setText('');
+      requestAnimationFrame(resize);
+      return;
+    }
     sendPrompt(tabId, text);
     setText('');
     requestAnimationFrame(resize);
@@ -186,6 +211,53 @@ export function InputBar({ disabled }: { disabled: boolean }) {
             <InlinePrompt />
           ) : (
             <>
+              {pendingPlan && (
+                <div className="flex flex-wrap items-center gap-2 border-b border-border px-2.5 py-2">
+                  <span className="mr-auto flex items-center gap-2 text-xs font-medium text-neutral-200">
+                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-warn" />
+                    Plan ready — approve, or reply to keep planning
+                  </span>
+                  <Button
+                    className="border border-auto-accept/60 bg-auto-accept/15 px-2.5 py-1 text-xs text-auto-accept hover:bg-auto-accept/25"
+                    onClick={() =>
+                      respondPermission(
+                        tabId,
+                        pendingPlan.id,
+                        PermissionBehavior.Allow,
+                        undefined,
+                        PermissionMode.BypassPermissions,
+                      )
+                    }
+                    title="Approve and run hands-off — no further permission prompts"
+                  >
+                    Approve &amp; auto-accept
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    className="px-2.5 py-1 text-xs"
+                    onClick={() =>
+                      respondPermission(
+                        tabId,
+                        pendingPlan.id,
+                        PermissionBehavior.Allow,
+                        undefined,
+                        PermissionMode.Default,
+                      )
+                    }
+                  >
+                    Approve &amp; manually accept
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    className="px-2.5 py-1 text-xs"
+                    onClick={() =>
+                      respondPermission(tabId, pendingPlan.id, PermissionBehavior.Deny)
+                    }
+                  >
+                    Continue planning
+                  </Button>
+                </div>
+              )}
               <div className="px-2.5 py-2">
                 <textarea
                   ref={textareaRef}
@@ -195,11 +267,13 @@ export function InputBar({ disabled }: { disabled: boolean }) {
                   placeholder={
                     disabled
                       ? 'Choose a folder to start…'
-                      : permissionMode === PermissionMode.Plan
-                        ? 'Plan this out — Claude will propose a plan first (Shift+Tab to cycle)'
-                        : permissionMode === PermissionMode.BypassPermissions
-                          ? 'Auto-accept on — Claude runs hands-off, no prompts (Shift+Tab to cycle)'
-                          : 'Message Claude — Enter to send, Shift+Enter for a new line'
+                      : pendingPlan
+                        ? 'Reply to keep planning — Enter to send, Shift+Enter for a new line'
+                        : permissionMode === PermissionMode.Plan
+                          ? 'Plan this out — Claude will propose a plan first (Shift+Tab to cycle)'
+                          : permissionMode === PermissionMode.BypassPermissions
+                            ? 'Auto-accept on — Claude runs hands-off, no prompts (Shift+Tab to cycle)'
+                            : 'Message Claude — Enter to send, Shift+Enter for a new line'
                   }
                   onChange={(e) => {
                     setText(e.target.value);
@@ -254,7 +328,7 @@ export function InputBar({ disabled }: { disabled: boolean }) {
               <InputToolbar
                 disabled={disabled}
                 trailing={
-                  busy ? (
+                  busy && !pendingPlan ? (
                     <Button
                       variant="secondary"
                       className="px-2.5 py-1 text-xs text-danger"

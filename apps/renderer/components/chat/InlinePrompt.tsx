@@ -3,104 +3,25 @@
 import { useState } from 'react';
 import {
   PermissionBehavior,
-  PermissionMode,
   type PermissionRequest,
   type QuestionRequest,
 } from '@flowstate/shared';
 import { answerQuestion, interruptSession, respondPermission, useChat, useTabId } from '@/lib/chat';
 import { EXIT_PLAN_MODE_TOOL } from '@/lib/constants/tools';
-import { exitPlanModeInputSchema } from '@/lib/schemas/toolInput';
 import { cn } from '../ui/cn';
 import { Button } from '../ui/Button';
-import { Markdown } from './Markdown';
 import { ToolInputPreview } from './tools/ToolInputPreview';
 
 /////////////////
 // Sub-prompts //
 /////////////////
 
-/** The finished plan surfaced by an ExitPlanMode permission request, or null
- * when this request isn't a (well-formed) plan. */
-function planFor(request: PermissionRequest): string | null {
-  if (request.toolName !== EXIT_PLAN_MODE_TOOL) return null;
-  const parsed = exitPlanModeInputSchema.safeParse(request.input);
-  return parsed.success ? parsed.data.plan : null;
-}
-
-/**
- * Approval UI for a finished ExitPlanMode plan: the plan rendered as markdown in
- * a tall scrollable panel, plus a composer so the user can approve, or just
- * start typing feedback to keep planning (Claude Code-style) — a reply denies
- * the plan and hands Claude the note so it stays in plan mode and revises.
- *
- * Approving offers two modes (applied as the plan resolves, via
- * `respondPermission`'s `permissionMode`): auto-accept (`BypassPermissions` — no
- * further prompts) or manual (`Default` — prompt per tool).
- */
-function PlanPrompt({ request, plan }: { request: PermissionRequest; plan: string }) {
-  const tabId = useTabId();
-  const [reply, setReply] = useState('');
-
-  // Approve the plan and switch the session into `mode` (auto-accept vs normal).
-  const approveWith = (mode: PermissionMode) =>
-    respondPermission(tabId, request.id, PermissionBehavior.Allow, undefined, mode);
-  // Deny keeps the session in plan mode; a non-empty reply rides along as the
-  // note Claude uses to revise. Empty → the service's default deny message.
-  const keepPlanning = () =>
-    respondPermission(tabId, request.id, PermissionBehavior.Deny, reply.trim() || undefined);
-
-  return (
-    <div className="p-3">
-      <div className="mb-2 flex items-center gap-2">
-        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-warn" />
-        <span className="text-sm font-medium text-neutral-100">
-          {request.title ?? 'Claude is ready to code'}
-        </span>
-      </div>
-      <div className="mb-2 max-h-[45vh] overflow-auto rounded-lg border border-border bg-background p-3">
-        <Markdown>{plan}</Markdown>
-      </div>
-      <textarea
-        // eslint-disable-next-line jsx-a11y/no-autofocus -- let the user just start typing
-        autoFocus
-        value={reply}
-        rows={2}
-        placeholder="Reply to keep planning — Enter to send, Shift+Enter for a new line"
-        onChange={(e) => setReply(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            if (reply.trim()) keepPlanning();
-          }
-        }}
-        className="mb-2 w-full resize-none rounded-md border border-border bg-secondary px-3 py-2 text-sm leading-5 text-neutral-100 placeholder:text-muted-foreground focus:border-primary/50 focus:outline-none"
-      />
-      <div className="flex flex-wrap gap-2">
-        <Button
-          className="border border-auto-accept/60 bg-auto-accept/15 text-auto-accept hover:bg-auto-accept/25"
-          onClick={() => approveWith(PermissionMode.BypassPermissions)}
-          title="Approve and run hands-off — no further permission prompts"
-        >
-          Approve &amp; auto-accept
-        </Button>
-        <Button variant="secondary" onClick={() => approveWith(PermissionMode.Default)}>
-          Approve &amp; manually accept
-        </Button>
-        <Button variant="secondary" onClick={keepPlanning}>
-          Continue planning
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-/** Relocated Allow/Deny prompt for a tool call awaiting permission. ExitPlanMode
- * gets the rich {@link PlanPrompt}; every other tool gets a generic title + a
- * rich {@link ToolInputPreview} (diff/file/command, JSON fallback) + Allow/Deny. */
+/** Relocated Allow/Deny prompt for a tool call awaiting permission: a generic
+ * title + a rich {@link ToolInputPreview} (diff/file/command, JSON fallback) +
+ * Allow/Deny. ExitPlanMode plans are handled elsewhere — they render inline in
+ * the stream with their actions on the composer — so they never reach here. */
 function PermissionPrompt({ request }: { request: PermissionRequest }) {
   const tabId = useTabId();
-  const plan = planFor(request);
-  if (plan != null) return <PlanPrompt request={request} plan={plan} />;
   return (
     <div className="p-3">
       <div className="mb-1 flex items-center gap-2">
@@ -247,7 +168,10 @@ export function InlinePrompt() {
   const pendingPermissions = useChat((s) => s.pendingPermissions);
   const pendingQuestions = useChat((s) => s.pendingQuestions);
 
-  if (pendingPermissions.length > 0) return <PermissionPrompt request={pendingPermissions[0]} />;
+  // Plans render inline in the stream (with their actions on the composer), not
+  // here — surface the first *non-plan* permission instead.
+  const permission = pendingPermissions.find((p) => p.toolName !== EXIT_PLAN_MODE_TOOL);
+  if (permission) return <PermissionPrompt request={permission} />;
   if (pendingQuestions.length > 0) return <QuestionPrompt request={pendingQuestions[0]} />;
   return null;
 }

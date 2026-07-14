@@ -55,7 +55,7 @@ export function ToolRowShell({
   isError,
 }: ToolRowShellProps) {
   return (
-    <div className="flex w-full items-center gap-2 font-mono text-xs">
+    <div className="flex w-full items-center gap-2 font-mono text-[11px]">
       <span
         className={cn('shrink-0', isError ? 'text-danger' : (iconColor ?? 'text-muted-foreground'))}
       >
