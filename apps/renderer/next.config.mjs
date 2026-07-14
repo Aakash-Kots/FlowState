@@ -4,12 +4,16 @@ const nextConfig = {
   // used in development (Electron points at http://localhost:<port>, where the
   // port is chosen by scripts/dev.mjs — 3000 unless it's busy).
   output: 'export',
-  // Relative asset paths so the export loads over file:// inside Electron: the
-  // production build emits `./_next/...` (relative to index.html) instead of
-  // `/_next/...`, which would resolve against the filesystem root under file://
-  // and 404 every chunk. Only applied to the production export — `next dev`
-  // serves from http://localhost where a relative prefix would break HMR.
-  assetPrefix: process.env.NODE_ENV === 'production' ? '.' : undefined,
+  // Emit every route as a directory with its own `index.html` (`/connect` →
+  // `connect/index.html`). In the packaged app Electron serves the export over
+  // the custom `app://` scheme (see apps/main/src/index.ts); directory routes
+  // mean navigations and reloads target `app://bundle/connect/` — a trailing-
+  // slash URL the protocol handler can resolve — rather than an extensionless
+  // URL, which crashes a Chromium `standard`-scheme main-frame navigation.
+  trailingSlash: true,
+  // No `assetPrefix`: the `app://` origin (prod) and localhost (dev) both make
+  // absolute `/_next/...` URLs resolve correctly regardless of route depth, so
+  // the relative-path workaround the file:// load once needed is unnecessary.
   images: { unoptimized: true },
   // The shared workspace package ships raw TS — let Next transpile it.
   transpilePackages: ['@flowstate/shared'],
