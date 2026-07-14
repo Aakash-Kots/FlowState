@@ -64,6 +64,13 @@
       "when": 1783975828717,
       "tag": "0008_little_orphan",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1783987291586,
+      "tag": "0009_magical_radioactive_man",
+      "breakpoints": true
     }
   ]
 }
