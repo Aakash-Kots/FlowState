@@ -14,7 +14,7 @@ import {
   useProjects,
 } from '@/lib/projects';
 import { useWorktreeDiffStat, useWorktreePrMerged } from '@/lib/git';
-import { projectName, shortenPath } from '@/lib/paths';
+import { projectName } from '@/lib/paths';
 import { setSettingsOpen, useSettings } from '@/lib/settings';
 import { useWorktreeState, useWorktreeUnread } from '@/lib/tabStates';
 import { pickWorkingFolder, useWorkspace } from '@/lib/workspace';
@@ -40,6 +40,7 @@ import {
   SidebarMenuSubButton,
   SidebarMenuSubItem,
   SidebarRail,
+  SidebarSeparator,
 } from '../ui/sidebar';
 
 ///////////////////
@@ -74,6 +75,35 @@ function FlowStateMark({ className }: { className?: string }) {
   );
 }
 
+/**
+ * A project's avatar: the GitHub owner's picture, falling back to the linked
+ * user's own avatar, then a folder icon — advancing past any source that 404s or
+ * fails to load (e.g. a local repo with no owner, or offline).
+ */
+function ProjectAvatar({ owner, className }: { owner: string; className?: string }) {
+  const viewer = useProjects((s) => s.viewer);
+  const [failed, setFailed] = useState(0);
+  const sources = [
+    owner ? `https://github.com/${owner}.png?size=64` : null,
+    viewer?.avatarUrl ?? null,
+  ].filter((s): s is string => !!s);
+  const src = sources[failed];
+  if (!src) {
+    return <Folder className={cn('size-5 shrink-0', className)} />;
+  }
+  return (
+    // A tiny remote avatar in a statically-exported Electron app — `next/image`
+    // buys nothing here (optimization is off) and can't take a bare remote URL.
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt=""
+      className={cn('size-5 shrink-0 rounded-sm object-cover', className)}
+      onError={() => setFailed((n) => n + 1)}
+    />
+  );
+}
+
 /** One worktree sub-tab: its branch, selectable, with a hover remove control. */
 function WorktreeRow({ workspace }: { workspace: Workspace }) {
   const active = useWorkspace((s) => s.workspaceId) === workspace.id;
@@ -90,7 +120,7 @@ function WorktreeRow({ workspace }: { workspace: Workspace }) {
           type="button"
           onClick={() => selectWorktree(workspace)}
           title={workspace.branch}
-          className="group/wt w-full cursor-pointer"
+          className="group/wt w-full cursor-pointer pl-6"
         >
           <GitBranch className="size-4 shrink-0" />
           <span className="flex-1 truncate">{workspace.branch}</span>
@@ -157,20 +187,19 @@ function ProjectGroup({ project }: { project: Project }) {
   return (
     <>
       <SidebarMenuItem>
-        {/* A non-interactive header: projects aren't a workspace you chat in —
-            only their worktrees are selectable. */}
-        <div
-          className="flex h-auto w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm group-has-[[data-sidebar=menu-action]]/menu-item:pr-8"
+        {/* The project header itself is the "new worktree" affordance: projects
+            aren't a workspace you chat in, so clicking the row starts a worktree
+            (the same as the hover "+"). */}
+        <SidebarMenuButton
+          size="lg"
           title={project.name}
+          onClick={() => openCreateWorktree(project.id)}
         >
-          <Folder className="size-4 shrink-0" />
-          <div className="flex min-w-0 flex-col group-data-[collapsible=icon]:hidden">
-            <span className="truncate font-medium">{project.name}</span>
-            <span className="truncate font-mono text-xs text-sidebar-foreground/60">
-              {shortenPath(project.localPath)}
-            </span>
-          </div>
-        </div>
+          <ProjectAvatar owner={project.owner} className="size-6" />
+          <span className="truncate font-medium group-data-[collapsible=icon]:hidden">
+            {project.name}
+          </span>
+        </SidebarMenuButton>
         <SidebarMenuAction
           showOnHover
           title="New worktree"
@@ -180,7 +209,7 @@ function ProjectGroup({ project }: { project: Project }) {
           <span className="sr-only">New worktree</span>
         </SidebarMenuAction>
       </SidebarMenuItem>
-      <SidebarMenuSub className="mx-0 border-l-0 pl-4 pr-1">
+      <SidebarMenuSub className="mx-0 border-l-0 px-0">
         {worktrees.map((ws) => (
           <WorktreeRow key={ws.id} workspace={ws} />
         ))}
@@ -189,7 +218,7 @@ function ProjectGroup({ project }: { project: Project }) {
             <button
               type="button"
               onClick={() => openCreateWorktree(project.id)}
-              className="w-full cursor-pointer text-sidebar-foreground/60"
+              className="w-full cursor-pointer pl-6 text-sidebar-foreground/60"
             >
               <Plus className="size-4 shrink-0" />
               <span className="truncate">New worktree</span>
@@ -206,18 +235,14 @@ function FolderItem({ cwd }: { cwd: string }) {
   return (
     <SidebarMenuItem>
       <SidebarMenuButton
-        className="h-auto py-2"
         isActive
         tooltip={projectName(cwd)}
         onClick={() => void pickWorkingFolder()}
       >
-        <Folder className="size-4 shrink-0" />
-        <div className="flex min-w-0 flex-col group-data-[collapsible=icon]:hidden">
-          <span className="truncate font-medium">{projectName(cwd)}</span>
-          <span className="truncate font-mono text-xs text-sidebar-foreground/60">
-            {shortenPath(cwd)}
-          </span>
-        </div>
+        <ProjectAvatar owner="" />
+        <span className="truncate font-medium group-data-[collapsible=icon]:hidden">
+          {projectName(cwd)}
+        </span>
       </SidebarMenuButton>
     </SidebarMenuItem>
   );
@@ -295,6 +320,7 @@ export function AppSidebar() {
         </Collapsible>
       </SidebarContent>
       <SidebarFooter>
+        <SidebarSeparator className="mx-0" />
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton

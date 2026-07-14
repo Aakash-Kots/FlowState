@@ -36,10 +36,24 @@ export const claudeRouter = router({
     .input(z.object({ tabId: z.string() }))
     .mutation(({ input }) => claudeService.interrupt(input.tabId)),
 
+  // Clear the tab's chat (Claude Code's `/clear`): wipe the transcript and start
+  // a fresh session. Also driven by the composer `/clear` and the panel action.
+  clear: publicProcedure
+    .input(z.object({ tabId: z.string() }))
+    .mutation(({ input }) => {
+      claudeService.clear(input.tabId);
+    }),
+
   // Models the tab can run (live from the SDK when a session exists, else defaults).
   supportedModels: publicProcedure
     .input(z.object({ tabId: z.string() }))
     .query(({ input }) => claudeService.getSupportedModels(input.tabId)),
+
+  // Skills (SDK slash commands) the tab can invoke — empty until a session
+  // exists; the renderer also gets live updates via the SkillsUpdated event.
+  listSkills: publicProcedure
+    .input(z.object({ tabId: z.string() }))
+    .query(({ input }) => claudeService.getSupportedSkills(input.tabId)),
 
   setModel: publicProcedure
     .input(z.object({ tabId: z.string(), model: z.string().min(1) }))

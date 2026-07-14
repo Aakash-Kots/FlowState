@@ -1,5 +1,6 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import { ChevronDown } from 'lucide-react';
 import {
   CURATED_MODELS,
@@ -46,7 +47,15 @@ const MODELS = CURATED_MODELS;
  * the floating input card. The model list is fixed; the effort options are
  * gated by the selected model's supported levels.
  */
-export function InputToolbar({ disabled }: { disabled: boolean }) {
+export function InputToolbar({
+  disabled,
+  trailing,
+}: {
+  disabled: boolean;
+  // Right-aligned slot for the send/stop control so it sits on the same row as
+  // the model/effort pickers.
+  trailing?: ReactNode;
+}) {
   const tabId = useTabId();
   // Fall back to the defaults so the picker always shows a concrete model +
   // effort (Opus 4.8 / High) until the user changes it.
@@ -151,6 +160,8 @@ export function InputToolbar({ disabled }: { disabled: boolean }) {
           )
         }
       </DropdownMenu>
+
+      {trailing && <div className="ml-auto flex items-center">{trailing}</div>}
     </div>
   );
 }

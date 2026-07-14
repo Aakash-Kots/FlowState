@@ -3,14 +3,16 @@
 import {
   Bot,
   ClipboardList,
+  Eye,
+  FilePlus,
   FolderSearch,
   Globe,
   ListTodo,
+  Pencil,
   Plug,
   Search,
   Terminal,
 } from 'lucide-react';
-import { fileTypeForPath } from '@/lib/constants/fileTypes';
 import { colorForTool } from '@/lib/constants/tools';
 import { buildEditPatch, buildMultiEditPatch } from '@/lib/diff';
 import { langForPath } from '@/lib/highlight';
@@ -28,6 +30,7 @@ import {
   writeInputSchema,
 } from '@/lib/schemas/toolInput';
 import type { ToolRowProps } from '@/lib/types/chat';
+import { FileRef } from '../FileRef';
 import { DefaultToolRow } from './DefaultToolRow';
 import { CodePreview, DiffPreview, PlanPreview, TextPreview, TodoPreview } from './previews';
 import { ToolRowShell } from './ToolRowShell';
@@ -76,14 +79,13 @@ export function EditToolRow({ block, result }: ToolRowProps) {
   const parsed = editInputSchema.safeParse(block.input);
   if (!parsed.success) return <DefaultToolRow block={block} result={result} />;
   const { file_path, old_string, new_string } = parsed.data;
-  const { Icon, color } = fileTypeForPath(file_path);
   return (
     <ToolRowShell
-      icon={<Icon className={ICON} />}
+      icon={<Pencil className={ICON} />}
       name="Edit"
-      iconColor={color}
       nameColor={colorForTool('Edit')}
-      target={basename(file_path)}
+      target={<FileRef path={file_path} />}
+      targetAsChip
       targetTitle={file_path}
       isError={result?.isError}
       preview={
@@ -101,14 +103,13 @@ export function MultiEditToolRow({ block, result }: ToolRowProps) {
     file_path,
     edits.map((e) => ({ oldString: e.old_string, newString: e.new_string })),
   );
-  const { Icon, color } = fileTypeForPath(file_path);
   return (
     <ToolRowShell
-      icon={<Icon className={ICON} />}
+      icon={<Pencil className={ICON} />}
       name="Edit"
-      iconColor={color}
       nameColor={colorForTool('Edit')}
-      target={basename(file_path)}
+      target={<FileRef path={file_path} />}
+      targetAsChip
       targetTitle={file_path}
       meta={`${edits.length} edit${edits.length === 1 ? '' : 's'}`}
       isError={result?.isError}
@@ -128,14 +129,13 @@ export function ReadToolRow({ block, result }: ToolRowProps) {
   ) : (
     <TextPreview>Reading…</TextPreview>
   );
-  const { Icon, color } = fileTypeForPath(file_path);
   return (
     <ToolRowShell
-      icon={<Icon className={ICON} />}
+      icon={<Eye className={ICON} />}
       name="Read"
-      iconColor={color}
       nameColor={colorForTool('Read')}
-      target={basename(file_path)}
+      target={<FileRef path={file_path} />}
+      targetAsChip
       targetTitle={file_path}
       isError={result?.isError}
       preview={preview}
@@ -147,14 +147,13 @@ export function WriteToolRow({ block, result }: ToolRowProps) {
   const parsed = writeInputSchema.safeParse(block.input);
   if (!parsed.success) return <DefaultToolRow block={block} result={result} />;
   const { file_path, content } = parsed.data;
-  const { Icon, color } = fileTypeForPath(file_path);
   return (
     <ToolRowShell
-      icon={<Icon className={ICON} />}
+      icon={<FilePlus className={ICON} />}
       name="Write"
-      iconColor={color}
       nameColor={colorForTool('Write')}
-      target={basename(file_path)}
+      target={<FileRef path={file_path} />}
+      targetAsChip
       targetTitle={file_path}
       isError={result?.isError}
       preview={<CodePreview code={content} lang={langForPath(file_path)} />}

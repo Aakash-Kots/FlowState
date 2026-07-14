@@ -1,9 +1,16 @@
 'use client';
 
 import { useState, type ReactNode } from 'react';
-import { CheckCircle2, GitPullRequestArrow, Loader2, Trash2, XCircle } from 'lucide-react';
+import {
+  CheckCircle2,
+  GitMerge,
+  GitPullRequestArrow,
+  Loader2,
+  Trash2,
+  XCircle,
+} from 'lucide-react';
 import { PrChecks, PrState, type PrStatus } from '@flowstate/shared';
-import { autoCommitSummary, commitAndPushWith, createPr, useGit, useGitSync } from '@/lib/git';
+import { autoCommitSummary, commitAndPushWith, createPr, mergePr, useGit, useGitSync } from '@/lib/git';
 import { removeWorktree, useProjects } from '@/lib/projects';
 import { trpc } from '@/lib/trpc';
 import { useWorkspace } from '@/lib/workspace';
@@ -149,8 +156,11 @@ function PrBadge({ pr }: { pr: PrStatus }) {
  * - uncommitted changes → "Commit and Push" (one click auto-drafts the message
  *   for a single file, or a popover form for several);
  * - a clean tree with no PR yet → "Create PR" against the base branch;
- * - an open PR → its CI/merge badge ("N checks pending" / "Ready to merge"),
- *   alongside the commit button when there are still local changes;
+ * - an open PR with pending/failing checks or conflicts → its CI/merge badge
+ *   ("N checks pending" / "Checks failing" / "Merge conflicts"), alongside the
+ *   commit button when there are still local changes;
+ * - an open PR that's green (mergeable, checks passing) on a clean tree → a
+ *   "Merge PR" button that merges it into the base branch;
  * - a merged PR → "Delete Worktree" to clean up.
  * Disabled without a GitHub remote.
  */
@@ -195,7 +205,16 @@ export function GitHeaderButton() {
     );
   }
 
-  const badge = pr?.state === PrState.Open ? <PrBadge pr={pr} /> : null;
+  // A clean, mergeable PR with no failing/pending checks → offer a one-click
+  // merge in place of the passive "Ready to merge" badge.
+  const readyToMerge =
+    pr?.state === PrState.Open &&
+    pr.mergeable &&
+    pr.checks !== PrChecks.Pending &&
+    pr.checks !== PrChecks.Failing;
+  const showMergeButton = readyToMerge && hasRemote && changeCount === 0;
+
+  const badge = pr?.state === PrState.Open && !showMergeButton ? <PrBadge pr={pr} /> : null;
 
   // The trailing action button, if any, depends on the working tree + PR.
   let action: ReactNode = null;
@@ -237,6 +256,18 @@ export function GitHeaderButton() {
           />
         )}
       </DropdownMenu>
+    );
+  } else if (showMergeButton) {
+    // Clean tree, open PR that's green → one-click merge into the base branch.
+    action = (
+      <Button
+        onClick={() => void mergePr()}
+        disabled={busy}
+        className="bg-green-600 px-3 py-1.5 text-xs text-white hover:bg-green-600/90"
+      >
+        <GitMerge className="size-3.5" />
+        Merge PR
+      </Button>
     );
   } else if (!pr) {
     // Clean tree, no PR yet → open one against the base branch.

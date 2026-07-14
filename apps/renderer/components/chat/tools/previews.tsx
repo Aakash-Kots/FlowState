@@ -42,8 +42,8 @@ function PreviewFrame({
   return (
     <div
       className={cn(
-        'max-h-[26rem] max-w-[calc(100vw-2rem)] overflow-auto',
-        fluid ? 'w-full' : 'w-[34rem]',
+        'max-h-[20rem] max-w-[calc(100vw-2rem)] overflow-auto',
+        fluid ? 'w-full' : 'w-[28rem]',
       )}
       style={code ? { backgroundColor: 'var(--code-bg)' } : undefined}
     >

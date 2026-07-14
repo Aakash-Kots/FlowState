@@ -189,6 +189,11 @@ export function push(): Promise<boolean> {
   return withRefresh((workspaceId) => trpc().git.push.mutate({ workspaceId }));
 }
 
+/** Merge the worktree's open PR into its base branch. */
+export function mergePr(): Promise<boolean> {
+  return withRefresh((workspaceId) => trpc().git.mergePr.mutate({ workspaceId }));
+}
+
 /** Commit the staged changes; clears the message on success. */
 export async function commit(): Promise<boolean> {
   const { summary, description } = useGit.getState();

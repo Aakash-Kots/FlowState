@@ -8,6 +8,7 @@ import { TabProvider, useChat } from '@/lib/chat';
 import { useTabState, useTabUnread } from '@/lib/tabStates';
 import { closeTab, openTab, selectTab, useWorkspace } from '@/lib/workspace';
 import { ChatWorkspace } from '../chat/ChatWorkspace';
+import { SkillsPanel } from '../skills/SkillsPanel';
 import { StateIndicator } from '../ui/StateIndicator';
 import { StatusPill } from '../ui/StatusPill';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
@@ -126,25 +127,34 @@ export function WorkspaceTabs() {
   }
 
   return (
-    <Tabs value={activeTabId} onValueChange={selectTab} className="flex min-h-0 flex-1 flex-col">
-      <div className="flex items-center border-b border-border bg-secondary px-3 py-1.5">
-        <TooltipProvider delayDuration={300}>
-          <TabsList className="h-8 gap-1 bg-transparent p-0 text-muted-foreground">
-            {tabs.map((tab) => (
-              <TabTrigger key={tab.id} tab={tab} canClose={tabs.length > 1} />
-            ))}
-          </TabsList>
-        </TooltipProvider>
-        <NewTabButton disabled={tabs.length >= MAX_TABS_PER_WORKSPACE} />
-        <div className="ml-auto flex items-center pl-3">
-          <TabProvider tabId={activeTabId}>
-            <ActiveTabStatus />
-          </TabProvider>
+    <div className="flex min-h-0 flex-1">
+      <Tabs
+        value={activeTabId}
+        onValueChange={selectTab}
+        className="flex min-h-0 min-w-0 flex-1 flex-col"
+      >
+        <div className="flex items-center border-b border-border bg-secondary px-3 py-1.5">
+          <TooltipProvider delayDuration={300}>
+            <TabsList className="h-8 gap-1 bg-transparent p-0 text-muted-foreground">
+              {tabs.map((tab) => (
+                <TabTrigger key={tab.id} tab={tab} canClose={tabs.length > 1} />
+              ))}
+            </TabsList>
+          </TooltipProvider>
+          <NewTabButton disabled={tabs.length >= MAX_TABS_PER_WORKSPACE} />
+          <div className="ml-auto flex items-center pl-3">
+            <TabProvider tabId={activeTabId}>
+              <ActiveTabStatus />
+            </TabProvider>
+          </div>
         </div>
-      </div>
-      <TabsContent value={activeTabId} className="mt-0 flex min-h-0 flex-1 flex-col">
-        <ChatWorkspace tabId={activeTabId} />
-      </TabsContent>
-    </Tabs>
+        <TabsContent value={activeTabId} className="mt-0 flex min-h-0 flex-1 flex-col">
+          <ChatWorkspace tabId={activeTabId} />
+        </TabsContent>
+      </Tabs>
+      <TabProvider tabId={activeTabId}>
+        <SkillsPanel />
+      </TabProvider>
+    </div>
   );
 }

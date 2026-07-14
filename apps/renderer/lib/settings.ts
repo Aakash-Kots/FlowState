@@ -20,6 +20,10 @@ type SettingsState = {
   archiveRetention: ArchiveRetention;
   /** Whether the full-screen Settings surface is open (UI-only, not persisted). */
   settingsOpen: boolean;
+  /** Width (px) of the chat view's Skills & Actions panel. */
+  skillsPanelWidth: number;
+  /** Whether the Skills & Actions panel is expanded. */
+  skillsPanelOpen: boolean;
 };
 
 ///////////////
@@ -32,6 +36,8 @@ const INITIAL: SettingsState = {
   codeTheme: CodeTheme.GithubDark,
   archiveRetention: ArchiveRetention.OneDay,
   settingsOpen: false,
+  skillsPanelWidth: 280,
+  skillsPanelOpen: true,
 };
 
 export const useSettings = create<SettingsState>(() => INITIAL);
@@ -58,8 +64,15 @@ export function useSettingsSync(): void {
     started = true;
     trpc()
       .settings.get.query()
-      .then(({ soundEnabled, codeTheme, archiveRetention }) => {
-        useSettings.setState({ hydrated: true, soundEnabled, codeTheme, archiveRetention });
+      .then(({ soundEnabled, codeTheme, archiveRetention, skillsPanelWidth, skillsPanelOpen }) => {
+        useSettings.setState({
+          hydrated: true,
+          soundEnabled,
+          codeTheme,
+          archiveRetention,
+          skillsPanelWidth,
+          skillsPanelOpen,
+        });
         applyCodeTheme(codeTheme);
       })
       .catch(() => useSettings.setState({ hydrated: true }));
@@ -88,4 +101,27 @@ export function setArchiveRetention(retention: ArchiveRetention): void {
 /** Open or close the Settings surface. */
 export function setSettingsOpen(open: boolean): void {
   useSettings.setState({ settingsOpen: open });
+}
+
+/** Clamp range for the Skills & Actions panel width (mirrors the main store). */
+const SKILLS_PANEL_MIN_WIDTH = 200;
+const SKILLS_PANEL_MAX_WIDTH = 520;
+
+/** Set the Skills & Actions panel width live; persist separately on drag end. */
+export function setSkillsPanelWidth(width: number): void {
+  const clamped = Math.min(SKILLS_PANEL_MAX_WIDTH, Math.max(SKILLS_PANEL_MIN_WIDTH, width));
+  useSettings.setState({ skillsPanelWidth: clamped });
+}
+
+/** Persist the current panel width (called once when a resize drag finishes). */
+export function persistSkillsPanelWidth(): void {
+  void trpc().settings.setSkillsPanelWidth.mutate({
+    width: useSettings.getState().skillsPanelWidth,
+  });
+}
+
+/** Expand or collapse the Skills & Actions panel (optimistic + persisted). */
+export function setSkillsPanelOpen(open: boolean): void {
+  useSettings.setState({ skillsPanelOpen: open });
+  void trpc().settings.setSkillsPanelOpen.mutate({ open });
 }

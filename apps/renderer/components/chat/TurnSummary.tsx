@@ -60,7 +60,7 @@ function FilePill({ change }: { change: TurnFileChange }) {
   const { Icon, color } = fileTypeForPath(change.path);
   return (
     <span
-      className="flex items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2 py-1"
+      className="flex items-center gap-1.5 rounded-md border border-primary/40 bg-primary/5 px-2 py-1"
       title={change.path}
     >
       <Icon className={cn('size-3.5 shrink-0', color)} />
@@ -116,7 +116,7 @@ export function TurnSummary({ meta }: { meta: ChatMessageMeta }) {
 
       {overflow.length > 0 && (
         <span
-          className="flex items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2 py-1 text-muted-foreground"
+          className="flex items-center gap-1.5 rounded-md border border-primary/40 bg-primary/5 px-2 py-1 text-muted-foreground"
           title={overflow.map((c) => c.path).join('\n')}
         >
           <span>+{overflow.length} more</span>

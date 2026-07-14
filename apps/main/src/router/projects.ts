@@ -20,6 +20,9 @@ import { githubService } from '../services/github';
 import { publicProcedure, router } from '../trpc';
 
 export const projectsRouter = router({
+  /** The linked GitHub account's login + avatar (sidebar avatar fallback). */
+  viewer: publicProcedure.query(() => githubService.viewer()),
+
   /** Repositories on the linked GitHub account (candidates to add). */
   listRepos: publicProcedure.query(() => githubService.listRepos()),
 

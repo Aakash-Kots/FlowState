@@ -32,6 +32,17 @@ export type Workspace = {
   createdAt: string;
 };
 
+/**
+ * One entry in the "recently active" list persisted across reloads: the worktree
+ * the user visited and the exact chat tab they had focused (null if unknown).
+ * The list is most-recent-first, so its first still-existing entry is what the
+ * app reopens on launch.
+ */
+export type RecentWorkspaceEntry = {
+  workspaceId: string;
+  tabId: string | null;
+};
+
 /** Input to create a new workspace (worktree + branch). */
 export type CreateWorkspaceInput = {
   repoRoot: string;

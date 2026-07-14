@@ -3,7 +3,12 @@
  * Backed by the `settings` table — a single source of truth on disk.
  */
 import { eq } from 'drizzle-orm';
-import { ArchiveRetention, CodeTheme } from '@flowstate/shared';
+import {
+  ArchiveRetention,
+  CodeTheme,
+  type RecentWorkspaceEntry,
+  recentWorkspacesSchema,
+} from '@flowstate/shared';
 import { getDb } from './db';
 import { settings } from './schema';
 
@@ -26,6 +31,17 @@ const WINDOW_BOUNDS_KEY = 'window.bounds';
 const SOUND_ENABLED_KEY = 'notifications.soundEnabled';
 const CODE_THEME_KEY = 'appearance.codeTheme';
 const ARCHIVE_RETENTION_KEY = 'worktree.archiveRetention';
+const SKILLS_PANEL_WIDTH_KEY = 'skillsPanel.width';
+const SKILLS_PANEL_OPEN_KEY = 'skillsPanel.open';
+const WORKSPACE_RECENT_KEY = 'workspace.recent';
+
+/** How many recently-active worktrees to remember for reload restoration. */
+const MAX_RECENT_WORKSPACES = 10;
+
+/** Default width (px) of the Skills & Actions panel, and its clamp range. */
+const DEFAULT_SKILLS_PANEL_WIDTH = 280;
+const MIN_SKILLS_PANEL_WIDTH = 200;
+const MAX_SKILLS_PANEL_WIDTH = 520;
 
 /** The syntax-highlighting palette applied when the user hasn't picked one. */
 const DEFAULT_CODE_THEME = CodeTheme.GithubDark;
@@ -86,4 +102,47 @@ export function getArchiveRetention(): ArchiveRetention {
 
 export function setArchiveRetention(retention: ArchiveRetention): void {
   setSetting(ARCHIVE_RETENTION_KEY, retention);
+}
+
+/** Persisted width (px) of the Skills & Actions panel, clamped to its range. */
+export function getSkillsPanelWidth(): number {
+  const stored = getSetting<number>(SKILLS_PANEL_WIDTH_KEY);
+  if (typeof stored !== 'number' || Number.isNaN(stored)) return DEFAULT_SKILLS_PANEL_WIDTH;
+  return Math.min(MAX_SKILLS_PANEL_WIDTH, Math.max(MIN_SKILLS_PANEL_WIDTH, stored));
+}
+
+export function setSkillsPanelWidth(width: number): void {
+  setSetting(
+    SKILLS_PANEL_WIDTH_KEY,
+    Math.min(MAX_SKILLS_PANEL_WIDTH, Math.max(MIN_SKILLS_PANEL_WIDTH, width)),
+  );
+}
+
+/** Whether the Skills & Actions panel is expanded (default open). */
+export function getSkillsPanelOpen(): boolean {
+  return getSetting<boolean>(SKILLS_PANEL_OPEN_KEY) ?? true;
+}
+
+export function setSkillsPanelOpen(open: boolean): void {
+  setSetting(SKILLS_PANEL_OPEN_KEY, open);
+}
+
+/**
+ * The worktrees the user visited, most-recent-first — the app reopens the first
+ * still-existing entry on reload. Parsed defensively so a stale/renamed shape in
+ * the KV store degrades to "no history" rather than throwing.
+ */
+export function getRecentWorkspaces(): RecentWorkspaceEntry[] {
+  const parsed = recentWorkspacesSchema.safeParse(getSetting(WORKSPACE_RECENT_KEY));
+  return parsed.success ? parsed.data : [];
+}
+
+/**
+ * Record a worktree+tab as the most-recently active: move it to the front
+ * (deduped by workspace, so each worktree keeps only its latest tab) and cap the
+ * list length.
+ */
+export function rememberRecentWorkspace(entry: RecentWorkspaceEntry): void {
+  const next = [entry, ...getRecentWorkspaces().filter((e) => e.workspaceId !== entry.workspaceId)];
+  setSetting(WORKSPACE_RECENT_KEY, next.slice(0, MAX_RECENT_WORKSPACES));
 }

@@ -4,6 +4,7 @@ import { create } from 'zustand';
 import {
   DEFAULT_WORKSPACE_ID,
   type GithubRepo,
+  type GithubViewer,
   type Project,
   type Workspace,
 } from '@flowstate/shared';
@@ -20,6 +21,8 @@ type ProjectsState = {
   projects: Project[];
   /** Worktree-workspaces (sub-tabs) per project id. */
   worktrees: Record<string, Workspace[]>;
+  /** The linked GitHub account — its avatar backs the sidebar's fallback image. */
+  viewer: GithubViewer | null;
   /** Whether the Add Project modal is open. */
   addOpen: boolean;
   /** Candidate repos from the linked GitHub account. */
@@ -50,6 +53,7 @@ function message(err: unknown): string {
 export const useProjects = create<ProjectsState>(() => ({
   projects: [],
   worktrees: {},
+  viewer: null,
   addOpen: false,
   repos: [],
   reposLoading: false,
@@ -66,12 +70,23 @@ export const useProjects = create<ProjectsState>(() => ({
 
 /** Load the persisted project list — and each project's worktrees — into the store. */
 export async function loadProjects(): Promise<void> {
+  void loadViewer();
   try {
     const projects = await trpc().projects.list.query();
     useProjects.setState({ projects });
     await Promise.all(projects.map((p) => loadWorktrees(p.id)));
   } catch {
     // Non-fatal: the sidebar simply shows no projects until this succeeds.
+  }
+}
+
+/** Load the linked GitHub account (login + avatar) — the sidebar avatar fallback. */
+export async function loadViewer(): Promise<void> {
+  try {
+    const viewer = await trpc().projects.viewer.query();
+    useProjects.setState({ viewer });
+  } catch {
+    // Non-fatal: avatars simply fall back to the folder icon.
   }
 }
 

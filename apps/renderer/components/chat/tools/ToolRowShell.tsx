@@ -21,6 +21,9 @@ type ToolRowShellProps = {
   meta?: ReactNode;
   /** Rich hover-card content; when absent the target renders as plain text. */
   preview?: ReactNode;
+  /** Render the target as a self-styled chip (e.g. a `FileRef`) instead of the
+   * default underlined link text. */
+  targetAsChip?: boolean;
   /** Tailwind text-color for the icon (e.g. a file-type tint). Defaults muted. */
   iconColor?: string;
   /** Tailwind text-color for the name label (e.g. a per-tool color). */
@@ -46,6 +49,7 @@ export function ToolRowShell({
   targetTitle,
   meta,
   preview,
+  targetAsChip,
   iconColor,
   nameColor,
   isError,
@@ -72,12 +76,17 @@ export function ToolRowShell({
               <button
                 type="button"
                 title={targetTitle}
-                className="min-w-0 truncate text-left text-neutral-200 underline decoration-dotted decoration-muted-foreground/50 underline-offset-2 transition-colors hover:text-white"
+                className={cn(
+                  'flex min-w-0 text-left transition-colors',
+                  targetAsChip
+                    ? 'rounded-md hover:brightness-110'
+                    : 'truncate text-neutral-200 underline decoration-dotted decoration-muted-foreground/50 underline-offset-2 hover:text-white',
+                )}
               >
                 {target}
               </button>
             </HoverCardTrigger>
-            <HoverCardContent align="start" className="p-0">
+            <HoverCardContent side="top" align="start" className="p-0">
               {preview}
             </HoverCardContent>
           </HoverCard>
