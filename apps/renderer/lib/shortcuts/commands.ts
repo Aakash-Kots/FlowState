@@ -6,6 +6,7 @@ import {
   ShortcutCategory,
   ShortcutCommand,
   ShortcutScope,
+  TabKind,
 } from '@flowstate/shared';
 import { cyclePermissionMode, focusInput, interruptSession } from '../chat';
 import {
@@ -17,6 +18,7 @@ import {
   selectTabByIndex,
   useWorkspace,
 } from '../workspace';
+import { isMarkdownPath, toggleFileTabPreview } from '../fileTabs';
 import { setSettingsOpen } from '../settings';
 import { setFileFinderOpen, setHelpOpen, setPaletteOpen, useShortcuts } from './store';
 
@@ -42,6 +44,13 @@ export type CommandDef = {
 /** The active tab id, or null when the workspace hasn't hydrated yet. */
 function activeTabId(): string | null {
   return useWorkspace.getState().activeTabId;
+}
+
+/** The active tab if it's a Markdown file tab, else null (drives preview toggle). */
+function activeMarkdownTab() {
+  const { tabs, activeTabId: id } = useWorkspace.getState();
+  const tab = tabs.find((t) => t.id === id);
+  return tab && tab.kind === TabKind.File && isMarkdownPath(tab.filePath) ? tab : null;
 }
 
 /** View switching only applies to a selected worktree, not the project picker. */
@@ -73,6 +82,17 @@ export const COMMANDS: Record<ShortcutCommand, CommandDef> = {
     scope: ShortcutScope.Global,
     run: () => setFileFinderOpen(true),
     isEnabled: onWorktree,
+  },
+  [ShortcutCommand.ToggleFilePreview]: {
+    command: ShortcutCommand.ToggleFilePreview,
+    label: 'Toggle Markdown preview',
+    category: ShortcutCategory.Navigation,
+    scope: ShortcutScope.Global,
+    run: () => {
+      const tab = activeMarkdownTab();
+      if (tab) toggleFileTabPreview(tab.id);
+    },
+    isEnabled: () => activeMarkdownTab() !== null,
   },
   [ShortcutCommand.ShowShortcutsHelp]: {
     command: ShortcutCommand.ShowShortcutsHelp,

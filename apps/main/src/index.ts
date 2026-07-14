@@ -107,6 +107,7 @@ function buildAppMenu(): void {
       submenu: [
         item(ShortcutCommand.ToggleSidebar, 'Toggle Sidebar'),
         item(ShortcutCommand.OpenCommandPalette, 'Command Palette…'),
+        item(ShortcutCommand.ToggleFilePreview, 'Toggle Markdown Preview'),
         item(ShortcutCommand.ShowShortcutsHelp, 'Keyboard Shortcuts'),
         item(ShortcutCommand.OpenSettings, 'Settings…'),
         { type: 'separator' },

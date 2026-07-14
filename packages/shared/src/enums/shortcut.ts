@@ -15,6 +15,7 @@
 export enum ShortcutCommand {
   OpenCommandPalette = 'open-command-palette',
   OpenFileFinder = 'open-file-finder',
+  ToggleFilePreview = 'toggle-file-preview',
   ShowShortcutsHelp = 'show-shortcuts-help',
   OpenSettings = 'open-settings',
   ToggleSidebar = 'toggle-sidebar',
