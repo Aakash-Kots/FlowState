@@ -9,9 +9,18 @@ import { json } from '@codemirror/lang-json';
 import { markdown } from '@codemirror/lang-markdown';
 import { python } from '@codemirror/lang-python';
 import { githubDark } from '@uiw/codemirror-theme-github';
+import { Eye, FileCode } from 'lucide-react';
 import type { Tab } from '@flowstate/shared';
-import { clearFileTabDirty, setFileTabDirty, useFileTabDirty } from '@/lib/fileTabs';
+import {
+  clearFileTabDirty,
+  isMarkdownPath,
+  setFileTabDirty,
+  toggleFileTabPreview,
+  useFileTabDirty,
+  useFileTabPreview,
+} from '@/lib/fileTabs';
 import { trpc } from '@/lib/trpc';
+import { Markdown } from '../chat/Markdown';
 
 /////////////
 // Helpers //
@@ -58,6 +67,8 @@ export function FileEditor({ tab }: { tab: Tab }) {
   const { id: tabId, workspaceId } = tab;
   const path = tab.filePath ?? '';
   const dirty = useFileTabDirty(tabId);
+  const isMarkdown = isMarkdownPath(path);
+  const showPreview = useFileTabPreview(tabId) && isMarkdown;
 
   const [value, setValue] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -161,19 +172,38 @@ export function FileEditor({ tab }: { tab: Tab }) {
     <div className="flex min-h-0 flex-1 flex-col bg-background">
       <div className="flex items-center gap-2 border-b border-border px-3 py-1.5 text-xs">
         <span className="truncate font-mono text-muted-foreground">{path}</span>
-        <span className="ml-auto shrink-0 text-muted-foreground">
-          {saving ? 'Saving…' : dirty ? 'Unsaved — ⌘S to save' : 'Saved'}
-        </span>
+        <div className="ml-auto flex shrink-0 items-center gap-3">
+          {isMarkdown && (
+            <button
+              type="button"
+              onClick={() => toggleFileTabPreview(tabId)}
+              title={showPreview ? 'Show source (⌘⇧P)' : 'Show preview (⌘⇧P)'}
+              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              {showPreview ? <FileCode className="size-3.5" /> : <Eye className="size-3.5" />}
+              {showPreview ? 'Source' : 'Preview'}
+            </button>
+          )}
+          <span className="text-muted-foreground">
+            {saving ? 'Saving…' : dirty ? 'Unsaved — ⌘S to save' : 'Saved'}
+          </span>
+        </div>
       </div>
       <div className="min-h-0 flex-1 overflow-auto">
-        <CodeMirror
-          value={value}
-          onChange={onChange}
-          extensions={extensions}
-          theme={githubDark}
-          height="100%"
-          className="h-full text-sm"
-        />
+        {showPreview ? (
+          <div className="mx-auto max-w-3xl px-6 py-5">
+            <Markdown>{value}</Markdown>
+          </div>
+        ) : (
+          <CodeMirror
+            value={value}
+            onChange={onChange}
+            extensions={extensions}
+            theme={githubDark}
+            height="100%"
+            className="h-full text-sm"
+          />
+        )}
       </div>
     </div>
   );

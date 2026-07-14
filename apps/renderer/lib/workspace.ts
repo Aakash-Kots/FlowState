@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 import { create } from 'zustand';
 import { DEFAULT_WORKSPACE_ID, MAX_TABS_PER_WORKSPACE, TabKind, type Tab } from '@flowstate/shared';
 import { WorkspaceView } from './enums/view';
-import { clearFileTabDirty } from './fileTabs';
+import { clearFileTabState } from './fileTabs';
 import { markTabRead, registerTab, unregisterTab } from './tabStates';
 import { trpc } from './trpc';
 
@@ -209,7 +209,7 @@ export async function closeTab(tabId: string): Promise<void> {
   if (tab.kind === TabKind.Chat && tabs.filter((t) => t.kind === TabKind.Chat).length <= 1) return;
   await trpc().tabs.close.mutate({ tabId });
   unregisterTab(tabId);
-  clearFileTabDirty(tabId);
+  clearFileTabState(tabId);
   const remaining = tabs.filter((t) => t.id !== tabId);
   const nextActive =
     activeTabId === tabId ? (remaining[remaining.length - 1]?.id ?? null) : activeTabId;

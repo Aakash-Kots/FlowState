@@ -16,6 +16,8 @@ export const DEFAULT_KEYBINDINGS: Keybinding[] = [
   { command: ShortcutCommand.OpenCommandPalette, keys: 'mod+k' },
   // ⌘P opens the fuzzy file finder (free of any native-menu accelerator).
   { command: ShortcutCommand.OpenFileFinder, keys: 'mod+p' },
+  // ⌘⇧P toggles a Markdown file tab between rendered preview and source.
+  { command: ShortcutCommand.ToggleFilePreview, keys: 'mod+shift+p' },
   { command: ShortcutCommand.ShowShortcutsHelp, keys: 'mod+/' },
   { command: ShortcutCommand.OpenSettings, keys: 'mod+,' },
   { command: ShortcutCommand.ToggleSidebar, keys: 'mod+b' },
