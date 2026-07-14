@@ -5,7 +5,7 @@
  * at startup by `db.ts`. Column shapes mirror the shared zod schemas
  * (`packages/shared/src/schemas/`); the query modules re-validate on read/write.
  */
-import { blob, index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { blob, index, integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
 export const workspaces = sqliteTable(
   'workspaces',
@@ -99,6 +99,38 @@ export const claudeMessages = sqliteTable(
   (t) => [
     index('idx_claude_messages_workspace_session').on(t.workspaceId, t.sessionId),
     index('idx_claude_messages_tab').on(t.tabId),
+  ],
+);
+
+// An append-only ledger of Claude usage — one row per finalized `result` turn.
+// The SDK reports each turn's API-equivalent `total_cost_usd` plus its token
+// usage; on a subscription that cost is money not spent, so this is the raw
+// material for a future spend/savings analyser (spend-by-day, per-workspace,
+// per-model). `workspace_id`/`tab_id` are denormalized text (no FK) on purpose:
+// the ledger must survive workspace/tab deletion. Token summaries live only
+// here, never in the transcript JSON, so `claude_messages` rows stay lean.
+export const usageEvents = sqliteTable(
+  'usage_events',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    workspaceId: text('workspace_id').notNull(),
+    tabId: text('tab_id'),
+    sessionId: text('session_id').notNull(),
+    // The model the SDK actually ran, or null if the init message never reported one.
+    model: text('model'),
+    costUsd: real('cost_usd').notNull(),
+    durationMs: integer('duration_ms'),
+    numTurns: integer('num_turns'),
+    inputTokens: integer('input_tokens'),
+    outputTokens: integer('output_tokens'),
+    cacheReadTokens: integer('cache_read_tokens'),
+    cacheCreationTokens: integer('cache_creation_tokens'),
+    isError: integer('is_error', { mode: 'boolean' }).notNull().default(false),
+    createdAt: text('created_at').notNull(),
+  },
+  (t) => [
+    index('idx_usage_events_workspace').on(t.workspaceId),
+    index('idx_usage_events_created').on(t.createdAt),
   ],
 );
 

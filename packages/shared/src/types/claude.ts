@@ -48,9 +48,12 @@ export type TurnFileChange = {
   deletions: number;
 };
 
-/** Cost/timing summary attached to a finalized `result` message. */
+/**
+ * Timing summary attached to a finalized `result` message. Cost + token usage
+ * are recorded separately in the durable usage ledger (see `types/usage`), not
+ * here — the transcript keeps only what the UI still renders.
+ */
 export type ChatMessageMeta = {
-  costUsd?: number;
   durationMs?: number;
   numTurns?: number;
   isError?: boolean;

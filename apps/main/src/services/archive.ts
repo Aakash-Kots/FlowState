@@ -34,14 +34,16 @@ const SWEEP_INTERVAL_MS = 10 * 60 * 1000;
 
 /**
  * Tear a worktree-workspace down: close its Claude sessions + terminals, remove
- * the git worktree from disk, and delete its row (cascading tabs + transcripts).
- * `force` discards uncommitted changes. Shared by the manual `remove` flow and
- * the reaper; callers guard dirtiness before opting out of `force`.
+ * the git worktree from disk, delete the SDK's on-disk transcript dir, and
+ * delete its row (cascading tabs + transcripts). `force` discards uncommitted
+ * changes. Shared by the manual `remove` flow and the reaper; callers guard
+ * dirtiness before opting out of `force`.
  */
 export async function teardownWorkspace(ws: Workspace, force: boolean): Promise<void> {
   for (const tab of listTabs(ws.id)) claudeService.closeSession(tab.id);
   for (const term of listTerminalTabs(ws.id)) terminalService.kill(term.id);
   await worktreeService.remove({ repoRoot: ws.repoRoot, worktreePath: ws.worktreePath, force });
+  await claudeService.removeTranscriptDir(ws.worktreePath);
   deleteWorkspace(ws.id);
 }
 

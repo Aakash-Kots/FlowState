@@ -71,10 +71,10 @@ export function MessageBubble({
           <p className="mb-1 whitespace-pre-wrap">{errorText}</p>
         ) : null}
         <span>
-          {meta?.costUsd != null ? `$${meta.costUsd.toFixed(4)}` : null}
-          {meta?.durationMs != null ? ` · ${formatDuration(meta.durationMs)}` : null}
+          {meta?.durationMs != null ? formatDuration(meta.durationMs) : null}
+          {meta?.durationMs != null && meta?.numTurns != null ? ' · ' : null}
           {meta?.numTurns != null
-            ? ` · ${meta.numTurns} ${meta.numTurns === 1 ? 'turn' : 'turns'}`
+            ? `${meta.numTurns} ${meta.numTurns === 1 ? 'turn' : 'turns'}`
             : null}
         </span>
         {meta?.fileChanges?.length ? <TurnSummary meta={meta} /> : null}

@@ -22,6 +22,9 @@
  */
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
+import { readdir, rm } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import type {
   CanUseTool,
   ModelInfo,
@@ -64,6 +67,7 @@ import {
   getWorkspace,
   listAllTabs,
   listTabs,
+  recordUsageEvent,
   upsertTab,
   upsertWorkspace,
 } from '../store';
@@ -653,6 +657,39 @@ export class ClaudeService {
     for (const tabId of this.sessions.keys()) this.disposeSession(tabId);
   }
 
+  /**
+   * Remove the Claude Agent SDK's on-disk transcript directory for a worktree.
+   * The SDK keys transcripts by cwd at `<configDir>/projects/<sanitized-cwd>/`,
+   * replacing every non-alphanumeric char with '-' (truncating to 200 chars +
+   * appending a hash for longer paths). One `.jsonl` per session id accumulates
+   * there, so removing the whole per-cwd dir is the complete cleanup. Called on
+   * worktree teardown; the DB rows are dropped separately via cascade.
+   *
+   * Best-effort + non-fatal: worktree deletion must never fail because a stale
+   * transcript dir couldn't be removed. Mirrors the SDK's own path logic
+   * (@anthropic-ai/claude-agent-sdk) — revisit on SDK upgrades.
+   */
+  async removeTranscriptDir(cwd: string): Promise<void> {
+    try {
+      const configDir = process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude');
+      const projects = join(configDir, 'projects');
+      const sanitized = cwd.replace(/[^a-zA-Z0-9]/g, '-');
+      if (sanitized.length <= 200) {
+        await rm(join(projects, sanitized), { recursive: true, force: true });
+        return;
+      }
+      // Long path: the SDK appends "-<hash>" we can't reproduce, so prefix-match.
+      const prefix = `${sanitized.slice(0, 200)}-`;
+      for (const entry of await readdir(projects)) {
+        if (entry.startsWith(prefix)) {
+          await rm(join(projects, entry), { recursive: true, force: true });
+        }
+      }
+    } catch (error) {
+      console.warn('[claude] failed to remove transcript dir', cwd, error);
+    }
+  }
+
   private ensureSession(tab: Tab, cwd: string): ClaudeSession {
     const existing = this.sessions.get(tab.id);
     if (existing) return existing;
@@ -813,12 +850,32 @@ export class ClaudeService {
                 },
               ];
         const fileChanges = await this.turnFileChanges(session);
+        // Record the turn's API-equivalent cost + token usage in the durable
+        // ledger (for the spend/savings analyser). Token counts live only here,
+        // never in the transcript meta below.
+        const usage = message.usage;
+        recordUsageEvent({
+          workspaceId: session.workspaceId,
+          tabId: session.tabId,
+          sessionId: session.sessionId ?? 'pending',
+          model: session.reportedModel ?? session.model,
+          costUsd: message.total_cost_usd,
+          durationMs: message.duration_ms,
+          numTurns: message.num_turns,
+          inputTokens: usage?.input_tokens ?? null,
+          outputTokens: usage?.output_tokens ?? null,
+          cacheReadTokens: usage?.cache_read_input_tokens ?? null,
+          cacheCreationTokens: usage?.cache_creation_input_tokens ?? null,
+          isError,
+          createdAt: new Date().toISOString(),
+        });
+        // The transcript keeps only what the UI still renders (duration · turns);
+        // cost is intentionally omitted — it lives in the ledger above.
         this.persistAndEmit(session, {
           id: message.uuid,
           role: ChatMessageRole.Result,
           blocks,
           meta: {
-            costUsd: message.total_cost_usd,
             durationMs: message.duration_ms,
             numTurns: message.num_turns,
             isError,

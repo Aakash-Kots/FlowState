@@ -80,7 +80,6 @@ export const chatMessageSchema: z.ZodType<ChatMessage> = z.object({
   blocks: z.array(chatBlockSchema),
   meta: z
     .object({
-      costUsd: z.number().optional(),
       durationMs: z.number().optional(),
       numTurns: z.number().optional(),
       isError: z.boolean().optional(),
