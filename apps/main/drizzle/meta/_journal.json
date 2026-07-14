@@ -78,6 +78,13 @@
       "when": 1783989615706,
       "tag": "0010_faithful_electro",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1783993129296,
+      "tag": "0011_absent_revanche",
+      "breakpoints": true
     }
   ]
 }
