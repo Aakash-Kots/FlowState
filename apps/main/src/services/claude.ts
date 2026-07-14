@@ -25,6 +25,7 @@ import { randomUUID } from 'node:crypto';
 import { readdir, rm } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { app } from 'electron';
 import type {
   CanUseTool,
   ModelInfo,
@@ -120,6 +121,15 @@ type RawBlock = {
 /** The built-in tool Claude uses to ask the user a structured question. */
 const ASK_USER_QUESTION_TOOL = 'AskUserQuestion';
 
+/**
+ * Signatures of a crash where the SDK's native `claude` runtime never launched
+ * (missing binary / unresolved module), as opposed to a transient mid-stream
+ * drop. Matched against the raw error text to decide whether to surface a banner.
+ */
+const RUNTIME_LAUNCH_FAILURE = /Native CLI binary|Cannot find module|claude-agent-sdk|ENOENT/;
+const RUNTIME_LAUNCH_FAILURE_TEXT =
+  "Claude Code's runtime failed to launch — this is likely a packaging bug. Try reinstalling FlowState.";
+
 const ASSISTANT_ERROR_TEXT: Record<string, string> = {
   authentication_failed:
     'Claude Code is not signed in. Open Connect and sign in with `claude auth login`.',
@@ -154,6 +164,16 @@ let sdkModule: Promise<SdkModule> | null = null;
 function loadSdk(): Promise<SdkModule> {
   sdkModule ??= import('@anthropic-ai/claude-agent-sdk');
   return sdkModule;
+}
+
+/**
+ * Absolute path to the native `claude` runtime the SDK forks, or undefined to let
+ * the SDK resolve it from node_modules (dev). In a packaged app the SDK can't
+ * resolve its per-platform binary out of Bun's symlink store, so we ship it as an
+ * extraResource (`Resources/claude-code/claude`) and point the SDK straight at it.
+ */
+function claudeExecutable(): string | undefined {
+  return app.isPackaged ? join(process.resourcesPath, 'claude-code', 'claude') : undefined;
 }
 
 /**
@@ -206,6 +226,7 @@ async function generateTitle(source: string, cwd: string): Promise<string | null
         maxTurns: 1,
         systemPrompt: TITLE_SYSTEM_PROMPT,
         allowedTools: [],
+        pathToClaudeCodeExecutable: claudeExecutable(),
         abortController: abort,
         stderr: () => {},
       },
@@ -991,6 +1012,7 @@ export class ClaudeService {
           effort: session.effort ?? DEFAULT_EFFORT,
           // The enum's values are the SDK's `permissionMode` wire strings.
           permissionMode: session.permissionMode as SdkPermissionMode,
+          pathToClaudeCodeExecutable: claudeExecutable(),
           canUseTool: this.makePermissionHandler(session),
           includePartialMessages: true,
           systemPrompt: { type: 'preset', preset: 'claude_code' },
@@ -1020,7 +1042,14 @@ export class ClaudeService {
       // debugging and reset the tab quietly to Idle (no banner, no red pill).
       // The next send() starts a fresh session and resumes the transcript.
       console.error('[claude] session crashed:', text);
-      this.setState(tabId, ClaudeSessionState.Idle);
+      // Exception: if the native runtime never launched (packaging bug), a silent
+      // reset just shows "Ready" forever — surface an actionable banner instead.
+      if (RUNTIME_LAUNCH_FAILURE.test(text)) {
+        this.emit(tabId, { kind: ChatEventKind.Error, message: RUNTIME_LAUNCH_FAILURE_TEXT });
+        this.setState(tabId, ClaudeSessionState.Error);
+      } else {
+        this.setState(tabId, ClaudeSessionState.Idle);
+      }
       // Drop the broken session; the next send() starts fresh and resumes.
       this.sessions.delete(tabId);
       this.resolveAllPermissions(session, {

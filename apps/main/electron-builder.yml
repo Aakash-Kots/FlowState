@@ -8,10 +8,21 @@ directories:
 files:
   - out/**/*
   - '!**/*.map'
+  # The Agent SDK's ~241MB native runtime is a transitive optional dep, so
+  # electron-builder would copy it into app.asar — where it can't be fork/exec'd
+  # anyway. Drop that copy; the usable one is shipped unpacked via extraResources
+  # below and located through pathToClaudeCodeExecutable.
+  - '!**/node_modules/@anthropic-ai/claude-agent-sdk-darwin-arm64/**'
 # drizzle migrations are read at runtime from Resources/drizzle (see store/db.ts).
 extraResources:
   - from: drizzle
     to: drizzle
+  # The Agent SDK forks a native `claude` runtime; ship it outside app.asar so it
+  # can be spawned (an executable inside asar can't be fork/exec'd). Located at
+  # runtime via process.resourcesPath in services/claude.ts. arm64-only, in
+  # lockstep with @anthropic-ai/claude-agent-sdk's version.
+  - from: node_modules/@anthropic-ai/claude-agent-sdk-darwin-arm64/claude
+    to: claude-code/claude
 asar: true
 
 mac:

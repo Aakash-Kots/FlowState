@@ -29,6 +29,7 @@
         "zod": "^3.23.8",
       },
       "devDependencies": {
+        "@anthropic-ai/claude-agent-sdk-darwin-arm64": "0.3.207",
         "@types/better-sqlite3": "^7.6.12",
         "@types/node": "^22.10.1",
         "drizzle-kit": "^0.31.5",
