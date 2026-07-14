@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Archive, ChevronRight, Folder, GitBranch, Plug, Plus, Settings, Trash2 } from 'lucide-react';
+import { Archive, Folder, GitBranch, Plug, Plus, Settings, Trash2 } from 'lucide-react';
 import { DEFAULT_WORKSPACE_ID, type Project, type Workspace } from '@flowstate/shared';
 import {
   archiveWorktree,
@@ -23,7 +23,6 @@ import { CreateWorktreeModal } from '../projects/CreateWorktreeModal';
 import { CtaIconButton } from '../shared/CtaIconButton';
 import { cn } from '../ui/cn';
 import { StateIndicator } from '../ui/StateIndicator';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible';
 import {
   Sidebar,
   SidebarContent,
@@ -254,7 +253,6 @@ export function AppSidebar() {
   const workspaceId = useWorkspace((s) => s.workspaceId);
   const projects = useProjects((s) => s.projects);
   const settingsOpen = useSettings((s) => s.settingsOpen);
-  const [open, setOpen] = useState(true);
 
   // Hydrate the persisted project list (and each project's worktrees) once.
   useEffect(() => {
@@ -287,37 +285,27 @@ export function AppSidebar() {
         </div>
       </SidebarHeader>
       <SidebarContent>
-        <Collapsible open={open} onOpenChange={setOpen}>
-          <SidebarGroup>
-            <SidebarGroupLabel asChild>
-              <CollapsibleTrigger className="flex w-full items-center">
-                <ChevronRight
-                  className={cn('mr-1 size-4 transition-transform', open && 'rotate-90')}
-                />
-                Projects
-              </CollapsibleTrigger>
-            </SidebarGroupLabel>
-            <CollapsibleContent>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  {projects.map((project) => (
-                    <ProjectGroup key={project.id} project={project} />
-                  ))}
-                  {orphanCwd && <FolderItem cwd={orphanCwd} />}
-                  {projects.length === 0 && !orphanCwd && (
-                    <SidebarMenuItem>
-                      <div className="px-2 py-1.5 group-data-[collapsible=icon]:hidden">
-                        <p className="text-xs text-sidebar-foreground/60">
-                          No projects yet. Use “Add Project” above.
-                        </p>
-                      </div>
-                    </SidebarMenuItem>
-                  )}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </CollapsibleContent>
-          </SidebarGroup>
-        </Collapsible>
+        <SidebarSeparator className="mx-0" />
+        <SidebarGroup>
+          <SidebarGroupLabel>Projects</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {projects.map((project) => (
+                <ProjectGroup key={project.id} project={project} />
+              ))}
+              {orphanCwd && <FolderItem cwd={orphanCwd} />}
+              {projects.length === 0 && !orphanCwd && (
+                <SidebarMenuItem>
+                  <div className="px-2 py-1.5 group-data-[collapsible=icon]:hidden">
+                    <p className="text-xs text-sidebar-foreground/60">
+                      No projects yet. Use “Add Project” above.
+                    </p>
+                  </div>
+                </SidebarMenuItem>
+              )}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
       </SidebarContent>
       <SidebarFooter>
         <SidebarSeparator className="mx-0" />
