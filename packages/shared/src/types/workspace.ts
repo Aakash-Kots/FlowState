@@ -23,6 +23,12 @@ export type Workspace = {
   linearIssue: LinearIssueRef | null;
   claudeState: ClaudeSessionState;
   claudeSessionId: string | null;
+  /**
+   * When the user archived this worktree (ISO timestamp), or null while active.
+   * An archived worktree is hidden from the sidebar and force-removed from disk
+   * by the background reaper once the configured retention delay elapses.
+   */
+  archivedAt: string | null;
   createdAt: string;
 };
 

@@ -5,6 +5,7 @@ import { X } from 'lucide-react';
 import { CODE_THEMES } from '@/lib/constants/codeThemes';
 import { setCodeTheme, setSettingsOpen, setSoundEnabled, useSettings } from '@/lib/settings';
 import { cn } from '../ui/cn';
+import { ArchiveRetentionCard } from './ArchiveRetentionCard';
 import { CodeThemeCard } from './CodeThemeCard';
 
 ///////////////////
@@ -156,6 +157,14 @@ export function SettingsPage() {
                   label="Completion sound"
                 />
               }
+            />
+          </Section>
+
+          <Section title="Worktrees">
+            <SettingRow
+              title="Delete archived worktrees"
+              description="When to remove an archived worktree from disk after its PR is merged."
+              control={<ArchiveRetentionCard />}
             />
           </Section>
         </div>

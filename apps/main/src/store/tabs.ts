@@ -19,7 +19,7 @@ function rowToTab(row: TabRow): Tab {
     claudeSessionId: row.claudeSessionId,
     model: row.model,
     effort: row.effort,
-    planMode: row.planMode,
+    permissionMode: row.permissionMode,
     position: row.position,
     createdAt: row.createdAt,
   });
@@ -34,7 +34,7 @@ function tabToRow(tab: Tab): TabRow {
     claudeSessionId: tab.claudeSessionId,
     model: tab.model,
     effort: tab.effort,
-    planMode: tab.planMode,
+    permissionMode: tab.permissionMode,
     position: tab.position,
     createdAt: tab.createdAt,
   };
@@ -75,7 +75,7 @@ export function upsertTab(input: Tab): Tab {
         title: row.title,
         claudeState: row.claudeState,
         claudeSessionId: row.claudeSessionId,
-        planMode: row.planMode,
+        permissionMode: row.permissionMode,
         position: row.position,
       },
     })

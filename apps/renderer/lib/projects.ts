@@ -270,3 +270,26 @@ export async function removeWorktree(workspace: Workspace): Promise<void> {
   }));
   if (wasActive) await selectWorkspace(DEFAULT_WORKSPACE_ID);
 }
+
+/**
+ * Archive a merged worktree: drop it from the sidebar immediately (the main
+ * process hides it and the background reaper deletes it from disk after the
+ * configured delay). If it was active, fall back to the project's clone.
+ */
+export async function archiveWorktree(workspace: Workspace): Promise<void> {
+  const projectId = workspace.projectId ?? '';
+  const wasActive = useWorkspace.getState().workspaceId === workspace.id;
+  try {
+    await trpc().worktree.archive.mutate({ workspaceId: workspace.id });
+  } catch (err) {
+    window.alert(message(err));
+    return;
+  }
+  useProjects.setState((s) => ({
+    worktrees: {
+      ...s.worktrees,
+      [projectId]: (s.worktrees[projectId] ?? []).filter((w) => w.id !== workspace.id),
+    },
+  }));
+  if (wasActive) await selectWorkspace(DEFAULT_WORKSPACE_ID);
+}

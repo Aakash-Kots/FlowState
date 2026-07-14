@@ -9,8 +9,10 @@ import type {
   ChatMessageRole,
   ClaudeSessionState,
   PermissionBehavior,
+  PermissionMode,
   ReasoningEffort,
 } from '../enums/claude';
+import type { GitFileStatus } from '../enums/git';
 
 /**
  * A single persisted message in a Claude Code session transcript. `content` is
@@ -34,12 +36,29 @@ export type ChatBlock =
   | { type: ChatBlockType.ToolUse; id: string; name: string; input?: unknown }
   | { type: ChatBlockType.ToolResult; toolUseId: string; content: string; isError: boolean };
 
-/** Cost/timing summary attached to a finalized `result` message. */
+/**
+ * One file changed during a single turn, with the turn's own line counts —
+ * computed by bracketing the run with a git tree snapshot, not the worktree's
+ * whole uncommitted diff. Drives the end-of-turn changed-files summary.
+ */
+export type TurnFileChange = {
+  path: string;
+  status: GitFileStatus;
+  insertions: number;
+  deletions: number;
+};
+
+/**
+ * Timing summary attached to a finalized `result` message. Cost + token usage
+ * are recorded separately in the durable usage ledger (see `types/usage`), not
+ * here — the transcript keeps only what the UI still renders.
+ */
 export type ChatMessageMeta = {
-  costUsd?: number;
   durationMs?: number;
   numTurns?: number;
   isError?: boolean;
+  /** Files this turn touched (absent when nothing changed or the diff failed). */
+  fileChanges?: TurnFileChange[];
 };
 
 /**
@@ -121,12 +140,12 @@ export type ChatEvent =
   // Claude asked a structured question (AskUserQuestion) — answered near the input.
   | { kind: ChatEventKind.QuestionRequest; id: string; questions: QuestionItem[] }
   | { kind: ChatEventKind.QuestionResolved; id: string }
-  // The session's model/effort/plan-mode changed (e.g. the user picked a new one).
+  // The session's model/effort/permission-mode changed (e.g. the user picked a new one).
   | {
       kind: ChatEventKind.Config;
       model: string | null;
       effort: ReasoningEffort | null;
-      planMode: boolean;
+      permissionMode: PermissionMode;
     }
   | { kind: ChatEventKind.Cwd; cwd: string | null }
   // An auto-generated tab title derived from the conversation's first exchange.
@@ -156,7 +175,7 @@ export type ChatSnapshot = {
   cwd: string | null;
   model: string | null;
   effort: ReasoningEffort | null;
-  planMode: boolean;
+  permissionMode: PermissionMode;
   messages: ChatSnapshotEntry[];
   pendingPermissions: PermissionRequest[];
   pendingQuestions: QuestionRequest[];

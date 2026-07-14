@@ -5,6 +5,7 @@ import { highlightToHtml } from '@/lib/highlight';
 import type { TodoItem } from '@/lib/types/toolInput';
 import { DiffView } from '../../git/DiffView';
 import { cn } from '../../ui/cn';
+import { Markdown } from '../Markdown';
 
 ///////////////
 // Constants //
@@ -26,12 +27,24 @@ function clamp(text: string): string {
 // Sub-components //
 ///////////////////
 
-/** Scroll frame shared by every preview — fixed width, capped height, code
- * background (dropped for plain-text previews). */
-function PreviewFrame({ children, code = true }: { children: ReactNode; code?: boolean }) {
+/** Scroll frame shared by every preview — capped height, code background
+ * (dropped for plain-text previews). Fixed-width for the transcript hover cards;
+ * `fluid` fills its container instead (used inline in the permission prompt). */
+function PreviewFrame({
+  children,
+  code = true,
+  fluid = false,
+}: {
+  children: ReactNode;
+  code?: boolean;
+  fluid?: boolean;
+}) {
   return (
     <div
-      className="max-h-[26rem] w-[34rem] max-w-[calc(100vw-2rem)] overflow-auto"
+      className={cn(
+        'max-h-[26rem] max-w-[calc(100vw-2rem)] overflow-auto',
+        fluid ? 'w-full' : 'w-[34rem]',
+      )}
       style={code ? { backgroundColor: 'var(--code-bg)' } : undefined}
     >
       {children}
@@ -53,12 +66,20 @@ export function TextPreview({ children }: { children: ReactNode }) {
 }
 
 /** Syntax-highlighted (or plain, when `lang` is null) code/text block. */
-export function CodePreview({ code, lang }: { code: string; lang: string | null }) {
+export function CodePreview({
+  code,
+  lang,
+  fluid = false,
+}: {
+  code: string;
+  lang: string | null;
+  fluid?: boolean;
+}) {
   if (!code.trim()) return <TextPreview>(empty)</TextPreview>;
   const text = clamp(code);
   const html = highlightToHtml(text, lang);
   return (
-    <PreviewFrame>
+    <PreviewFrame fluid={fluid}>
       <pre
         className="code-hl whitespace-pre px-3 py-2 font-mono text-xs leading-5"
         style={{ color: 'var(--code-fg)' }}
@@ -70,20 +91,44 @@ export function CodePreview({ code, lang }: { code: string; lang: string | null 
 }
 
 /** A unified-diff preview (Edit/MultiEdit), reusing the Git `DiffView`. */
-export function DiffPreview({ patch, lang }: { patch: string; lang: string | null }) {
+export function DiffPreview({
+  patch,
+  lang,
+  fluid = false,
+}: {
+  patch: string;
+  lang: string | null;
+  fluid?: boolean;
+}) {
   if (!patch.trim()) return <TextPreview>No changes.</TextPreview>;
   return (
-    <PreviewFrame>
+    <PreviewFrame fluid={fluid}>
       <DiffView patch={clamp(patch)} lang={lang} wrap={false} />
     </PreviewFrame>
   );
 }
 
+/** An ExitPlanMode preview — the plan markdown rendered as a formatted plan.
+ * Wider/taller than the code previews since a plan is a document, not a glance. */
+export function PlanPreview({ plan }: { plan: string }) {
+  if (!plan.trim()) return <TextPreview>Empty plan.</TextPreview>;
+  return (
+    <div className="max-h-[32rem] w-[40rem] max-w-[calc(100vw-2rem)] overflow-auto px-4 py-3">
+      <Markdown>{clamp(plan)}</Markdown>
+    </div>
+  );
+}
+
 /** A TodoWrite list preview — status glyph + text, completed struck through. */
-export function TodoPreview({ todos }: { todos: TodoItem[] }) {
+export function TodoPreview({ todos, fluid = false }: { todos: TodoItem[]; fluid?: boolean }) {
   if (todos.length === 0) return <TextPreview>No todos.</TextPreview>;
   return (
-    <div className="w-[26rem] max-w-[calc(100vw-2rem)] space-y-1 px-3 py-2 text-xs">
+    <div
+      className={cn(
+        'max-w-[calc(100vw-2rem)] space-y-1 px-3 py-2 text-xs',
+        fluid ? 'w-full' : 'w-[26rem]',
+      )}
+    >
       {todos.map((t, i) => {
         const done = t.status === 'completed';
         const active = t.status === 'in_progress';

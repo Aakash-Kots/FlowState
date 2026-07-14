@@ -11,8 +11,10 @@ import {
   ChatMessageRole,
   ClaudeSessionState,
   PermissionBehavior,
+  PermissionMode,
   ReasoningEffort,
 } from '../enums/claude';
+import { GitFileStatus } from '../enums/git';
 import type {
   ChatBlock,
   ChatEvent,
@@ -78,10 +80,19 @@ export const chatMessageSchema: z.ZodType<ChatMessage> = z.object({
   blocks: z.array(chatBlockSchema),
   meta: z
     .object({
-      costUsd: z.number().optional(),
       durationMs: z.number().optional(),
       numTurns: z.number().optional(),
       isError: z.boolean().optional(),
+      fileChanges: z
+        .array(
+          z.object({
+            path: z.string(),
+            status: z.nativeEnum(GitFileStatus),
+            insertions: z.number(),
+            deletions: z.number(),
+          }),
+        )
+        .optional(),
     })
     .optional(),
 });
@@ -132,7 +143,7 @@ export const chatEventSchema: z.ZodType<ChatEvent> = z.discriminatedUnion('kind'
     kind: z.literal(ChatEventKind.Config),
     model: z.string().nullable(),
     effort: reasoningEffortSchema.nullable(),
-    planMode: z.boolean(),
+    permissionMode: z.nativeEnum(PermissionMode),
   }),
   z.object({ kind: z.literal(ChatEventKind.Cwd), cwd: z.string().nullable() }),
   z.object({ kind: z.literal(ChatEventKind.Title), title: z.string() }),
@@ -151,7 +162,7 @@ export const chatSnapshotSchema: z.ZodType<ChatSnapshot> = z.object({
   cwd: z.string().nullable(),
   model: z.string().nullable(),
   effort: reasoningEffortSchema.nullable(),
-  planMode: z.boolean(),
+  permissionMode: z.nativeEnum(PermissionMode),
   messages: z.array(z.object({ message: chatMessageSchema, createdAt: z.string().datetime() })),
   pendingPermissions: z.array(permissionRequestSchema),
   pendingQuestions: z.array(questionRequestSchema),

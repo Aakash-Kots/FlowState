@@ -4,7 +4,7 @@
  * each with its own transcript, session state, and resume id; all tabs in a
  * workspace share its working folder. Validation lives in `../schemas/tab`.
  */
-import type { ClaudeSessionState, ReasoningEffort } from '../enums/claude';
+import type { ClaudeSessionState, PermissionMode, ReasoningEffort } from '../enums/claude';
 
 /** One Claude chat session slot within a workspace/worktree. */
 export type Tab = {
@@ -17,8 +17,8 @@ export type Tab = {
   model: string | null;
   /** Per-tab reasoning effort; null inherits the model default. */
   effort: ReasoningEffort | null;
-  /** Whether the tab is in plan mode (SDK `permissionMode: 'plan'`). */
-  planMode: boolean;
+  /** The tab's SDK permission mode (default / plan / auto-accept). */
+  permissionMode: PermissionMode;
   position: number;
   createdAt: string;
 };

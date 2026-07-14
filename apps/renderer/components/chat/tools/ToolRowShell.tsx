@@ -21,6 +21,10 @@ type ToolRowShellProps = {
   meta?: ReactNode;
   /** Rich hover-card content; when absent the target renders as plain text. */
   preview?: ReactNode;
+  /** Tailwind text-color for the icon (e.g. a file-type tint). Defaults muted. */
+  iconColor?: string;
+  /** Tailwind text-color for the name label (e.g. a per-tool color). */
+  nameColor?: string;
   /** Color the row for a failed tool result. */
   isError?: boolean;
 };
@@ -42,42 +46,47 @@ export function ToolRowShell({
   targetTitle,
   meta,
   preview,
+  iconColor,
+  nameColor,
   isError,
 }: ToolRowShellProps) {
   return (
-    <div className="overflow-hidden rounded-md border border-border bg-secondary">
-      <div className="flex w-full items-center gap-2 px-3 py-1.5 font-mono text-xs">
-        <span className={cn('shrink-0', isError ? 'text-danger' : 'text-muted-foreground')}>
-          {icon}
-        </span>
-        <span className={cn('shrink-0 font-medium', isError ? 'text-danger' : 'text-neutral-300')}>
-          {name}
-        </span>
-        {target != null &&
-          (preview ? (
-            <HoverCard openDelay={150} closeDelay={100}>
-              <HoverCardTrigger asChild>
-                <button
-                  type="button"
-                  title={targetTitle}
-                  className="min-w-0 truncate text-left text-neutral-200 underline decoration-dotted decoration-muted-foreground/50 underline-offset-2 transition-colors hover:text-white"
-                >
-                  {target}
-                </button>
-              </HoverCardTrigger>
-              <HoverCardContent align="start" className="p-0">
-                {preview}
-              </HoverCardContent>
-            </HoverCard>
-          ) : (
-            <span className="min-w-0 truncate text-neutral-300" title={targetTitle}>
-              {target}
-            </span>
-          ))}
-        {meta != null && (
-          <span className="shrink-0 truncate text-muted-foreground/70">{meta}</span>
+    <div className="flex w-full items-center gap-2 font-mono text-xs">
+      <span
+        className={cn('shrink-0', isError ? 'text-danger' : (iconColor ?? 'text-muted-foreground'))}
+      >
+        {icon}
+      </span>
+      <span
+        className={cn(
+          'shrink-0 font-medium',
+          isError ? 'text-danger' : (nameColor ?? 'text-neutral-300'),
         )}
-      </div>
+      >
+        {name}
+      </span>
+      {target != null &&
+        (preview ? (
+          <HoverCard openDelay={150} closeDelay={100}>
+            <HoverCardTrigger asChild>
+              <button
+                type="button"
+                title={targetTitle}
+                className="min-w-0 truncate text-left text-neutral-200 underline decoration-dotted decoration-muted-foreground/50 underline-offset-2 transition-colors hover:text-white"
+              >
+                {target}
+              </button>
+            </HoverCardTrigger>
+            <HoverCardContent align="start" className="p-0">
+              {preview}
+            </HoverCardContent>
+          </HoverCard>
+        ) : (
+          <span className="min-w-0 truncate text-neutral-300" title={targetTitle}>
+            {target}
+          </span>
+        ))}
+      {meta != null && <span className="shrink-0 truncate text-muted-foreground/70">{meta}</span>}
     </div>
   );
 }

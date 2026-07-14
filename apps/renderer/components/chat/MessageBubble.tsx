@@ -3,9 +3,11 @@
 import { useState } from 'react';
 import { ChatBlockType, ChatMessageRole, type ChatMessage } from '@flowstate/shared';
 import type { ToolResultBlock } from '@/lib/types/chat';
+import { formatDuration } from '@/lib/format';
 import { cn } from '../ui/cn';
 import { Markdown } from './Markdown';
 import { ToolUseRow } from './ToolUseRow';
+import { TurnSummary } from './TurnSummary';
 
 function ThinkingBlock({ text }: { text: string }) {
   const [open, setOpen] = useState(false);
@@ -69,12 +71,13 @@ export function MessageBubble({
           <p className="mb-1 whitespace-pre-wrap">{errorText}</p>
         ) : null}
         <span>
-          {meta?.costUsd != null ? `$${meta.costUsd.toFixed(4)}` : null}
-          {meta?.durationMs != null ? ` · ${(meta.durationMs / 1000).toFixed(1)}s` : null}
+          {meta?.durationMs != null ? formatDuration(meta.durationMs) : null}
+          {meta?.durationMs != null && meta?.numTurns != null ? ' · ' : null}
           {meta?.numTurns != null
-            ? ` · ${meta.numTurns} ${meta.numTurns === 1 ? 'turn' : 'turns'}`
+            ? `${meta.numTurns} ${meta.numTurns === 1 ? 'turn' : 'turns'}`
             : null}
         </span>
+        {meta?.fileChanges?.length ? <TurnSummary meta={meta} /> : null}
       </div>
     );
   }

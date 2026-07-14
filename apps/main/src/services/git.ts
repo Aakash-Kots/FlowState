@@ -4,7 +4,9 @@
  * discard, and commit. Push/pull/fetch + PR creation live in `GithubService`
  * (they need the linked account's token); this service is purely local.
  */
+import { randomUUID } from 'node:crypto';
 import { readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   GitFileStatus,
@@ -12,6 +14,7 @@ import {
   type GitDiffStat,
   type GitFileDiff,
   type GitStatus,
+  type TurnFileChange,
 } from '@flowstate/shared';
 import { simpleGit, type SimpleGit } from 'simple-git';
 
@@ -154,6 +157,69 @@ export class GitService {
     } catch {
       return { insertions: 0, deletions: 0, filesChanged: 0 };
     }
+  }
+
+  /**
+   * Snapshot the entire working tree — tracked and untracked, honoring
+   * `.gitignore` — as a git tree object, without touching the real index. Uses a
+   * throwaway index file so `git add -A` (the same reconcile `commit()` runs)
+   * captures the current on-disk state; the returned tree SHA is a stable handle
+   * for bracketing a turn (see `turnDiff`).
+   */
+  async snapshotTree(): Promise<string> {
+    const indexFile = join(tmpdir(), `flowstate-index-${randomUUID()}`);
+    const git = simpleGit(this.worktreePath).env({ ...process.env, GIT_INDEX_FILE: indexFile });
+    try {
+      await git.raw(['add', '-A']);
+      return (await git.raw(['write-tree'])).trim();
+    } finally {
+      await rm(indexFile, { force: true });
+    }
+  }
+
+  /**
+   * The per-file changes between an earlier `snapshotTree()` and the current
+   * working tree — i.e. what a single turn touched. Diffs tree-to-tree so newly
+   * created (untracked) files count too. Returns `[]` when nothing changed.
+   */
+  async turnDiff(fromTree: string): Promise<TurnFileChange[]> {
+    const toTree = await this.snapshotTree();
+    if (fromTree === toTree) return [];
+    const git = this.git;
+
+    // Line counts, keyed by path. Binary files report '-' → treat as 0.
+    const [numstat, nameStatus] = await Promise.all([
+      git.raw(['diff', '--numstat', fromTree, toTree]),
+      git.raw(['diff', '--name-status', fromTree, toTree]),
+    ]);
+
+    const counts = new Map<string, { insertions: number; deletions: number }>();
+    for (const line of numstat.split('\n')) {
+      if (!line.trim()) continue;
+      const [ins, del, path] = line.split('\t');
+      if (!path) continue;
+      counts.set(path, {
+        insertions: ins === '-' ? 0 : Number(ins) || 0,
+        deletions: del === '-' ? 0 : Number(del) || 0,
+      });
+    }
+
+    const changes: TurnFileChange[] = [];
+    for (const line of nameStatus.split('\n')) {
+      if (!line.trim()) continue;
+      const [code, path] = line.split('\t');
+      if (!code || !path) continue;
+      const status = mapCode(code);
+      if (!status) continue;
+      const c = counts.get(path);
+      changes.push({
+        path,
+        status,
+        insertions: c?.insertions ?? 0,
+        deletions: c?.deletions ?? 0,
+      });
+    }
+    return changes;
   }
 
   /** A single file's unified diff, from the index (`staged`) or the working tree. */

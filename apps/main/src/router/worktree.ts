@@ -20,7 +20,7 @@ import {
 } from '@flowstate/shared';
 import { z } from 'zod';
 import {
-  deleteWorkspace,
+  archiveWorkspace,
   ensureDefaults,
   getProject,
   getWorkspace,
@@ -31,8 +31,11 @@ import {
   upsertWorkspace,
 } from '../store';
 import { randomBranchName } from '../lib/branch-names';
+import { PrState } from '@flowstate/shared';
+import { archiveReaperService, teardownWorkspace } from '../services/archive';
 import { claudeService } from '../services/claude';
 import { GitService } from '../services/git';
+import { githubService } from '../services/github';
 import { fileLinkService } from '../services/links';
 import { terminalService } from '../services/terminal';
 import { worktreeService } from '../services/worktree';
@@ -96,6 +99,7 @@ export const worktreeRouter = router({
           linearIssue: null,
           claudeState: ClaudeSessionState.Idle,
           claudeSessionId: null,
+          archivedAt: null,
           createdAt: new Date().toISOString(),
         });
         const tab = upsertTab(makeTab(workspace.id, DEFAULT_TAB_TITLE, 0));
@@ -144,22 +148,46 @@ export const worktreeRouter = router({
         }
       }
 
-      for (const tab of listTabs(ws.id)) claudeService.closeSession(tab.id);
-      for (const term of listTerminalTabs(ws.id)) terminalService.kill(term.id);
-
       try {
-        await worktreeService.remove({
-          repoRoot: ws.repoRoot,
-          worktreePath: ws.worktreePath,
-          force: input.force,
-        });
+        // Closes sessions/terminals, removes the worktree, deletes rows.
+        await teardownWorkspace(ws, !!input.force);
       } catch (err) {
         throw new TRPCError({
           code: 'PRECONDITION_FAILED',
           message: err instanceof Error ? err.message : 'Failed to remove worktree.',
         });
       }
+    }),
 
-      deleteWorkspace(ws.id); // cascades tabs + transcripts
+  /**
+   * Archive a merged worktree: hide it from the sidebar now and let the reaper
+   * force-remove it from disk once the retention delay elapses. Soft-verifies
+   * the branch's PR is merged (the sidebar only offers this on merge) — rejects
+   * only on a definitive non-merged state, trusting the client when GitHub can't
+   * be reached. Closes the worktree's live sessions so nothing runs while hidden.
+   */
+  archive: publicProcedure
+    .input(z.object({ workspaceId: z.string() }))
+    .mutation(async ({ input }) => {
+      const ws = getWorkspace(input.workspaceId);
+      if (!ws) throw new TRPCError({ code: 'NOT_FOUND', message: 'Workspace not found.' });
+
+      // Best-effort merge guard: null means we couldn't tell (network/no PR) →
+      // trust the client. A concrete non-merged state blocks the archive.
+      const pr = await githubService.prStatus(ws.worktreePath, ws.branch).catch(() => null);
+      if (pr && pr.state !== PrState.Merged) {
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
+          message: 'This worktree can only be archived after its pull request is merged.',
+        });
+      }
+
+      for (const tab of listTabs(ws.id)) claudeService.closeSession(tab.id);
+      for (const term of listTerminalTabs(ws.id)) terminalService.kill(term.id);
+
+      archiveWorkspace(ws.id, new Date().toISOString());
+      // Reclaim disk now when the delay is "immediately"; otherwise this is a
+      // no-op until the grace period elapses.
+      void archiveReaperService.sweep();
     }),
 });

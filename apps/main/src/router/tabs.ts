@@ -9,6 +9,7 @@ import {
   ClaudeSessionState,
   DEFAULT_TAB_TITLE,
   MAX_TABS_PER_WORKSPACE,
+  PermissionMode,
   createTabInputSchema,
   type Tab,
   type TabStateChange,
@@ -40,7 +41,7 @@ export function makeTab(workspaceId: string, title: string, position: number): T
     claudeSessionId: null,
     model: null,
     effort: null,
-    planMode: false,
+    permissionMode: PermissionMode.Default,
     position,
     createdAt: new Date().toISOString(),
   };

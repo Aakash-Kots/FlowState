@@ -3,6 +3,7 @@ import { app, BrowserWindow, Menu, type MenuItemConstructorOptions } from 'elect
 import { createIPCHandler } from 'electron-trpc/main';
 import { DEFAULT_KEYBINDINGS, ShortcutCommand } from '@flowstate/shared';
 import { appRouter } from './router';
+import { archiveReaperService } from './services/archive';
 import { claudeService } from './services/claude';
 import { shortcutsService } from './services/shortcuts';
 import { terminalService } from './services/terminal';
@@ -178,6 +179,10 @@ void app.whenReady().then(() => {
   // dot reflects reality rather than a stuck "working" state.
   claudeService.reconcileOnStartup();
 
+  // Reap archived worktrees whose retention delay has elapsed (incl. any that
+  // came due while the app was closed), then keep sweeping on a timer.
+  archiveReaperService.start();
+
   // Application menu carries the keyboard accelerators; rebuild it whenever the
   // user rebinds a shortcut so the native accelerators stay in sync.
   buildAppMenu();
@@ -195,6 +200,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('will-quit', () => {
+  archiveReaperService.stop();
   claudeService.disposeAll();
   terminalService.disposeAll();
   closeStore();

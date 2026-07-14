@@ -4,7 +4,7 @@
  * malformed Workspace to the rest of the app.
  */
 import { ClaudeSessionState, type Workspace, workspaceSchema } from '@flowstate/shared';
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq, isNull, isNotNull } from 'drizzle-orm';
 import { getDb } from './db';
 import { workspaces } from './schema';
 
@@ -22,6 +22,7 @@ function rowToWorkspace(row: WorkspaceRow): Workspace {
     linearIssue: row.linearIssue ? JSON.parse(row.linearIssue) : null,
     claudeState: row.claudeState,
     claudeSessionId: row.claudeSessionId,
+    archivedAt: row.archivedAt,
     createdAt: row.createdAt,
   });
 }
@@ -38,6 +39,7 @@ function workspaceToRow(ws: Workspace): WorkspaceRow {
     linearIssue: ws.linearIssue ? JSON.stringify(ws.linearIssue) : null,
     claudeState: ws.claudeState,
     claudeSessionId: ws.claudeSessionId,
+    archivedAt: ws.archivedAt,
     createdAt: ws.createdAt,
   };
 }
@@ -76,19 +78,39 @@ export function upsertWorkspace(input: Workspace): Workspace {
         linearIssue: row.linearIssue,
         claudeState: row.claudeState,
         claudeSessionId: row.claudeSessionId,
+        archivedAt: row.archivedAt,
       },
     })
     .run();
   return ws;
 }
 
-/** All workspaces (worktrees) under a project, most-recently-created first. */
+/**
+ * A project's active (non-archived) worktrees, most-recently-created first —
+ * the sidebar list. Archived rows are excluded so they vanish the moment the
+ * user archives them, even though the row lingers until the reaper deletes it.
+ */
 export function listWorkspacesByProject(projectId: string): Workspace[] {
   return getDb()
     .select()
     .from(workspaces)
-    .where(eq(workspaces.projectId, projectId))
+    .where(and(eq(workspaces.projectId, projectId), isNull(workspaces.archivedAt)))
     .orderBy(desc(workspaces.createdAt))
+    .all()
+    .map(rowToWorkspace);
+}
+
+/** Mark a worktree archived (or clear it) — sets/unsets its `archivedAt`. */
+export function archiveWorkspace(id: string, archivedAt: string | null): void {
+  getDb().update(workspaces).set({ archivedAt }).where(eq(workspaces.id, id)).run();
+}
+
+/** Every archived worktree still on disk — the reaper's deletion candidates. */
+export function listArchivedWorkspaces(): Workspace[] {
+  return getDb()
+    .select()
+    .from(workspaces)
+    .where(isNotNull(workspaces.archivedAt))
     .all()
     .map(rowToWorkspace);
 }
@@ -116,6 +138,7 @@ export function ensureWorkspace(id: string): Workspace {
     linearIssue: null,
     claudeState: ClaudeSessionState.Idle,
     claudeSessionId: null,
+    archivedAt: null,
     createdAt: new Date().toISOString(),
   });
 }

@@ -64,3 +64,15 @@ export enum PermissionBehavior {
   Allow = 'allow',
   Deny = 'deny',
 }
+
+/**
+ * How a session handles tool-permission prompts — values are the Agent SDK's
+ * `permissionMode` wire strings, so they pass straight to the SDK query and
+ * `setPermissionMode` with no translation. (The SDK also has `'acceptEdits'`,
+ * which the app doesn't expose.) The UI labels `BypassPermissions` "Auto-accept".
+ */
+export enum PermissionMode {
+  Default = 'default', // prompt per tool
+  Plan = 'plan', // plan first, no edits
+  BypassPermissions = 'bypassPermissions', // auto-accept everything, no prompts
+}
