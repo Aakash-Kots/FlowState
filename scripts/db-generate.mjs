@@ -75,6 +75,59 @@ function newestMigrationTag() {
   return sql.length ? sql[sql.length - 1].replace(/\.sql$/, '') : null;
 }
 
+// Migration tags (`NNNN_*`) currently checked out in the working drizzle dir.
+function migrationTags() {
+  return readdirSync(DRIZZLE)
+    .filter((f) => /^\d{4}_.*\.sql$/.test(f))
+    .map((f) => f.replace(/\.sql$/, ''))
+    .sort();
+}
+
+// Migration tags present in the drizzle dir at a git ref (e.g. origin/main).
+function migrationTagsAt(ref) {
+  return gitOut('ls-tree', '-r', '--name-only', ref, '--', DRIZZLE)
+    .split('\n')
+    .map((p) => p.split('/').pop())
+    .filter((f) => /^\d{4}_.*\.sql$/.test(f))
+    .map((f) => f.replace(/\.sql$/, ''))
+    .sort();
+}
+
+// Prepare the base for a new migration. We generate off the latest
+// origin/<target> so parallel worktrees keep minting distinct, linear indices —
+// but NEVER by discarding migrations that live only on this branch (those must
+// survive onto the branch and get carried up to <target> by pushMigration):
+//
+//   - in sync / branch ahead  → keep the branch dir as-is; a new migration
+//                               out-indexes <target>, and pushMigration copies
+//                               any branch-only migrations up too.
+//   - <target> strictly ahead → adopt <target> (branch has no unique work).
+//   - genuinely diverged      → refuse; a human must reconcile the indices.
+function rebaseDrizzleOntoTarget() {
+  git('fetch', REMOTE, TARGET);
+  // Restore the branch's own drizzle dir, dropping any half-generated leftovers
+  // from a prior attempt, so the comparison below sees a clean branch baseline.
+  resetDrizzle('HEAD');
+
+  const branch = new Set(migrationTags());
+  const target = new Set(migrationTagsAt(`${REMOTE}/${TARGET}`));
+  const branchAhead = [...branch].some((t) => !target.has(t));
+  const targetAhead = [...target].some((t) => !branch.has(t));
+
+  if (branchAhead && targetAhead) {
+    const onlyBranch = [...branch].filter((t) => !target.has(t)).join(', ');
+    const onlyTarget = [...target].filter((t) => !branch.has(t)).join(', ');
+    throw new Error(
+      `[db:generate] drizzle history diverged from ${REMOTE}/${TARGET}: ` +
+        `branch-only [${onlyBranch}] vs ${TARGET}-only [${onlyTarget}]. ` +
+        `Reconcile the migration indices by hand before generating.`,
+    );
+  }
+  // Adopt <target> only when it is strictly ahead; otherwise the branch dir is
+  // already equal-or-superset and resetting to it would clobber branch-only work.
+  if (targetAhead) resetDrizzle(`${REMOTE}/${TARGET}`);
+}
+
 // Land the freshly generated migration on <target> without pushing the feature
 // branch: commit only the drizzle dir inside a throwaway detached worktree at
 // origin/<target>, then push HEAD:<target>. Returns true on success, false if
@@ -124,10 +177,12 @@ if (!drizzleClean()) {
 // 2. Generate-and-claim loop.
 let landed = false;
 for (let attempt = 1; attempt <= MAX_ATTEMPTS && !landed; attempt++) {
-  git('fetch', REMOTE, TARGET);
-  resetDrizzle(`${REMOTE}/${TARGET}`);
+  rebaseDrizzleOntoTarget();
 
-  run('bun', ['run', '--filter', '@flowstate/main', 'db:generate']);
+  // Invoke drizzle-kit directly (not `bun run --filter`, whose output-prefixing
+  // pipes stdio and hides the TTY drizzle-kit needs for its rename/create
+  // column prompts). cwd is apps/main so it finds drizzle.config.ts.
+  run('bunx', ['drizzle-kit', 'generate'], { cwd: join(process.cwd(), 'apps/main') });
 
   if (drizzleClean()) {
     // schema.ts matches <target>'s latest snapshot — nothing to generate.
