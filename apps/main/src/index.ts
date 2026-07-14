@@ -167,8 +167,11 @@ function createWindow(): void {
     void win.loadURL(DEV_RENDERER_URL);
     win.webContents.openDevTools({ mode: 'detach' });
   } else {
-    // Production: load the Next.js static export.
-    void win.loadFile(join(__dirname, '../../renderer/out/index.html'));
+    // Production: load the Next.js static export. It's shipped via electron-
+    // builder `extraFiles` into Contents/Resources/renderer/out (outside the
+    // asar), so resolve from `resourcesPath` rather than `__dirname`, which
+    // lives inside app.asar.
+    void win.loadFile(join(process.resourcesPath, 'renderer/out/index.html'));
   }
 }
 
