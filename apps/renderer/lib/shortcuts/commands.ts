@@ -18,7 +18,7 @@ import {
   useWorkspace,
 } from '../workspace';
 import { setSettingsOpen } from '../settings';
-import { setHelpOpen, setPaletteOpen, useShortcuts } from './store';
+import { setFileFinderOpen, setHelpOpen, setPaletteOpen, useShortcuts } from './store';
 
 ///////////
 // Types //
@@ -65,6 +65,14 @@ export const COMMANDS: Record<ShortcutCommand, CommandDef> = {
     category: ShortcutCategory.App,
     scope: ShortcutScope.Global,
     run: () => setPaletteOpen(true),
+  },
+  [ShortcutCommand.OpenFileFinder]: {
+    command: ShortcutCommand.OpenFileFinder,
+    label: 'Find file…',
+    category: ShortcutCategory.Navigation,
+    scope: ShortcutScope.Global,
+    run: () => setFileFinderOpen(true),
+    isEnabled: onWorktree,
   },
   [ShortcutCommand.ShowShortcutsHelp]: {
     command: ShortcutCommand.ShowShortcutsHelp,

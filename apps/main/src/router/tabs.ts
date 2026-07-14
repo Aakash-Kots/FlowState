@@ -8,8 +8,10 @@ import { TRPCError } from '@trpc/server';
 import {
   ClaudeSessionState,
   DEFAULT_TAB_TITLE,
+  MAX_FILE_TABS_PER_WORKSPACE,
   MAX_TABS_PER_WORKSPACE,
   PermissionMode,
+  TabKind,
   createTabInputSchema,
   type Tab,
   type TabStateChange,
@@ -32,11 +34,19 @@ import { publicProcedure, router } from '../trpc';
 /////////////
 
 /** Build a fresh Idle tab at the given position. */
-export function makeTab(workspaceId: string, title: string, position: number): Tab {
+export function makeTab(
+  workspaceId: string,
+  title: string,
+  position: number,
+  kind: TabKind = TabKind.Chat,
+  filePath: string | null = null,
+): Tab {
   return {
     id: randomUUID(),
     workspaceId,
     title,
+    kind,
+    filePath,
     claudeState: ClaudeSessionState.Idle,
     claudeSessionId: null,
     model: null,
@@ -66,15 +76,20 @@ export const tabsRouter = router({
 
   create: publicProcedure.input(createTabInputSchema).mutation(({ input }) => {
     ensureWorkspace(input.workspaceId);
+    const kind = input.kind ?? TabKind.Chat;
     const tabs = listTabs(input.workspaceId);
-    if (tabs.length >= MAX_TABS_PER_WORKSPACE) {
+    // Chat and file tabs share the strip but have independent caps.
+    const sameKind = tabs.filter((t) => t.kind === kind).length;
+    const cap = kind === TabKind.File ? MAX_FILE_TABS_PER_WORKSPACE : MAX_TABS_PER_WORKSPACE;
+    if (sameKind >= cap) {
       throw new TRPCError({
         code: 'PRECONDITION_FAILED',
-        message: `A workspace can have at most ${MAX_TABS_PER_WORKSPACE} tabs.`,
+        message: `A workspace can have at most ${cap} ${kind} tabs.`,
       });
     }
     const position = tabs.reduce((max, t) => Math.max(max, t.position), -1) + 1;
-    return upsertTab(makeTab(input.workspaceId, input.title ?? DEFAULT_TAB_TITLE, position));
+    const title = input.title ?? DEFAULT_TAB_TITLE;
+    return upsertTab(makeTab(input.workspaceId, title, position, kind, input.filePath ?? null));
   }),
 
   rename: publicProcedure
@@ -85,10 +100,14 @@ export const tabsRouter = router({
       return upsertTab({ ...tab, title: input.title });
     }),
 
-  // Close a tab: tear down its live session, drop its transcript, delete the row.
+  // Close a tab. Chat tabs also tear down their live session + transcript; file
+  // tabs have neither, so they just drop the row.
   close: publicProcedure.input(z.object({ tabId: z.string() })).mutation(({ input }) => {
-    claudeService.closeSession(input.tabId);
-    deleteTabTranscript(input.tabId);
+    const tab = getTab(input.tabId);
+    if (tab && tab.kind !== TabKind.File) {
+      claudeService.closeSession(input.tabId);
+      deleteTabTranscript(input.tabId);
+    }
     deleteTab(input.tabId);
   }),
 });
