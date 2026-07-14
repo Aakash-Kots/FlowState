@@ -63,6 +63,24 @@ export function InputBar({ disabled }: { disabled: boolean }) {
     if (!disabled && !hasPrompt) textareaRef.current?.focus();
   }, [disabled, hasPrompt]);
 
+  // Publish the composer's live height as `--input-h` on the shared session
+  // container so the transcript can reserve exactly that much bottom padding —
+  // the content then scrolls to rest just above the box (with a small gap) no
+  // matter how tall the bar grows (plan action row, multi-line drafts, errors).
+  useEffect(() => {
+    const el = wrapperRef.current;
+    const parent = el?.parentElement;
+    if (!el || !parent) return;
+    const update = () => parent.style.setProperty('--input-h', `${el.offsetHeight}px`);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      parent.style.removeProperty('--input-h');
+    };
+  }, []);
+
   // Let the FocusInput shortcut focus the composer from anywhere.
   useFocusInput(() => textareaRef.current?.focus());
 
@@ -179,7 +197,7 @@ export function InputBar({ disabled }: { disabled: boolean }) {
   return (
     <div
       ref={wrapperRef}
-      className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-background via-background/95 to-transparent px-4 pb-4 pt-10"
+      className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-background via-background to-transparent px-4 pb-4 pt-4"
     >
       <div className="pointer-events-auto relative mx-auto max-w-3xl">
         {menuOpen && (
@@ -218,7 +236,7 @@ export function InputBar({ disabled }: { disabled: boolean }) {
                     Plan ready — approve, or reply to keep planning
                   </span>
                   <Button
-                    className="border border-auto-accept/60 bg-auto-accept/15 px-2.5 py-1 text-xs text-auto-accept hover:bg-auto-accept/25"
+                    className="px-2.5 py-1 text-xs"
                     onClick={() =>
                       respondPermission(
                         tabId,
@@ -246,15 +264,6 @@ export function InputBar({ disabled }: { disabled: boolean }) {
                     }
                   >
                     Approve &amp; manually accept
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    className="px-2.5 py-1 text-xs"
-                    onClick={() =>
-                      respondPermission(tabId, pendingPlan.id, PermissionBehavior.Deny)
-                    }
-                  >
-                    Continue planning
                   </Button>
                 </div>
               )}
