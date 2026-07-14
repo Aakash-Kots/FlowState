@@ -14,6 +14,8 @@ export const KEYBINDINGS_SETTING_KEY = 'keybindings';
 /** Built-in bindings, one per command. */
 export const DEFAULT_KEYBINDINGS: Keybinding[] = [
   { command: ShortcutCommand.OpenCommandPalette, keys: 'mod+k' },
+  // ⌘P opens the fuzzy file finder (free of any native-menu accelerator).
+  { command: ShortcutCommand.OpenFileFinder, keys: 'mod+p' },
   { command: ShortcutCommand.ShowShortcutsHelp, keys: 'mod+/' },
   { command: ShortcutCommand.OpenSettings, keys: 'mod+,' },
   { command: ShortcutCommand.ToggleSidebar, keys: 'mod+b' },

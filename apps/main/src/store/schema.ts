@@ -46,6 +46,10 @@ export const tabs = sqliteTable(
       .notNull()
       .references(() => workspaces.id, { onDelete: 'cascade' }),
     title: text('title').notNull(),
+    // 'chat' (Claude session) or 'file' (in-tab editor). Legacy rows default to chat.
+    kind: text('kind').notNull().default('chat'),
+    // For file tabs, the worktree-relative path being edited; null for chat tabs.
+    filePath: text('file_path'),
     claudeSessionId: text('claude_session_id'),
     claudeState: text('claude_state').notNull().default('idle'),
     // Per-tab Claude session config; null inherits the SDK/CLI default.

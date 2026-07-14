@@ -1,13 +1,15 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Plus, X } from 'lucide-react';
-import { ClaudeSessionState, MAX_TABS_PER_WORKSPACE, type Tab } from '@flowstate/shared';
+import { FileCode, Plus, X } from 'lucide-react';
+import { ClaudeSessionState, MAX_TABS_PER_WORKSPACE, TabKind, type Tab } from '@flowstate/shared';
 import { ConnStatus } from '@/lib/enums/connection';
 import { TabProvider, useChat } from '@/lib/chat';
+import { useFileTabDirty } from '@/lib/fileTabs';
 import { useTabState, useTabUnread } from '@/lib/tabStates';
 import { closeTab, openTab, selectTab, useWorkspace } from '@/lib/workspace';
 import { ChatWorkspace } from '../chat/ChatWorkspace';
+import { FileEditor } from './FileEditor';
 import { SkillsPanel } from '../skills/SkillsPanel';
 import { StateIndicator } from '../ui/StateIndicator';
 import { StatusPill } from '../ui/StatusPill';
@@ -46,8 +48,10 @@ function ActiveTabStatus() {
 function TabTrigger({ tab, canClose }: { tab: Tab; canClose: boolean }) {
   const labelRef = useRef<HTMLSpanElement>(null);
   const [truncated, setTruncated] = useState(false);
+  const isFile = tab.kind === TabKind.File;
   const state = useTabState(tab.id);
   const unread = useTabUnread(tab.id);
+  const dirty = useFileTabDirty(tab.id);
 
   // Only surface the tooltip when the title is actually clipped by `truncate`.
   // Re-measured when the title or the tab strip's width changes.
@@ -63,10 +67,20 @@ function TabTrigger({ tab, canClose }: { tab: Tab; canClose: boolean }) {
 
   const trigger = (
     <TabsTrigger value={tab.id} className="group/tab max-w-40 gap-1.5 pr-1.5">
-      <StateIndicator state={state} unread={unread} />
+      {isFile ? (
+        <FileCode className="size-3.5 shrink-0 text-muted-foreground" />
+      ) : (
+        <StateIndicator state={state} unread={unread} />
+      )}
       <span ref={labelRef} className="truncate">
         {tab.title}
       </span>
+      {isFile && dirty && (
+        <span
+          aria-label="Unsaved changes"
+          className="size-1.5 shrink-0 rounded-full bg-foreground/70"
+        />
+      )}
       {canClose && (
         <span
           role="button"
@@ -126,6 +140,10 @@ export function WorkspaceTabs() {
     );
   }
 
+  const activeTab = tabs.find((t) => t.id === activeTabId);
+  const isFileTab = activeTab?.kind === TabKind.File;
+  const chatCount = tabs.filter((t) => t.kind === TabKind.Chat).length;
+
   return (
     <div className="flex min-h-0 flex-1">
       <Tabs
@@ -137,24 +155,36 @@ export function WorkspaceTabs() {
           <TooltipProvider delayDuration={300}>
             <TabsList className="h-8 gap-1 bg-transparent p-0 text-muted-foreground">
               {tabs.map((tab) => (
-                <TabTrigger key={tab.id} tab={tab} canClose={tabs.length > 1} />
+                <TabTrigger
+                  key={tab.id}
+                  tab={tab}
+                  canClose={tab.kind === TabKind.File || chatCount > 1}
+                />
               ))}
             </TabsList>
           </TooltipProvider>
-          <NewTabButton disabled={tabs.length >= MAX_TABS_PER_WORKSPACE} />
-          <div className="ml-auto flex items-center pl-3">
-            <TabProvider tabId={activeTabId}>
-              <ActiveTabStatus />
-            </TabProvider>
-          </div>
+          <NewTabButton disabled={chatCount >= MAX_TABS_PER_WORKSPACE} />
+          {!isFileTab && (
+            <div className="ml-auto flex items-center pl-3">
+              <TabProvider tabId={activeTabId}>
+                <ActiveTabStatus />
+              </TabProvider>
+            </div>
+          )}
         </div>
         <TabsContent value={activeTabId} className="mt-0 flex min-h-0 flex-1 flex-col">
-          <ChatWorkspace tabId={activeTabId} />
+          {isFileTab && activeTab ? (
+            <FileEditor tab={activeTab} />
+          ) : (
+            <ChatWorkspace tabId={activeTabId} />
+          )}
         </TabsContent>
       </Tabs>
-      <TabProvider tabId={activeTabId}>
-        <SkillsPanel />
-      </TabProvider>
+      {!isFileTab && (
+        <TabProvider tabId={activeTabId}>
+          <SkillsPanel />
+        </TabProvider>
+      )}
     </div>
   );
 }

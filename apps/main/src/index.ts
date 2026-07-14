@@ -83,6 +83,7 @@ function buildAppMenu(): void {
         item(ShortcutCommand.NewTab, 'New Tab'),
         item(ShortcutCommand.CloseTab, 'Close Tab'),
         { type: 'separator' },
+        item(ShortcutCommand.OpenFileFinder, 'Find File…'),
         item(ShortcutCommand.PickWorkingFolder, 'Open Working Folder…'),
         ...(IS_MAC
           ? []

@@ -2,8 +2,9 @@
 
 import { useEffect } from 'react';
 import { create } from 'zustand';
-import { DEFAULT_WORKSPACE_ID, MAX_TABS_PER_WORKSPACE, type Tab } from '@flowstate/shared';
+import { DEFAULT_WORKSPACE_ID, MAX_TABS_PER_WORKSPACE, TabKind, type Tab } from '@flowstate/shared';
 import { WorkspaceView } from './enums/view';
+import { clearFileTabDirty } from './fileTabs';
 import { markTabRead, registerTab, unregisterTab } from './tabStates';
 import { trpc } from './trpc';
 
@@ -164,21 +165,51 @@ export function cycleTab(delta: 1 | -1): void {
   selectTab(tabs[next]!.id);
 }
 
-/** Open a new tab (up to MAX_TABS_PER_WORKSPACE) and focus it. */
+/** Open a new chat tab (up to MAX_TABS_PER_WORKSPACE chat tabs) and focus it. */
 export async function openTab(): Promise<void> {
   const { workspaceId, tabs } = useWorkspace.getState();
-  if (tabs.length >= MAX_TABS_PER_WORKSPACE) return;
+  if (tabs.filter((t) => t.kind === TabKind.Chat).length >= MAX_TABS_PER_WORKSPACE) return;
   const tab = await trpc().tabs.create.mutate({ workspaceId });
   registerTab(tab.id, workspaceId);
   useWorkspace.setState((s) => ({ tabs: [...s.tabs, tab], activeTabId: tab.id }));
 }
 
-/** Close a tab, focusing a neighbor if it was active. Never closes the last tab. */
+/**
+ * Open — or focus, if already open — a file editor tab for a worktree-relative
+ * path. Ensures the chat/file strip is the visible surface so the tab shows.
+ */
+export async function openFileTab(filePath: string): Promise<void> {
+  const { workspaceId, tabs, viewMode } = useWorkspace.getState();
+  if (viewMode !== WorkspaceView.Workspace) setViewMode(WorkspaceView.Workspace);
+  const existing = tabs.find((t) => t.kind === TabKind.File && t.filePath === filePath);
+  if (existing) {
+    selectTab(existing.id);
+    return;
+  }
+  const title = filePath.split('/').pop() || filePath;
+  const tab = await trpc().tabs.create.mutate({
+    workspaceId,
+    kind: TabKind.File,
+    filePath,
+    title,
+  });
+  registerTab(tab.id, workspaceId);
+  useWorkspace.setState((s) => ({ tabs: [...s.tabs, tab] }));
+  selectTab(tab.id);
+}
+
+/**
+ * Close a tab, focusing a neighbor if it was active. File tabs always close;
+ * a chat tab won't close if it's the workspace's last chat tab.
+ */
 export async function closeTab(tabId: string): Promise<void> {
   const { tabs, activeTabId } = useWorkspace.getState();
-  if (tabs.length <= 1) return;
+  const tab = tabs.find((t) => t.id === tabId);
+  if (!tab) return;
+  if (tab.kind === TabKind.Chat && tabs.filter((t) => t.kind === TabKind.Chat).length <= 1) return;
   await trpc().tabs.close.mutate({ tabId });
   unregisterTab(tabId);
+  clearFileTabDirty(tabId);
   const remaining = tabs.filter((t) => t.id !== tabId);
   const nextActive =
     activeTabId === tabId ? (remaining[remaining.length - 1]?.id ?? null) : activeTabId;

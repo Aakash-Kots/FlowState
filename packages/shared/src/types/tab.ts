@@ -5,12 +5,17 @@
  * workspace share its working folder. Validation lives in `../schemas/tab`.
  */
 import type { ClaudeSessionState, PermissionMode, ReasoningEffort } from '../enums/claude';
+import type { TabKind } from '../enums/tab';
 
-/** One Claude chat session slot within a workspace/worktree. */
+/** One slot within a workspace/worktree — a Claude chat session or a file editor. */
 export type Tab = {
   id: string;
   workspaceId: string;
   title: string;
+  /** What the tab holds — a chat session or a file editor. */
+  kind: TabKind;
+  /** For `File` tabs, the worktree-relative path being edited; null for chat. */
+  filePath: string | null;
   claudeState: ClaudeSessionState;
   claudeSessionId: string | null;
   /** Per-tab Claude model id; null inherits the SDK/CLI default. */
@@ -27,4 +32,7 @@ export type Tab = {
 export type CreateTabInput = {
   workspaceId: string;
   title?: string;
+  /** Defaults to a chat tab; pass `File` (with `filePath`) for an editor tab. */
+  kind?: TabKind;
+  filePath?: string;
 };

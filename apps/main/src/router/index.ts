@@ -1,6 +1,7 @@
 import { router } from '../trpc';
 import { appRouter as appMeta } from './app';
 import { claudeRouter } from './claude';
+import { filesRouter } from './files';
 import { gitRouter } from './git';
 import { linearRouter } from './linear';
 import { onboardingRouter } from './onboarding';
@@ -16,6 +17,7 @@ import { worktreeRouter } from './worktree';
 export const appRouter = router({
   app: appMeta,
   git: gitRouter,
+  files: filesRouter,
   worktree: worktreeRouter,
   tabs: tabsRouter,
   terminal: terminalRouter,

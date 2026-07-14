@@ -22,6 +22,7 @@ type ShortcutsState = {
   /** Resolved bindings = defaults with overrides applied. */
   bindings: Keybinding[];
   paletteOpen: boolean;
+  fileFinderOpen: boolean;
   helpOpen: boolean;
   /**
    * The sidebar's toggle, bridged in by `ShortcutProvider` (which lives inside
@@ -47,6 +48,7 @@ export const useShortcuts = create<ShortcutsState>(() => ({
   overrides: {},
   bindings: resolve({}),
   paletteOpen: false,
+  fileFinderOpen: false,
   helpOpen: false,
   sidebarToggle: null,
 }));
@@ -91,6 +93,10 @@ export function resetBinding(command: ShortcutCommand): void {
 
 export function setPaletteOpen(open: boolean): void {
   useShortcuts.setState({ paletteOpen: open });
+}
+
+export function setFileFinderOpen(open: boolean): void {
+  useShortcuts.setState({ fileFinderOpen: open });
 }
 
 export function setHelpOpen(open: boolean): void {
