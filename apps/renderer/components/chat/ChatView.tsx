@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChatBlockType, ClaudeSessionState } from '@flowstate/shared';
 import { ActivityIndicator, ChatItemKind } from '@/lib/enums/chat';
-import type { ToolResultBlock } from '@/lib/types/chat';
+import type { ToolResultBlock, ToolUseBlock } from '@/lib/types/chat';
 import { groupChatItems } from '@/lib/chatItems';
 import { useChat } from '@/lib/chat';
 import { formatDuration } from '@/lib/format';
@@ -38,7 +38,6 @@ export function ChatView() {
   const streamingText = useChat((s) => s.streamingText);
   const activeIndicator = useChat((s) => s.activeIndicator);
   const toolProgress = useChat((s) => s.toolProgress);
-  const taskProgress = useChat((s) => s.taskProgress);
   const apiRetry = useChat((s) => s.apiRetry);
   const pendingCount = useChat((s) => s.pendingPermissions.length + s.pendingQuestions.length);
   const sessionState = useChat((s) => s.sessionState);
@@ -48,18 +47,27 @@ export function ChatView() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinnedToBottom = useRef(true);
 
-  // Index every tool result (and every tool call id) across the conversation
-  // so a call and its output render together.
-  const { toolResults, toolUseIds } = useMemo(() => {
+  // Index every tool result (and every tool call id) across the conversation so a
+  // call and its output render together, plus group subagent calls by their parent
+  // Task id so the Task row can render them nested.
+  const { toolResults, toolUseIds, childrenByParent } = useMemo(() => {
     const results = new Map<string, ToolResultBlock>();
     const ids = new Set<string>();
+    const children = new Map<string, ToolUseBlock[]>();
     for (const { message } of messages) {
       for (const block of message.blocks) {
         if (block.type === ChatBlockType.ToolResult) results.set(block.toolUseId, block);
-        else if (block.type === ChatBlockType.ToolUse) ids.add(block.id);
+        else if (block.type === ChatBlockType.ToolUse) {
+          ids.add(block.id);
+          if (block.parentToolUseId) {
+            const list = children.get(block.parentToolUseId);
+            if (list) list.push(block);
+            else children.set(block.parentToolUseId, [block]);
+          }
+        }
       }
     }
-    return { toolResults: results, toolUseIds: ids };
+    return { toolResults: results, toolUseIds: ids, childrenByParent: children };
   }, [messages]);
 
   // Flatten the transcript into render items: whole-message bubbles, standalone
@@ -75,28 +83,23 @@ export function ChatView() {
   useEffect(() => {
     const el = scrollRef.current;
     if (el && pinnedToBottom.current) el.scrollTop = el.scrollHeight;
-  }, [messages, streamingText, activeIndicator, pendingCount, toolProgress, taskProgress, apiRetry]);
+  }, [messages, streamingText, activeIndicator, pendingCount, toolProgress, apiRetry]);
 
   const showWorking = sessionState === ClaudeSessionState.Running && !streamingText;
 
-  // Live progress ladder: a retry beats subagent progress beats tool progress,
-  // falling back to the generic thinking/tool/working label. `showElapsed`
-  // appends the turn timer except where the label already carries its own time.
+  // Live progress ladder: a retry beats tool progress, falling back to the
+  // generic thinking/tool/working label. `showElapsed` appends the turn timer
+  // except where the label already carries its own time. (Subagent progress now
+  // shows as inline nested tool rows, so it has no bottom-of-chat line.)
   const progress: { text: string; warn: boolean; showElapsed: boolean } | null = apiRetry
     ? { text: `Retrying… ${apiRetry.attempt}/${apiRetry.maxRetries}`, warn: true, showElapsed: false }
-    : taskProgress
+    : toolProgress
       ? {
-          text: `Subagent${taskProgress.subagentType ? ` (${taskProgress.subagentType})` : ''}: ${taskProgress.toolUses} tools`,
+          text: `Running ${toolProgress.toolName}… · ${toolProgress.elapsedSeconds}s`,
           warn: false,
-          showElapsed: true,
+          showElapsed: false,
         }
-      : toolProgress
-        ? {
-            text: `Running ${toolProgress.toolName}… · ${toolProgress.elapsedSeconds}s`,
-            warn: false,
-            showElapsed: false,
-          }
-        : null;
+      : null;
 
   return (
     <div
@@ -113,7 +116,14 @@ export function ChatView() {
             case ChatItemKind.Message:
               return <MessageBubble key={item.key} message={item.entry.message} />;
             case ChatItemKind.ToolGroup:
-              return <ToolGroup key={item.key} blocks={item.blocks} toolResults={toolResults} />;
+              return (
+                <ToolGroup
+                  key={item.key}
+                  blocks={item.blocks}
+                  toolResults={toolResults}
+                  childrenByParent={childrenByParent}
+                />
+              );
             case ChatItemKind.Block:
               switch (item.block.type) {
                 case ChatBlockType.Text:

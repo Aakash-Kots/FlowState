@@ -46,7 +46,9 @@ export function groupChatItems(entries: ChatSnapshotEntry[], toolUseIds: Set<str
         case ChatBlockType.ToolUse:
           // AskUserQuestion is asked/answered near the input bar, not shown as a
           // transcript row; its paired result is suppressed via `toolUseIds`.
-          if (block.name !== ASK_USER_QUESTION_TOOL) run.push(block);
+          // A subagent's call (parentToolUseId set) renders nested inside its
+          // Task row, not as a top-level run — skip it here.
+          if (block.name !== ASK_USER_QUESTION_TOOL && !block.parentToolUseId) run.push(block);
           break;
         case ChatBlockType.ToolResult:
           // Paired results render inside their call's row; only orphans surface.

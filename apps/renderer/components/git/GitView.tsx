@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect } from 'react';
 import { ArrowDown, ArrowUp, GitBranch, RefreshCw } from 'lucide-react';
 import { refreshStatus, useGit } from '@/lib/git';
 import { cn } from '../ui/cn';
@@ -17,6 +18,13 @@ export function GitView() {
   const status = useGit((s) => s.status);
   const loading = useGit((s) => s.loading);
   const error = useGit((s) => s.error);
+
+  // Opening the tab mounts this view — refresh so it reflects any changes that
+  // landed while it was closed. Cached status renders immediately (no blanking);
+  // this just brings it current. Coalesced with the watcher/focus refreshes.
+  useEffect(() => {
+    void refreshStatus();
+  }, []);
 
   const changeCount = (status?.staged.length ?? 0) + (status?.unstaged.length ?? 0);
 

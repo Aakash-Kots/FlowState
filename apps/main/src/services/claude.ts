@@ -253,7 +253,10 @@ function blockText(content: unknown): string {
   return content == null ? '' : JSON.stringify(content);
 }
 
-function normalizeAssistantBlocks(content: unknown): ChatBlock[] {
+function normalizeAssistantBlocks(
+  content: unknown,
+  parentToolUseId: string | null,
+): ChatBlock[] {
   if (!Array.isArray(content)) return [];
   const blocks: ChatBlock[] = [];
   for (const raw of content as RawBlock[]) {
@@ -270,6 +273,8 @@ function normalizeAssistantBlocks(content: unknown): ChatBlock[] {
           id: raw.id ?? randomUUID(),
           name: raw.name ?? 'unknown',
           input: raw.input ?? {},
+          // Tag a subagent's call with its parent Task id so the renderer nests it.
+          ...(parentToolUseId ? { parentToolUseId } : {}),
         });
         break;
       default:
@@ -1090,13 +1095,6 @@ export class ClaudeService {
                 ? ClaudeSessionState.Running
                 : ClaudeSessionState.Idle;
           this.setState(tabId, state);
-        } else if (message.subtype === 'task_progress') {
-          this.emit(tabId, {
-            kind: ChatEventKind.TaskProgress,
-            subagentType: message.subagent_type,
-            description: message.description,
-            toolUses: message.usage.tool_uses,
-          });
         } else if (message.subtype === 'api_retry') {
           this.emit(tabId, {
             kind: ChatEventKind.ApiRetry,
@@ -1138,7 +1136,22 @@ export class ClaudeService {
       }
 
       case 'assistant': {
-        if (message.parent_tool_use_id !== null) break; // subagent messages
+        // A subagent's messages carry a parent Task id. By default the SDK sends
+        // only their tool_use blocks (no prose) — normalize and persist them
+        // tagged with the parent id so the renderer nests them under the Task row.
+        if (message.parent_tool_use_id !== null) {
+          const blocks = normalizeAssistantBlocks(
+            message.message.content,
+            message.parent_tool_use_id,
+          );
+          if (blocks.length === 0) break;
+          this.persistAndEmit(session, {
+            id: message.uuid,
+            role: ChatMessageRole.Assistant,
+            blocks,
+          });
+          break;
+        }
         if (message.error) {
           // Only surface errors we have a curated, actionable message for
           // (auth / billing / rate-limit / overloaded). Anything else is opaque
@@ -1153,7 +1166,7 @@ export class ClaudeService {
           }
           break;
         }
-        const blocks = normalizeAssistantBlocks(message.message.content);
+        const blocks = normalizeAssistantBlocks(message.message.content, null);
         if (blocks.length === 0) break;
         this.persistAndEmit(session, { id: message.uuid, role: ChatMessageRole.Assistant, blocks });
         break;
@@ -1161,8 +1174,9 @@ export class ClaudeService {
 
       case 'user': {
         // Only tool results are interesting here — the user's own prompts are
-        // persisted in send(), and replayed history would duplicate them.
-        if (message.parent_tool_use_id !== null) break;
+        // persisted in send(), and replayed history would duplicate them. This
+        // includes subagent tool results (parent_tool_use_id set): they carry
+        // tool_result blocks keyed by their call id, which nest under the Task row.
         const blocks = normalizeToolResultBlocks(message.message.content);
         if (blocks.length === 0) break;
         const id = 'uuid' in message && message.uuid ? String(message.uuid) : randomUUID();
@@ -1238,10 +1252,21 @@ export class ClaudeService {
   }
 
   private makePermissionHandler(session: ClaudeSession): CanUseTool {
-    return (toolName, input, options) =>
-      toolName === ASK_USER_QUESTION_TOOL
-        ? this.handleQuestion(session, input, options.signal)
-        : this.handlePermission(session, toolName, input, options);
+    return (toolName, input, options) => {
+      // AskUserQuestion is a genuine question to the user, not a permission —
+      // always surface it, even in Auto-accept.
+      if (toolName === ASK_USER_QUESTION_TOOL) {
+        return this.handleQuestion(session, input, options.signal);
+      }
+      // Auto-accept: the SDK only truly bypasses when `bypassPermissions` is
+      // paired with `allowDangerouslySkipPermissions` at query() construction,
+      // which we can't set on a live Shift+Tab switch — so honor the mode here
+      // by allowing every tool outright instead of parking a prompt.
+      if (session.permissionMode === PermissionMode.BypassPermissions) {
+        return Promise.resolve({ behavior: 'allow' });
+      }
+      return this.handlePermission(session, toolName, input, options);
+    };
   }
 
   /** Park a normal tool-permission prompt until the user allows/denies it. */

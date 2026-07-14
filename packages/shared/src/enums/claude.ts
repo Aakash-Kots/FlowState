@@ -52,7 +52,6 @@ export enum ChatEventKind {
   // Live per-turn progress signals — all ephemeral, never persisted, cleared
   // when the turn advances or finalizes (mirrors TextDelta / BlockStart).
   ToolProgress = 'tool_progress',
-  TaskProgress = 'task_progress',
   ApiRetry = 'api_retry',
   Error = 'error',
 }

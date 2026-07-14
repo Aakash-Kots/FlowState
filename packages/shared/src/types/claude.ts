@@ -33,7 +33,15 @@ export type ClaudeMessage = {
 export type ChatBlock =
   | { type: ChatBlockType.Text; text: string }
   | { type: ChatBlockType.Thinking; text: string }
-  | { type: ChatBlockType.ToolUse; id: string; name: string; input?: unknown }
+  | {
+      type: ChatBlockType.ToolUse;
+      id: string;
+      name: string;
+      input?: unknown;
+      // Set on a subagent's tool call — the id of the `Task` call that spawned it,
+      // so the renderer nests it under that Task row. Absent for top-level calls.
+      parentToolUseId?: string;
+    }
   | { type: ChatBlockType.ToolResult; toolUseId: string; content: string; isError: boolean };
 
 /**
@@ -173,8 +181,6 @@ export type ChatEvent =
   | { kind: ChatEventKind.SkillsUpdated; skills: SkillOption[] }
   // Live elapsed time for the current top-level tool; ephemeral, not persisted.
   | { kind: ChatEventKind.ToolProgress; toolName: string; elapsedSeconds: number }
-  // Live progress for a running Task subagent; ephemeral, not persisted.
-  | { kind: ChatEventKind.TaskProgress; subagentType?: string; description: string; toolUses: number }
   // The SDK is retrying a transient API failure; ephemeral, not persisted.
   | { kind: ChatEventKind.ApiRetry; attempt: number; maxRetries: number }
   | { kind: ChatEventKind.Error; message: string };

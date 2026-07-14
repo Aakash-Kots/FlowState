@@ -39,9 +39,13 @@ function distinctKinds(blocks: ToolUseBlock[]): { key: string; name: string }[] 
 export function ToolGroup({
   blocks,
   toolResults,
+  childrenByParent,
 }: {
   blocks: ToolUseBlock[];
   toolResults: Map<string, ToolResultBlock>;
+  /** Subagent calls grouped by parent Task id — passed through so a Task row can
+   * render its nested tool calls. Absent for a nested (subagent) group. */
+  childrenByParent?: Map<string, ToolUseBlock[]>;
 }) {
   const streaming = blocks.some((b) => !toolResults.has(b.id));
   const [userOpen, setUserOpen] = useState(false);
@@ -66,9 +70,25 @@ export function ToolGroup({
         </span>
       </CollapsibleTrigger>
       <CollapsibleContent className="ml-2 mt-1.5 space-y-1.5 border-l border-border/60 pl-3">
-        {blocks.map((b) => (
-          <ToolUseRow key={b.id} block={b} result={toolResults.get(b.id)} />
-        ))}
+        {blocks.map((b) => {
+          // A Task call renders its subagent's tool calls as a nested group,
+          // indented under the Task row — same collapse-when-done behavior.
+          const subCalls = childrenByParent?.get(b.id);
+          const row = <ToolUseRow key={b.id} block={b} result={toolResults.get(b.id)} />;
+          if (!subCalls?.length) return row;
+          return (
+            <div key={b.id} className="space-y-1.5">
+              {row}
+              <div className="ml-2 border-l border-border/60 pl-3">
+                <ToolGroup
+                  blocks={subCalls}
+                  toolResults={toolResults}
+                  childrenByParent={childrenByParent}
+                />
+              </div>
+            </div>
+          );
+        })}
       </CollapsibleContent>
     </Collapsible>
   );

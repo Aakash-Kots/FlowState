@@ -65,8 +65,6 @@ type ChatState = {
   activeIndicator: ActivityIndicator | null;
   /** Live elapsed time for the current top-level tool; null when none running. */
   toolProgress: { toolName: string; elapsedSeconds: number } | null;
-  /** Live progress for a running Task subagent; null when none running. */
-  taskProgress: { subagentType?: string; toolUses: number } | null;
   /** Set while the SDK is retrying a transient API failure; null otherwise. */
   apiRetry: { attempt: number; maxRetries: number } | null;
   pendingPermissions: PermissionRequest[];
@@ -97,7 +95,6 @@ const INITIAL: ChatState = {
   streamingText: null,
   activeIndicator: null,
   toolProgress: null,
-  taskProgress: null,
   apiRetry: null,
   pendingPermissions: [],
   pendingQuestions: [],
@@ -116,7 +113,6 @@ const CLEARED_PATCH: Partial<ChatState> = {
   streamingText: null,
   activeIndicator: null,
   toolProgress: null,
-  taskProgress: null,
   apiRetry: null,
   pendingPermissions: [],
   pendingQuestions: [],
@@ -151,7 +147,6 @@ function pushMessage(state: ChatState, entry: ChatEntry): Partial<ChatState> {
     streamingText: null,
     activeIndicator: null,
     toolProgress: null,
-    taskProgress: null,
     apiRetry: null,
   };
 }
@@ -199,7 +194,6 @@ function applyEvent(tabId: string, event: ChatEvent): void {
         activeIndicator: null,
         // Text output means the in-flight step advanced — drop stale progress.
         toolProgress: null,
-        taskProgress: null,
         apiRetry: null,
       }));
       break;
@@ -237,7 +231,6 @@ function applyEvent(tabId: string, event: ChatEvent): void {
               streamingText: null,
               activeIndicator: null,
               toolProgress: null,
-              taskProgress: null,
               apiRetry: null,
             }
           : {}),
@@ -318,12 +311,6 @@ function applyEvent(tabId: string, event: ChatEvent): void {
     case ChatEventKind.ToolProgress:
       set({
         toolProgress: { toolName: event.toolName, elapsedSeconds: event.elapsedSeconds },
-        apiRetry: null,
-      });
-      break;
-    case ChatEventKind.TaskProgress:
-      set({
-        taskProgress: { subagentType: event.subagentType, toolUses: event.toolUses },
         apiRetry: null,
       });
       break;
