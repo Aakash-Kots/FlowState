@@ -1,5 +1,6 @@
-import { join } from 'node:path';
-import { app, BrowserWindow, Menu, type MenuItemConstructorOptions } from 'electron';
+import { extname, join, sep } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { app, BrowserWindow, Menu, net, protocol, type MenuItemConstructorOptions } from 'electron';
 import { createIPCHandler } from 'electron-trpc/main';
 import { DEFAULT_KEYBINDINGS, ShortcutCommand } from '@flowstate/shared';
 import { appRouter } from './router';
@@ -18,6 +19,13 @@ import { closeStore, getWindowBounds, initStore, setWindowBounds } from './store
 // 3000 and passes it through FLOWSTATE_DEV_PORT; fall back to 3000 when the
 // main process is launched on its own.
 const DEV_RENDERER_URL = `http://localhost:${process.env.FLOWSTATE_DEV_PORT ?? '3000'}`;
+
+// Custom scheme the packaged renderer is served from. A real HTTP-like origin
+// (rather than a bare file://) is required so the Next static export's absolute
+// URLs — chunks, RSC route-data, and App-Router client navigations like
+// `/connect` — resolve against the export dir instead of the OS filesystem root.
+const APP_SCHEME = 'app';
+const PROD_RENDERER_URL = `${APP_SCHEME}://bundle/index.html`;
 
 const DEFAULT_BOUNDS = { width: 1440, height: 900 };
 
@@ -134,6 +142,32 @@ function buildAppMenu(): void {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
+/**
+ * Serve the Next.js static export over the custom `app://` scheme so the
+ * renderer runs on a real origin. Maps a request path to a file under the
+ * shipped export dir (`Contents/Resources/renderer/out`, outside the asar).
+ * The export uses `trailingSlash: true`, so routes are directories: `/` and
+ * `/connect/` resolve to their `index.html`; files (`/_next/…`, `*.txt` RSC
+ * payloads) are served as-is. An extensionless path is treated as a directory
+ * too — never rewritten to a sibling `.html`, since serving HTML for an
+ * extensionless main-frame URL crashes a Chromium `standard`-scheme navigation.
+ * `net.fetch` handles MIME + streaming; the containment check blocks traversal
+ * outside `out/`.
+ */
+function registerAppProtocol(): void {
+  const outDir = join(process.resourcesPath, 'renderer/out');
+  protocol.handle(APP_SCHEME, (request) => {
+    const pathname = decodeURIComponent(new URL(request.url).pathname);
+    // A trailing slash or an extensionless path is a route directory → index.html.
+    const rel = pathname.endsWith('/') || !extname(pathname) ? join(pathname, 'index.html') : pathname;
+    const file = join(outDir, rel);
+    if (file !== outDir && !file.startsWith(outDir + sep)) {
+      return new Response('Forbidden', { status: 403 });
+    }
+    return net.fetch(pathToFileURL(file).toString());
+  });
+}
+
 function createWindow(): void {
   const saved = getWindowBounds();
   const win = new BrowserWindow({
@@ -168,17 +202,32 @@ function createWindow(): void {
     void win.loadURL(DEV_RENDERER_URL);
     win.webContents.openDevTools({ mode: 'detach' });
   } else {
-    // Production: load the Next.js static export. It's shipped via electron-
-    // builder `extraFiles` into Contents/Resources/renderer/out (outside the
-    // asar), so resolve from `resourcesPath` rather than `__dirname`, which
-    // lives inside app.asar.
-    void win.loadFile(join(process.resourcesPath, 'renderer/out/index.html'));
+    // Production: load the Next.js static export over the custom `app://` scheme
+    // (registered in `whenReady`) rather than a bare `file://`. The export is
+    // shipped via electron-builder `extraFiles` into Contents/Resources/renderer/
+    // out (outside the asar); the protocol handler resolves paths from there. A
+    // real origin is what lets App-Router routes like `/connect` navigate without
+    // 404ing against the filesystem root.
+    void win.loadURL(PROD_RENDERER_URL);
   }
 }
+
+// Must run before `app.ready`: mark the custom scheme as a standard, secure
+// origin so the renderer is a secure context and can `fetch` its own RSC
+// route-data. Only the packaged build serves from it (dev uses localhost).
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: APP_SCHEME,
+    privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true },
+  },
+]);
 
 void app.whenReady().then(() => {
   // Open the local SQLite store and run migrations before any window opens.
   initStore();
+
+  // Serve the packaged renderer over `app://` before opening the window.
+  if (app.isPackaged) registerAppProtocol();
 
   // No Claude sessions run at boot — clear any tab left mid-turn so its status
   // dot reflects reality rather than a stuck "working" state.
