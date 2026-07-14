@@ -25,6 +25,7 @@ import type {
   PermissionRequest,
   QuestionItem,
   QuestionRequest,
+  SkillOption,
 } from '../types/claude';
 
 export const claudeSessionStateSchema = z.nativeEnum(ClaudeSessionState);
@@ -37,6 +38,13 @@ export const modelOptionSchema: z.ZodType<ModelOption> = z.object({
   description: z.string(),
   supportsEffort: z.boolean(),
   supportedEffortLevels: z.array(reasoningEffortSchema),
+});
+
+export const skillOptionSchema: z.ZodType<SkillOption> = z.object({
+  name: z.string(),
+  description: z.string(),
+  argumentHint: z.string(),
+  aliases: z.array(z.string()).optional(),
 });
 
 export const questionItemSchema: z.ZodType<QuestionItem> = z.object({
@@ -146,12 +154,33 @@ export const chatEventSchema: z.ZodType<ChatEvent> = z.discriminatedUnion('kind'
     permissionMode: z.nativeEnum(PermissionMode),
   }),
   z.object({ kind: z.literal(ChatEventKind.Cwd), cwd: z.string().nullable() }),
+  z.object({ kind: z.literal(ChatEventKind.Cleared) }),
   z.object({ kind: z.literal(ChatEventKind.Title), title: z.string() }),
   z.object({
     kind: z.literal(ChatEventKind.WorktreeName),
     workspaceId: z.string(),
     name: z.string(),
     branch: z.string(),
+  }),
+  z.object({
+    kind: z.literal(ChatEventKind.SkillsUpdated),
+    skills: z.array(skillOptionSchema),
+  }),
+  z.object({
+    kind: z.literal(ChatEventKind.ToolProgress),
+    toolName: z.string(),
+    elapsedSeconds: z.number(),
+  }),
+  z.object({
+    kind: z.literal(ChatEventKind.TaskProgress),
+    subagentType: z.string().optional(),
+    description: z.string(),
+    toolUses: z.number(),
+  }),
+  z.object({
+    kind: z.literal(ChatEventKind.ApiRetry),
+    attempt: z.number(),
+    maxRetries: z.number(),
   }),
   z.object({ kind: z.literal(ChatEventKind.Error), message: z.string() }),
 ]);
@@ -166,4 +195,5 @@ export const chatSnapshotSchema: z.ZodType<ChatSnapshot> = z.object({
   messages: z.array(z.object({ message: chatMessageSchema, createdAt: z.string().datetime() })),
   pendingPermissions: z.array(permissionRequestSchema),
   pendingQuestions: z.array(questionRequestSchema),
+  skills: z.array(skillOptionSchema),
 });

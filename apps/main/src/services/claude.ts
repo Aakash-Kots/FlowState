@@ -31,8 +31,11 @@ import type {
   PermissionMode as SdkPermissionMode,
   PermissionResult,
   Query,
+  SDKControlGetUsageResponse,
   SDKMessage,
+  SDKRateLimitInfo,
   SDKUserMessage,
+  SlashCommand,
 } from '@anthropic-ai/claude-agent-sdk';
 import {
   ChatBlockType,
@@ -56,12 +59,17 @@ import {
   type PermissionRequest,
   type QuestionItem,
   type QuestionRequest,
+  type SkillOption,
   type Tab,
   type TabStateChange,
   type TurnFileChange,
+  type UsageLimits,
+  type UsageModelWindow,
+  type UsageWindowBreakdown,
 } from '@flowstate/shared';
 import {
   appendMessage,
+  deleteTabTranscript,
   getTab,
   getTabTranscript,
   getWorkspace,
@@ -119,6 +127,14 @@ const ASSISTANT_ERROR_TEXT: Record<string, string> = {
   rate_limit: 'Rate limited by the Claude API — wait a moment and try again.',
   overloaded: 'The Claude API is overloaded — try again shortly.',
 };
+
+/**
+ * Re-poll the full subscription-usage snapshot every N finalized turns. The
+ * passive `rate_limit_event` push keeps the session/weekly meters fresh between
+ * polls; this refreshes everything (incl. per-model windows) without hammering
+ * the SDK on every turn.
+ */
+const USAGE_POLL_EVERY_TURNS = 5;
 
 /** Cheap model + limits for the one-shot auto-title summarizer. */
 const TITLE_MODEL = 'claude-haiku-4-5';
@@ -275,6 +291,54 @@ function toModelOption(info: ModelInfo): ModelOption {
 }
 
 /**
+ * Normalize the SDK's `/usage` response into the trimmed `UsageLimits` the widget
+ * renders: 5-hour → session, 7-day (all models) → weekly, the per-model weekly
+ * windows (Fable etc.) → models[], and the local-transcript contribution scan →
+ * breakdown (the hover "where usage is going"). When plan limits don't apply
+ * (API key / third-party), the windows come back null and the widget hides.
+ */
+function toUsageLimits(raw: SDKControlGetUsageResponse): UsageLimits {
+  const limits = raw.rate_limits;
+  const toWindow = (w: { utilization: number | null; resets_at: string | null } | null) =>
+    w ? { utilization: w.utilization, resetsAt: w.resets_at } : null;
+  const models: UsageModelWindow[] = (limits?.model_scoped ?? []).map((m) => ({
+    displayName: m.display_name,
+    utilization: m.utilization,
+    resetsAt: m.resets_at,
+  }));
+
+  const toBreakdown = (
+    w: NonNullable<SDKControlGetUsageResponse['behaviors']>['day'],
+  ): UsageWindowBreakdown => ({
+    requestCount: w.request_count,
+    sessionCount: w.session_count,
+    behaviors: w.behaviors.map((x) => ({ key: x.key, pct: x.pct, count: x.count })),
+    skills: w.skills.map((x) => ({ name: x.name, pct: x.pct })),
+    subagents: w.agents.map((x) => ({ name: x.name, pct: x.pct })),
+    mcpServers: w.mcp_servers.map((x) => ({ name: x.name, pct: x.pct })),
+  });
+  const b = raw.behaviors;
+
+  return {
+    subscriptionType: raw.subscription_type,
+    session: toWindow(limits?.five_hour ?? null),
+    weekly: toWindow(limits?.seven_day ?? null),
+    models,
+    breakdown: b ? { day: toBreakdown(b.day), week: toBreakdown(b.week) } : null,
+  };
+}
+
+/** Map an SDK `SlashCommand` (a skill) to our `SkillOption`. */
+function toSkillOption(cmd: SlashCommand): SkillOption {
+  return {
+    name: cmd.name,
+    description: cmd.description,
+    argumentHint: cmd.argumentHint,
+    ...(cmd.aliases ? { aliases: cmd.aliases } : {}),
+  };
+}
+
+/**
  * Normalize an `AskUserQuestion` tool input into our `QuestionItem[]`. Defensive
  * because the SDK input is untyped here; malformed questions are skipped.
  */
@@ -361,6 +425,12 @@ class ClaudeSession {
   permissionMode: PermissionMode = PermissionMode.Default;
   /** The model the SDK actually ran (from its `init` message; display only). */
   reportedModel: string | null = null;
+  /**
+   * Skills (SDK slash commands) available to this session — captured at init and
+   * replaced wholesale on the SDK's `commands_changed` push. Empty until the
+   * session initializes.
+   */
+  skills: SkillOption[] = [];
   /** Set while an interrupt is in flight so error results read as a clean stop. */
   interrupted = false;
   /** Guards one-shot auto-titling so it runs at most once per tab session. */
@@ -387,6 +457,15 @@ export class ClaudeService {
   // emitter keys on tabId, so it can't broadcast to a subscriber that doesn't
   // yet know which tabs exist — the sidebar/tab-strip status dots need this).
   private readonly stateEvents = new EventEmitter();
+  // App-wide fan-out of subscription-usage snapshots for the header widget
+  // (account-global, not tab-scoped). Emits on each poll and each rate-limit push.
+  private readonly usageEvents = new EventEmitter();
+  /** Last usage snapshot, or null before the first successful poll. */
+  private latestUsageLimits: UsageLimits | null = null;
+  /** Turns since the last full usage poll — see `USAGE_POLL_EVERY_TURNS`. */
+  private turnsSinceUsagePoll = 0;
+  /** Guards the one-shot background session booted purely to fetch usage. */
+  private usageBootStarted = false;
 
   /**
    * Reset stuck states on startup: no sessions run at boot, so a tab persisted
@@ -486,6 +565,35 @@ export class ClaudeService {
   }
 
   /**
+   * Clear a tab's chat — Claude Code's `/clear`. Tears down the live session
+   * (aborting any in-flight turn), wipes the persisted transcript, and forgets
+   * the resume id so the next send() starts a brand-new session. The tab's
+   * model / effort / permission-mode selections are kept (they live on the tab
+   * record and the renderer store, neither of which this touches); the usage
+   * ledger is separate durable accounting and is likewise preserved.
+   */
+  clear(tabId: string): void {
+    const tab = getTab(tabId);
+    // Aborts the in-flight turn, denies any parked prompts, ends the queue, and
+    // drops the session — its abort makes run()'s catch early-return silently.
+    this.disposeSession(tabId);
+    deleteTabTranscript(tabId);
+    if (tab) upsertTab({ ...tab, claudeSessionId: null, claudeState: ClaudeSessionState.Idle });
+    // The authoritative reset for live subscribers, emitted after the session is
+    // gone so it's the last event on the tab's channel (supersedes any events
+    // flushed during the abort).
+    this.emit(tabId, { kind: ChatEventKind.Cleared });
+    // disposeSession emits no state, so fan out Idle directly for the tab-strip /
+    // sidebar status dots (skipping setState avoids a redundant per-tab State event).
+    if (tab)
+      this.stateEvents.emit('change', {
+        tabId,
+        workspaceId: tab.workspaceId,
+        state: ClaudeSessionState.Idle,
+      } satisfies TabStateChange);
+  }
+
+  /**
    * Resolve a pending tool-permission prompt for a tab (allow / deny).
    *
    * `permissionMode`, when set with an `Allow`, is applied right after the
@@ -540,6 +648,37 @@ export class ClaudeService {
     } catch (err) {
       console.warn('[claude] supportedModels failed', err);
       return mergeModelOptions([]);
+    }
+  }
+
+  /**
+   * Skills (SDK slash commands) a tab can invoke — the cache populated at the
+   * session's init and on the SDK's `commands_changed` push. Empty until a
+   * session exists (started by the first `send`); the renderer also gets live
+   * updates via the `SkillsUpdated` ChatEvent.
+   */
+  async getSupportedSkills(tabId: string): Promise<SkillOption[]> {
+    let session = this.sessions.get(tabId);
+    // Boot the session (no prompt) so skills can be discovered before the first
+    // message — the SDK initializes, then `commands_changed`/init populate the
+    // cache and the renderer gets a live SkillsUpdated event. Only worthwhile
+    // once the tab has a folder and Claude is connected.
+    if (!session) {
+      const tab = getTab(tabId);
+      const cwd = tab ? this.getCwd(tab.workspaceId) : null;
+      if (!tab || !cwd || !authService.status().claudeConnected) return [];
+      session = this.ensureSession(tab, cwd);
+    }
+    if (session.skills.length > 0) return session.skills;
+    try {
+      // `query` may still be spinning up (run() awaits the dynamic SDK import);
+      // in that case init's refreshSkills delivers the list via SkillsUpdated.
+      const cmds = await session.query?.supportedCommands();
+      session.skills = (cmds ?? []).map(toSkillOption);
+      return session.skills;
+    } catch (err) {
+      console.warn('[claude] supportedCommands failed', err);
+      return [];
     }
   }
 
@@ -621,6 +760,116 @@ export class ClaudeService {
     return () => this.stateEvents.off('change', cb);
   }
 
+  /**
+   * The latest subscription-usage snapshot for the header widget. Null until the
+   * first poll lands. When nothing is cached yet: poll immediately if a session
+   * is already live, else boot a background session so the widget can populate
+   * before the user opens a chat. Either way the `onUsageLimits` subscriber sees
+   * the result shortly.
+   */
+  getUsageLimits(): UsageLimits | null {
+    if (!this.latestUsageLimits) {
+      if (this.anyLiveQuery()) void this.pollUsageLimits();
+      else this.bootSessionForUsage();
+    }
+    return this.latestUsageLimits;
+  }
+
+  /** Subscribe to usage-snapshot updates; returns an unsubscribe function. */
+  onUsageLimits(cb: (limits: UsageLimits) => void): () => void {
+    this.usageEvents.on('usage', cb);
+    return () => this.usageEvents.off('usage', cb);
+  }
+
+  /**
+   * Poll the SDK's structured `/usage` data from any live session (limits are
+   * account-global, so any session returns the same numbers), cache it, and fan
+   * it out. Best-effort: the SDK method is EXPERIMENTAL, so any throw keeps the
+   * last snapshot rather than surfacing an error.
+   */
+  private async pollUsageLimits(): Promise<void> {
+    const query = this.anyLiveQuery();
+    if (!query) return;
+    try {
+      const raw = await query.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET();
+      this.latestUsageLimits = toUsageLimits(raw);
+      console.log('[claude] usage polled', {
+        subscriptionType: raw.subscription_type,
+        rateLimitsAvailable: raw.rate_limits_available,
+      });
+      this.usageEvents.emit('usage', this.latestUsageLimits);
+    } catch (err) {
+      console.warn('[claude] usage poll failed', err);
+    }
+  }
+
+  /** Any session with a live SDK `query`, or null if none is running. */
+  private anyLiveQuery(): Query | null {
+    for (const session of this.sessions.values()) {
+      if (session.query) return session.query;
+    }
+    return null;
+  }
+
+  /**
+   * When no session is running yet, boot one no-prompt background session so the
+   * usage widget can populate before the user opens a chat. Gated: needs Claude
+   * connected and a tab whose workspace has a worktree folder; runs at most once
+   * per app run. The booted session's `init` message fires `pollUsageLimits()`.
+   */
+  private bootSessionForUsage(): void {
+    if (this.usageBootStarted || this.anyLiveQuery()) return;
+    if (!authService.status().claudeConnected) return;
+    for (const tab of listAllTabs()) {
+      const cwd = this.getCwd(tab.workspaceId);
+      if (!cwd) continue;
+      this.usageBootStarted = true;
+      this.ensureSession(tab, cwd);
+      // Don't rely only on the session's `init` message to fire the first poll —
+      // poll directly once its query is live (the control channel answers before
+      // any prompt, same as `supportedCommands`).
+      void this.pollUsageWhenReady();
+      return;
+    }
+  }
+
+  /**
+   * Poll once a live query appears (a freshly booted session's `query` is set
+   * asynchronously). Polls at most once; gives up quietly after ~10s.
+   */
+  private async pollUsageWhenReady(): Promise<void> {
+    for (let i = 0; i < 20; i++) {
+      if (this.latestUsageLimits) return; // init already polled — done
+      if (this.anyLiveQuery()) {
+        await this.pollUsageLimits();
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  }
+
+  /**
+   * Patch the cached snapshot from a `rate_limit_event` push. Only the two
+   * account-wide windows (5-hour → session, 7-day → weekly) map cleanly; the
+   * push has no Fable-specific key, so per-model windows wait for the next poll.
+   * Skips entirely until a full poll has seeded the snapshot.
+   */
+  private applyRateLimitPush(info: SDKRateLimitInfo): void {
+    const snapshot = this.latestUsageLimits;
+    if (!snapshot || info.utilization === undefined) return;
+    const resetsAt =
+      info.resetsAt === undefined
+        ? null
+        : new Date(info.resetsAt < 1e12 ? info.resetsAt * 1000 : info.resetsAt).toISOString();
+    const window = { utilization: info.utilization, resetsAt };
+    let patched: UsageLimits | null = null;
+    if (info.rateLimitType === 'five_hour') patched = { ...snapshot, session: window };
+    else if (info.rateLimitType === 'seven_day') patched = { ...snapshot, weekly: window };
+    if (!patched) return;
+    this.latestUsageLimits = patched;
+    this.usageEvents.emit('usage', patched);
+  }
+
   /** Hydrate a tab on mount: persisted state, resume id, cwd, and transcript. */
   getSnapshot(tabId: string): ChatSnapshot {
     const tab = getTab(tabId);
@@ -644,7 +893,19 @@ export class ClaudeService {
         ? [...session.pendingPermissions.values()].map((p) => p.request)
         : [],
       pendingQuestions: session ? [...session.pendingQuestions.values()].map((p) => p.request) : [],
+      skills: session?.skills ?? [],
     };
+  }
+
+  /** Fetch and cache the session's skills, then broadcast them to the renderer. */
+  private async refreshSkills(session: ClaudeSession): Promise<void> {
+    try {
+      const cmds = await session.query?.supportedCommands();
+      session.skills = (cmds ?? []).map(toSkillOption);
+      this.emit(session.tabId, { kind: ChatEventKind.SkillsUpdated, skills: session.skills });
+    } catch (err) {
+      console.warn('[claude] supportedCommands failed', err);
+    }
   }
 
   /** Tear down a single tab's session — called when a tab is closed. */
@@ -733,11 +994,20 @@ export class ClaudeService {
           canUseTool: this.makePermissionHandler(session),
           includePartialMessages: true,
           systemPrompt: { type: 'preset', preset: 'claude_code' },
-          settingSources: ['user'],
+          // Load user + project config so the repo's `.claude/skills` and
+          // CLAUDE.md are discovered; `skills: 'all'` makes every discovered
+          // skill available to invoke from the composer's `/` menu.
+          settingSources: ['user', 'project'],
+          skills: 'all',
           abortController: session.abort,
           stderr: (data) => console.warn('[claude:stderr]', data),
         },
       });
+
+      // Fetch the session's skills as soon as the query exists (supportedCommands
+      // resolves once the SDK finishes initializing) so the composer's `/` menu
+      // works before the first prompt — not only after an init message.
+      void this.refreshSkills(session);
 
       for await (const message of session.query) {
         await this.handleSdkMessage(session, message);
@@ -746,12 +1016,11 @@ export class ClaudeService {
     } catch (err) {
       if (!this.sessions.has(tabId)) return; // torn down deliberately
       const text = err instanceof Error ? err.message : String(err);
+      // A raw stream crash carries nothing the user can act on — log it for
+      // debugging and reset the tab quietly to Idle (no banner, no red pill).
+      // The next send() starts a fresh session and resumes the transcript.
       console.error('[claude] session crashed:', text);
-      this.emit(tabId, {
-        kind: ChatEventKind.Error,
-        message: `Claude session error: ${text}`,
-      });
-      this.setState(tabId, ClaudeSessionState.Error);
+      this.setState(tabId, ClaudeSessionState.Idle);
       // Drop the broken session; the next send() starts fresh and resumes.
       this.sessions.delete(tabId);
       this.resolveAllPermissions(session, {
@@ -778,6 +1047,12 @@ export class ClaudeService {
             model: message.model,
             cwd: message.cwd,
           });
+          // Populate the usage widget as soon as a session opens (before turn 5).
+          void this.pollUsageLimits();
+        } else if (message.subtype === 'commands_changed') {
+          // The SDK discovered/dropped skills mid-session — replace the cache.
+          session.skills = (message.commands as SlashCommand[]).map(toSkillOption);
+          this.emit(tabId, { kind: ChatEventKind.SkillsUpdated, skills: session.skills });
         } else if (message.subtype === 'session_state_changed') {
           const state: ClaudeSessionState =
             message.state === 'requires_action'
@@ -786,7 +1061,30 @@ export class ClaudeService {
                 ? ClaudeSessionState.Running
                 : ClaudeSessionState.Idle;
           this.setState(tabId, state);
+        } else if (message.subtype === 'task_progress') {
+          this.emit(tabId, {
+            kind: ChatEventKind.TaskProgress,
+            subagentType: message.subagent_type,
+            description: message.description,
+            toolUses: message.usage.tool_uses,
+          });
+        } else if (message.subtype === 'api_retry') {
+          this.emit(tabId, {
+            kind: ChatEventKind.ApiRetry,
+            attempt: message.attempt,
+            maxRetries: message.max_retries,
+          });
         }
+        break;
+      }
+
+      case 'tool_progress': {
+        if (message.parent_tool_use_id !== null) break; // subagent-internal tool
+        this.emit(tabId, {
+          kind: ChatEventKind.ToolProgress,
+          toolName: message.tool_name,
+          elapsedSeconds: message.elapsed_time_seconds,
+        });
         break;
       }
 
@@ -813,12 +1111,17 @@ export class ClaudeService {
       case 'assistant': {
         if (message.parent_tool_use_id !== null) break; // subagent messages
         if (message.error) {
-          this.emit(tabId, {
-            kind: ChatEventKind.Error,
-            message:
-              ASSISTANT_ERROR_TEXT[message.error] ?? `Claude returned an error: ${message.error}`,
-          });
-          this.setState(tabId, ClaudeSessionState.Error);
+          // Only surface errors we have a curated, actionable message for
+          // (auth / billing / rate-limit / overloaded). Anything else is opaque
+          // to the user — log it and reset quietly rather than alarm them.
+          const curated = ASSISTANT_ERROR_TEXT[message.error];
+          if (curated) {
+            this.emit(tabId, { kind: ChatEventKind.Error, message: curated });
+            this.setState(tabId, ClaudeSessionState.Error);
+          } else {
+            console.warn('[claude] assistant error', message.error);
+            this.setState(tabId, ClaudeSessionState.Idle);
+          }
           break;
         }
         const blocks = normalizeAssistantBlocks(message.message.content);
@@ -840,15 +1143,12 @@ export class ClaudeService {
 
       case 'result': {
         const isError = message.subtype !== 'success' && !session.interrupted;
-        const blocks: ChatBlock[] =
-          message.subtype === 'success' || session.interrupted
-            ? []
-            : [
-                {
-                  type: ChatBlockType.Text,
-                  text: message.errors.join('\n') || `Run failed: ${message.subtype}`,
-                },
-              ];
+        // A failed run's error text is internal and unactionable — keep it out of
+        // the transcript (the footer still shows timing/turns/file-changes) and
+        // log it for debugging instead. The usage ledger below still records the
+        // failure via `isError`.
+        if (isError) console.warn('[claude] run failed', message.subtype, message.errors);
+        const blocks: ChatBlock[] = [];
         const fileChanges = await this.turnFileChanges(session);
         // Record the turn's API-equivalent cost + token usage in the durable
         // ledger (for the spend/savings analyser). Token counts live only here,
@@ -884,8 +1184,22 @@ export class ClaudeService {
         });
         session.interrupted = false;
         this.setState(tabId, ClaudeSessionState.Idle);
+        // Re-poll the full usage snapshot every Nth finalized turn (the passive
+        // rate_limit_event push keeps meters fresh in between).
+        if (++this.turnsSinceUsagePoll >= USAGE_POLL_EVERY_TURNS) {
+          this.turnsSinceUsagePoll = 0;
+          void this.pollUsageLimits();
+        }
         // Auto-title the tab from its opening exchange (fire-and-forget, once).
         if (message.subtype === 'success') void this.maybeGenerateTitle(session);
+        break;
+      }
+
+      case 'rate_limit_event': {
+        // A cheap live nudge between full polls: patch the matching window's
+        // utilization/reset in place. Per-model (Fable) windows aren't keyed here
+        // — those refresh on the next full poll.
+        this.applyRateLimitPush(message.rate_limit_info);
         break;
       }
 

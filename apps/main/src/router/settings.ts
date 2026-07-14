@@ -3,9 +3,13 @@ import { ArchiveRetention, CodeTheme } from '@flowstate/shared';
 import {
   getArchiveRetention,
   getCodeTheme,
+  getSkillsPanelOpen,
+  getSkillsPanelWidth,
   getSoundEnabled,
   setArchiveRetention,
   setCodeTheme,
+  setSkillsPanelOpen,
+  setSkillsPanelWidth,
   setSoundEnabled,
 } from '../store/settings';
 import { publicProcedure, router } from '../trpc';
@@ -21,6 +25,8 @@ export const settingsRouter = router({
     soundEnabled: getSoundEnabled(),
     codeTheme: getCodeTheme(),
     archiveRetention: getArchiveRetention(),
+    skillsPanelWidth: getSkillsPanelWidth(),
+    skillsPanelOpen: getSkillsPanelOpen(),
   })),
 
   setSoundEnabled: publicProcedure
@@ -39,5 +45,17 @@ export const settingsRouter = router({
     .input(z.object({ retention: z.nativeEnum(ArchiveRetention) }))
     .mutation(({ input }) => {
       setArchiveRetention(input.retention);
+    }),
+
+  setSkillsPanelWidth: publicProcedure
+    .input(z.object({ width: z.number() }))
+    .mutation(({ input }) => {
+      setSkillsPanelWidth(input.width);
+    }),
+
+  setSkillsPanelOpen: publicProcedure
+    .input(z.object({ open: z.boolean() }))
+    .mutation(({ input }) => {
+      setSkillsPanelOpen(input.open);
     }),
 });

@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { ChatBlockType, ChatMessageRole, type ChatMessage } from '@flowstate/shared';
 import type { ToolResultBlock } from '@/lib/types/chat';
 import { formatDuration } from '@/lib/format';
-import { cn } from '../ui/cn';
 import { Markdown } from './Markdown';
 import { ToolUseRow } from './ToolUseRow';
 import { TurnSummary } from './TurnSummary';
@@ -61,15 +60,10 @@ export function MessageBubble({
 
   if (message.role === ChatMessageRole.Result) {
     const meta = message.meta;
-    const errorText = message.blocks
-      .map((b) => (b.type === ChatBlockType.Text ? b.text : ''))
-      .join('')
-      .trim();
+    // A failed run's error text is suppressed upstream; the footer stays muted
+    // and shows only the useful summary (timing · turns · changed files).
     return (
-      <div className={cn('text-xs', meta?.isError ? 'text-danger' : 'text-muted-foreground')}>
-        {meta?.isError && errorText ? (
-          <p className="mb-1 whitespace-pre-wrap">{errorText}</p>
-        ) : null}
+      <div className="text-xs text-muted-foreground">
         <span>
           {meta?.durationMs != null ? formatDuration(meta.durationMs) : null}
           {meta?.durationMs != null && meta?.numTurns != null ? ' · ' : null}

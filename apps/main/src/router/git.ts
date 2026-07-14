@@ -131,6 +131,16 @@ export const gitRouter = router({
     }
   }),
 
+  /** Merge the open PR for this worktree's branch into its base. */
+  mergePr: publicProcedure.input(gitWorkspaceInputSchema).mutation(async ({ input }) => {
+    const ws = requireWorkspace(input.workspaceId);
+    try {
+      await githubService.mergePullRequest(ws.worktreePath, ws.branch);
+    } catch (err) {
+      throw remoteError(err);
+    }
+  }),
+
   /** Push the branch (if needed) and open a PR against the worktree's base branch. */
   createPr: publicProcedure
     .input(createPrInputSchema)

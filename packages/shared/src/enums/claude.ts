@@ -41,8 +41,19 @@ export enum ChatEventKind {
   QuestionResolved = 'question_resolved',
   Config = 'config',
   Cwd = 'cwd',
+  // The tab's transcript + session were reset (the `/clear` action) — the
+  // renderer empties its message store back to a fresh conversation.
+  Cleared = 'cleared',
   Title = 'title',
   WorktreeName = 'worktree_name',
+  // The session's available skills (SDK slash commands) changed — replaces the
+  // renderer's cached list. Fired at init and on the SDK's mid-session push.
+  SkillsUpdated = 'skills_updated',
+  // Live per-turn progress signals — all ephemeral, never persisted, cleared
+  // when the turn advances or finalizes (mirrors TextDelta / BlockStart).
+  ToolProgress = 'tool_progress',
+  TaskProgress = 'task_progress',
+  ApiRetry = 'api_retry',
   Error = 'error',
 }
 

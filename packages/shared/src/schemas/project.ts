@@ -8,9 +8,15 @@ import { z } from 'zod';
 import type {
   AddProjectInput,
   GithubRepo,
+  GithubViewer,
   Project,
   UpdateProjectScriptsInput,
 } from '../types/project';
+
+export const githubViewerSchema: z.ZodType<GithubViewer> = z.object({
+  login: z.string(),
+  avatarUrl: z.string(),
+});
 
 export const githubRepoSchema: z.ZodType<GithubRepo> = z.object({
   owner: z.string(),

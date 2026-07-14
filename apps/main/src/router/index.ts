@@ -4,11 +4,13 @@ import { claudeRouter } from './claude';
 import { gitRouter } from './git';
 import { linearRouter } from './linear';
 import { onboardingRouter } from './onboarding';
+import { pinsRouter } from './pins';
 import { projectsRouter } from './projects';
 import { settingsRouter } from './settings';
 import { shortcutsRouter } from './shortcuts';
 import { tabsRouter } from './tabs';
 import { terminalRouter } from './terminal';
+import { usageRouter } from './usage';
 import { worktreeRouter } from './worktree';
 
 export const appRouter = router({
@@ -19,10 +21,12 @@ export const appRouter = router({
   terminal: terminalRouter,
   onboarding: onboardingRouter,
   projects: projectsRouter,
+  pins: pinsRouter,
   claude: claudeRouter,
   linear: linearRouter,
   shortcuts: shortcutsRouter,
   settings: settingsRouter,
+  usage: usageRouter,
 });
 
 /** Exported for the renderer's typed tRPC client (type-only import). */

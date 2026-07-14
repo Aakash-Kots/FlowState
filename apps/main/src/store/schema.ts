@@ -151,6 +151,28 @@ export const projects = sqliteTable('projects', {
   createdAt: text('created_at').notNull(),
 });
 
+// A pinned shortcut in a worktree's Skills & Actions panel. Exactly one scope FK
+// is set: `project_id` (repo-scope, shown for every worktree of the repo) or
+// `workspace_id` (worktree-scope). Both cascade-delete with their parent. `ref`
+// is the skill name (no leading slash) or a built-in action id.
+export const pinnedSkills = sqliteTable(
+  'pinned_skills',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id').references(() => projects.id, { onDelete: 'cascade' }),
+    workspaceId: text('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(), // PinnedItemKind: 'skill' | 'action'
+    ref: text('ref').notNull(),
+    label: text('label').notNull(),
+    position: integer('position').notNull(),
+    createdAt: text('created_at').notNull(),
+  },
+  (t) => [
+    index('idx_pinned_skills_project').on(t.projectId),
+    index('idx_pinned_skills_workspace').on(t.workspaceId),
+  ],
+);
+
 export const settings = sqliteTable('settings', {
   key: text('key').primaryKey(),
   value: text('value').notNull(), // JSON

@@ -34,6 +34,9 @@ export function ChatView() {
   const messages = useChat((s) => s.messages);
   const streamingText = useChat((s) => s.streamingText);
   const activeIndicator = useChat((s) => s.activeIndicator);
+  const toolProgress = useChat((s) => s.toolProgress);
+  const taskProgress = useChat((s) => s.taskProgress);
+  const apiRetry = useChat((s) => s.apiRetry);
   const pendingCount = useChat((s) => s.pendingPermissions.length + s.pendingQuestions.length);
   const sessionState = useChat((s) => s.sessionState);
   const runStartedAt = useChat((s) => s.runStartedAt);
@@ -65,9 +68,28 @@ export function ChatView() {
   useEffect(() => {
     const el = scrollRef.current;
     if (el && pinnedToBottom.current) el.scrollTop = el.scrollHeight;
-  }, [messages, streamingText, activeIndicator, pendingCount]);
+  }, [messages, streamingText, activeIndicator, pendingCount, toolProgress, taskProgress, apiRetry]);
 
   const showWorking = sessionState === ClaudeSessionState.Running && !streamingText;
+
+  // Live progress ladder: a retry beats subagent progress beats tool progress,
+  // falling back to the generic thinking/tool/working label. `showElapsed`
+  // appends the turn timer except where the label already carries its own time.
+  const progress: { text: string; warn: boolean; showElapsed: boolean } | null = apiRetry
+    ? { text: `Retrying… ${apiRetry.attempt}/${apiRetry.maxRetries}`, warn: true, showElapsed: false }
+    : taskProgress
+      ? {
+          text: `Subagent${taskProgress.subagentType ? ` (${taskProgress.subagentType})` : ''}: ${taskProgress.toolUses} tools`,
+          warn: false,
+          showElapsed: true,
+        }
+      : toolProgress
+        ? {
+            text: `Running ${toolProgress.toolName}… · ${toolProgress.elapsedSeconds}s`,
+            warn: false,
+            showElapsed: false,
+          }
+        : null;
 
   return (
     <div
@@ -102,15 +124,19 @@ export function ChatView() {
 
         {streamingText && <Markdown>{streamingText}</Markdown>}
 
-        {(showWorking || activeIndicator) && (
+        {(showWorking || activeIndicator || progress) && (
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-warn" />
-            {activeIndicator === ActivityIndicator.Thinking
-              ? 'Thinking…'
-              : activeIndicator === ActivityIndicator.Tool
-                ? 'Running a tool…'
-                : 'Working…'}
-            {elapsed != null && (
+            {progress ? (
+              <span className={progress.warn ? 'text-warn' : undefined}>{progress.text}</span>
+            ) : activeIndicator === ActivityIndicator.Thinking ? (
+              'Thinking…'
+            ) : activeIndicator === ActivityIndicator.Tool ? (
+              'Running a tool…'
+            ) : (
+              'Working…'
+            )}
+            {(!progress || progress.showElapsed) && elapsed != null && (
               <span className="tabular-nums text-muted-foreground/70">
                 · {formatDuration(elapsed)}
               </span>

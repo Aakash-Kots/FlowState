@@ -17,6 +17,7 @@ import {
   type ModelOption,
   type PermissionRequest,
   type QuestionRequest,
+  type SkillOption,
 } from '@flowstate/shared';
 import { ActivityIndicator } from './enums/chat';
 import { WorkspaceView } from './enums/view';
@@ -51,11 +52,23 @@ type ChatState = {
   permissionMode: PermissionMode;
   /** Models offered by the picker (loaded lazily from the main process). */
   availableModels: ModelOption[];
+  /** Skills the session can run — feeds the composer's `/` menu and the pin picker. */
+  skills: SkillOption[];
+  /** True once the session has reported its skills at least once (even if empty). */
+  skillsLoaded: boolean;
+  /** True while the first skills fetch is in flight (the session is booting up). */
+  skillsLoading: boolean;
   messages: ChatEntry[];
   /** In-flight assistant text for the current turn (replaced by the final message). */
   streamingText: string | null;
   /** What the agent is doing between text, for the activity indicator. */
   activeIndicator: ActivityIndicator | null;
+  /** Live elapsed time for the current top-level tool; null when none running. */
+  toolProgress: { toolName: string; elapsedSeconds: number } | null;
+  /** Live progress for a running Task subagent; null when none running. */
+  taskProgress: { subagentType?: string; toolUses: number } | null;
+  /** Set while the SDK is retrying a transient API failure; null otherwise. */
+  apiRetry: { attempt: number; maxRetries: number } | null;
   pendingPermissions: PermissionRequest[];
   pendingQuestions: QuestionRequest[];
   error: string | null;
@@ -77,9 +90,34 @@ const INITIAL: ChatState = {
   // Seed with the curated models so the picker always shows them immediately,
   // even before (or independent of) the live SDK fetch.
   availableModels: CURATED_MODELS,
+  skills: [],
+  skillsLoaded: false,
+  skillsLoading: false,
   messages: [],
   streamingText: null,
   activeIndicator: null,
+  toolProgress: null,
+  taskProgress: null,
+  apiRetry: null,
+  pendingPermissions: [],
+  pendingQuestions: [],
+  error: null,
+};
+
+// The reset applied when a tab's chat is cleared — empties the conversation and
+// any in-flight/turn state while omitting (thus preserving) the tab's model /
+// effort / permission-mode selections, its folder, and its loaded skills. Shared
+// by the optimistic `clearChat` action and the authoritative `Cleared` reducer.
+const CLEARED_PATCH: Partial<ChatState> = {
+  messages: [],
+  sessionId: null,
+  sessionState: ClaudeSessionState.Idle,
+  runStartedAt: null,
+  streamingText: null,
+  activeIndicator: null,
+  toolProgress: null,
+  taskProgress: null,
+  apiRetry: null,
   pendingPermissions: [],
   pendingQuestions: [],
   error: null,
@@ -112,6 +150,9 @@ function pushMessage(state: ChatState, entry: ChatEntry): Partial<ChatState> {
     messages: [...state.messages, entry],
     streamingText: null,
     activeIndicator: null,
+    toolProgress: null,
+    taskProgress: null,
+    apiRetry: null,
   };
 }
 
@@ -153,7 +194,14 @@ function applyEvent(tabId: string, event: ChatEvent): void {
       set({ sessionId: event.sessionId, model: event.model, cwd: event.cwd });
       break;
     case ChatEventKind.TextDelta:
-      set((s) => ({ streamingText: (s.streamingText ?? '') + event.text, activeIndicator: null }));
+      set((s) => ({
+        streamingText: (s.streamingText ?? '') + event.text,
+        activeIndicator: null,
+        // Text output means the in-flight step advanced — drop stale progress.
+        toolProgress: null,
+        taskProgress: null,
+        apiRetry: null,
+      }));
       break;
     case ChatEventKind.BlockStart:
       set({
@@ -185,7 +233,13 @@ function applyEvent(tabId: string, event: ChatEvent): void {
           : {}),
         // A finished or failed turn has nothing in flight anymore.
         ...(event.state === ClaudeSessionState.Idle || event.state === ClaudeSessionState.Error
-          ? { streamingText: null, activeIndicator: null }
+          ? {
+              streamingText: null,
+              activeIndicator: null,
+              toolProgress: null,
+              taskProgress: null,
+              apiRetry: null,
+            }
           : {}),
         ...(event.state !== ClaudeSessionState.Error ? { error: null } : {}),
         ...(event.state === ClaudeSessionState.Idle
@@ -232,6 +286,10 @@ function applyEvent(tabId: string, event: ChatEvent): void {
       // (which is what a restart would show anyway).
       set({ cwd: event.cwd, sessionId: null, streamingText: null, activeIndicator: null });
       break;
+    case ChatEventKind.Cleared:
+      // Transcript wiped + session reset in the main process — mirror it here.
+      set(CLEARED_PATCH);
+      break;
     case ChatEventKind.Title:
       // Tab titles live in the workspace store, not the per-tab chat store.
       useWorkspace.setState((s) => ({
@@ -251,6 +309,26 @@ function applyEvent(tabId: string, event: ChatEvent): void {
           ]),
         ),
       }));
+      break;
+    case ChatEventKind.SkillsUpdated:
+      // Replace the cached list wholesale — the SDK sends the full set. This is
+      // the authoritative "skills are ready" signal (fires even for an empty set).
+      set({ skills: event.skills, skillsLoaded: true, skillsLoading: false });
+      break;
+    case ChatEventKind.ToolProgress:
+      set({
+        toolProgress: { toolName: event.toolName, elapsedSeconds: event.elapsedSeconds },
+        apiRetry: null,
+      });
+      break;
+    case ChatEventKind.TaskProgress:
+      set({
+        taskProgress: { subagentType: event.subagentType, toolUses: event.toolUses },
+        apiRetry: null,
+      });
+      break;
+    case ChatEventKind.ApiRetry:
+      set({ apiRetry: { attempt: event.attempt, maxRetries: event.maxRetries } });
       break;
     case ChatEventKind.Error:
       set({ error: event.message, streamingText: null, activeIndicator: null });
@@ -322,6 +400,9 @@ export function useChatSync(tabId: string): void {
           messages: snapshot.messages,
           pendingPermissions: snapshot.pendingPermissions,
           pendingQuestions: snapshot.pendingQuestions,
+          skills: snapshot.skills,
+          // A running session already reported its skills; a fresh tab hasn't.
+          skillsLoaded: snapshot.skills.length > 0,
         });
         seeded = true;
         for (const event of buffer) applyEvent(tabId, event);
@@ -353,6 +434,17 @@ export function interruptSession(tabId: string): void {
   void trpc().claude.interrupt.mutate({ tabId });
 }
 
+/**
+ * Clear a tab's chat (Claude Code's `/clear`): wipe the conversation and start a
+ * fresh session. Resets the store optimistically for instant feedback; the main
+ * process wipes the transcript + session and echoes back a `Cleared` event that
+ * reconciles authoritatively.
+ */
+export function clearChat(tabId: string): void {
+  storeFor(tabId).setState(CLEARED_PATCH);
+  void trpc().claude.clear.mutate({ tabId });
+}
+
 // Focus bus — lets a keyboard shortcut focus the active tab's composer without
 // threading a ref through the component tree. Only the active tab's InputBar is
 // mounted, so a bare window event reaches exactly the right textarea.
@@ -369,6 +461,30 @@ export function useFocusInput(handler: () => void): void {
   useEffect(() => {
     window.addEventListener(FOCUS_INPUT_EVENT, handler);
     return () => window.removeEventListener(FOCUS_INPUT_EVENT, handler);
+  }, [handler]);
+}
+
+// Prefill bus — lets the Skills & Actions panel drop text (a `/skill ` invocation
+// or an action's prompt) into the active tab's composer without a shared ref.
+// Like the focus bus, only the active tab's InputBar is mounted, so a bare window
+// event reaches exactly the right textarea; the composer replaces its content,
+// focuses, and puts the cursor at the end so the user can add arguments.
+
+const PREFILL_COMPOSER_EVENT = 'flowstate:prefill-composer';
+
+/** Replace the mounted composer's text with `text` and focus it. */
+export function prefillComposer(text: string): void {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent<string>(PREFILL_COMPOSER_EVENT, { detail: text }));
+  }
+}
+
+/** Run `handler` with the prefill text whenever `prefillComposer()` is called. */
+export function usePrefillComposer(handler: (text: string) => void): void {
+  useEffect(() => {
+    const listener = (e: Event) => handler((e as CustomEvent<string>).detail);
+    window.addEventListener(PREFILL_COMPOSER_EVENT, listener);
+    return () => window.removeEventListener(PREFILL_COMPOSER_EVENT, listener);
   }, [handler]);
 }
 
@@ -408,6 +524,35 @@ export function loadSupportedModels(tabId: string): void {
     .claude.supportedModels.query({ tabId })
     .then((models) => storeFor(tabId).setState({ availableModels: mergeModelOptions(models) }))
     .catch(() => {});
+}
+
+/**
+ * Load the skill list for a tab (the composer's `/` menu + the pin picker). The
+ * first call boots the session, so skills can take a moment to arrive: this sets
+ * `skillsLoading` for the menu's loading state and either finishes here (if the
+ * session was already up) or lets the `SkillsUpdated` event finish it. A timeout
+ * clears the spinner if the session never reports (e.g. an SDK error). No-op once
+ * skills have loaded or a load is already in flight.
+ */
+export function loadSupportedSkills(tabId: string): void {
+  const store = storeFor(tabId);
+  const { skillsLoaded, skillsLoading } = store.getState();
+  if (skillsLoaded || skillsLoading) return;
+  store.setState({ skillsLoading: true });
+  const timeout = setTimeout(() => store.setState({ skillsLoading: false }), 8000);
+  void trpc()
+    .claude.listSkills.query({ tabId })
+    .then((skills) => {
+      if (skills.length > 0) {
+        clearTimeout(timeout);
+        store.setState({ skills, skillsLoaded: true, skillsLoading: false });
+      }
+      // Otherwise the session is still booting — SkillsUpdated clears the spinner.
+    })
+    .catch(() => {
+      clearTimeout(timeout);
+      store.setState({ skillsLoading: false });
+    });
 }
 
 /** Change a tab's model (optimistic: store updates, main confirms via Config). */

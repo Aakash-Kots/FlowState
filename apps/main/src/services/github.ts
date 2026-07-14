@@ -13,7 +13,13 @@ import { mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
 import { promisify } from 'node:util';
-import type { AddProjectInput, CreatePrResult, GithubRepo, PrStatus } from '@flowstate/shared';
+import type {
+  AddProjectInput,
+  CreatePrResult,
+  GithubRepo,
+  GithubViewer,
+  PrStatus,
+} from '@flowstate/shared';
 import { PrChecks, PrState } from '@flowstate/shared';
 import { SecretName } from '../lib/enums/secret';
 import { getSecret } from '../store/secrets';
@@ -143,6 +149,17 @@ export class GithubService {
       throw new Error('No linked GitHub account. Connect GitHub from the Connect screen first.');
     }
     return token;
+  }
+
+  /** The linked account's own login + profile avatar (drives the sidebar fallback). */
+  async viewer(): Promise<GithubViewer> {
+    const token = await this.token();
+    const res = await fetch(`${GITHUB_API}/user`, { headers: this.apiHeaders(token) });
+    if (!res.ok) {
+      throw new Error(`GitHub API error (${res.status}): failed to read the linked account.`);
+    }
+    const user = (await res.json()) as { login: string; avatar_url: string };
+    return { login: user.login, avatarUrl: user.avatar_url };
   }
 
   /** Repositories the linked account can access, most-recently-updated first. */
@@ -311,6 +328,35 @@ export class GithubService {
       detail
         ? `Couldn't open the pull request: ${detail}.`
         : `Couldn't open the pull request (GitHub API error ${res.status}).`,
+    );
+  }
+
+  /**
+   * Merge the open PR for `branch` into its base. Looks the PR up by head branch,
+   * then asks GitHub to merge it; surfaces GitHub's reason (not mergeable, checks
+   * required, etc.) rather than a bare status code. Throws when the branch has no
+   * open PR.
+   */
+  async mergePullRequest(worktreePath: string, branch: string): Promise<void> {
+    const token = await this.token();
+    const { owner, fullName } = await this.githubOrigin(worktreePath);
+    const existing = await this.findOpenPr(fullName, owner, branch, token);
+    if (!existing) {
+      throw new Error('No open pull request to merge for this branch.');
+    }
+
+    const res = await fetch(`${GITHUB_API}/repos/${fullName}/pulls/${existing.number}/merge`, {
+      method: 'PUT',
+      headers: this.apiHeaders(token),
+      body: JSON.stringify({}),
+    });
+    if (res.ok) return;
+
+    const detail = await githubErrorDetail(res);
+    throw new Error(
+      detail
+        ? `Couldn't merge the pull request: ${detail}.`
+        : `Couldn't merge the pull request (GitHub API error ${res.status}).`,
     );
   }
 

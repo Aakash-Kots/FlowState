@@ -47,17 +47,35 @@ export const useWorkspace = create<WorkspaceState>(() => INITIAL);
 
 let started = false;
 
+/**
+ * Persist the worktree + chat tab now in view so the next reload can reopen it.
+ * The default workspace is the "no project selected" state (the picker), so it is
+ * never remembered. Fire-and-forget — losing a write only costs a restore.
+ */
+function rememberActive(workspaceId: string, tabId: string | null): void {
+  if (workspaceId === DEFAULT_WORKSPACE_ID) return;
+  void trpc().worktree.rememberActive.mutate({ workspaceId, tabId });
+}
+
 // Sync + actions
 
 /**
- * Load the workspace's tabs (seeding a default one) and working folder once for
- * the app's lifetime, then focus the first tab.
+ * Reopen the last-active worktree + chat tab on launch; if none survives, load
+ * the default workspace so the project picker shows. Runs once for the app's
+ * lifetime.
  */
 export function useWorkspaceSync(): void {
   useEffect(() => {
     if (started) return;
     started = true;
     void (async () => {
+      const target = await trpc().worktree.lastActive.query();
+      if (target) {
+        await selectWorkspace(target.workspaceId);
+        // Restore the exact chat that was focused (else selectWorkspace's tab 0).
+        if (target.tabId) selectTab(target.tabId);
+        return;
+      }
       const [tabs, cwd] = await Promise.all([
         trpc().tabs.list.query({ workspaceId: DEFAULT_WORKSPACE_ID }),
         trpc().claude.cwd.query({ workspaceId: DEFAULT_WORKSPACE_ID }),
@@ -96,6 +114,7 @@ export async function selectWorkspace(workspaceId: string): Promise<void> {
     });
     // Landing on a worktree counts as opening its focused tab.
     if (tabs[0]) markTabRead(tabs[0].id);
+    rememberActive(workspaceId, tabs[0]?.id ?? null);
   } catch {
     useWorkspace.setState({ hydrated: true });
   }
@@ -104,6 +123,7 @@ export async function selectWorkspace(workspaceId: string): Promise<void> {
 export function selectTab(tabId: string): void {
   useWorkspace.setState({ activeTabId: tabId });
   markTabRead(tabId);
+  rememberActive(useWorkspace.getState().workspaceId, tabId);
 }
 
 /** Switch the worktree's top-level surface (chat tabs ↔ terminals). */

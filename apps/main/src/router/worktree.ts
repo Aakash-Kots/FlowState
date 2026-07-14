@@ -15,6 +15,7 @@ import {
   TerminalKind,
   UNTITLED_WORKSPACE_NAME,
   createWorktreeInputSchema,
+  type RecentWorkspaceEntry,
   type Tab,
   type Workspace,
 } from '@flowstate/shared';
@@ -23,10 +24,13 @@ import {
   archiveWorkspace,
   ensureDefaults,
   getProject,
+  getRecentWorkspaces,
+  getTab,
   getWorkspace,
   listTabs,
   listTerminalTabs,
   listWorkspacesByProject,
+  rememberRecentWorkspace,
   upsertTab,
   upsertWorkspace,
 } from '../store';
@@ -47,6 +51,29 @@ export const worktreeRouter = router({
   list: publicProcedure
     .input(z.object({ projectId: z.string() }))
     .query(({ input }) => listWorkspacesByProject(input.projectId)),
+
+  /**
+   * The worktree + chat tab to reopen on reload: the first "recently active"
+   * entry whose worktree still exists and isn't archived. A tab that has since
+   * been closed is dropped to null so the client falls back to the first tab.
+   * Returns null when no remembered worktree survives → the app shows the picker.
+   */
+  lastActive: publicProcedure.query((): RecentWorkspaceEntry | null => {
+    for (const entry of getRecentWorkspaces()) {
+      const ws = getWorkspace(entry.workspaceId);
+      if (!ws || ws.archivedAt) continue;
+      const tabId = entry.tabId && getTab(entry.tabId) ? entry.tabId : null;
+      return { workspaceId: entry.workspaceId, tabId };
+    }
+    return null;
+  }),
+
+  /** Record the worktree + chat tab now in view so reload can restore it. */
+  rememberActive: publicProcedure
+    .input(z.object({ workspaceId: z.string(), tabId: z.string().nullable() }))
+    .mutation(({ input }) => {
+      rememberRecentWorkspace({ workspaceId: input.workspaceId, tabId: input.tabId });
+    }),
 
   /** A project's local branch names — the base-ref choices for a new worktree. */
   listBranches: publicProcedure

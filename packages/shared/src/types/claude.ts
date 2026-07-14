@@ -95,6 +95,19 @@ export type ModelOption = {
   supportedEffortLevels: ReasoningEffort[];
 };
 
+/**
+ * A skill the current session can run, mirroring the Agent SDK's `SlashCommand`
+ * (skills are surfaced to hosts as slash commands). Invoking a skill is just
+ * sending `/<name> <args>` as a prompt. `argumentHint` (e.g. `<file>`) is empty
+ * when the skill takes no arguments.
+ */
+export type SkillOption = {
+  name: string;
+  description: string;
+  argumentHint: string;
+  aliases?: string[];
+};
+
 /** One selectable choice within a question. */
 export type QuestionOption = {
   label: string;
@@ -148,11 +161,22 @@ export type ChatEvent =
       permissionMode: PermissionMode;
     }
   | { kind: ChatEventKind.Cwd; cwd: string | null }
+  // The tab was cleared — transcript wiped and session reset; the renderer
+  // empties its store (keeps model/effort/permission-mode + folder config).
+  | { kind: ChatEventKind.Cleared }
   // An auto-generated tab title derived from the conversation's first exchange.
   | { kind: ChatEventKind.Title; title: string }
   // An auto-generated worktree/workspace name (and its renamed branch) derived
   // from the first exchange.
   | { kind: ChatEventKind.WorktreeName; workspaceId: string; name: string; branch: string }
+  // The session's available skills changed — replaces the cached list wholesale.
+  | { kind: ChatEventKind.SkillsUpdated; skills: SkillOption[] }
+  // Live elapsed time for the current top-level tool; ephemeral, not persisted.
+  | { kind: ChatEventKind.ToolProgress; toolName: string; elapsedSeconds: number }
+  // Live progress for a running Task subagent; ephemeral, not persisted.
+  | { kind: ChatEventKind.TaskProgress; subagentType?: string; description: string; toolUses: number }
+  // The SDK is retrying a transient API failure; ephemeral, not persisted.
+  | { kind: ChatEventKind.ApiRetry; attempt: number; maxRetries: number }
   | { kind: ChatEventKind.Error; message: string };
 
 /**
@@ -179,4 +203,6 @@ export type ChatSnapshot = {
   messages: ChatSnapshotEntry[];
   pendingPermissions: PermissionRequest[];
   pendingQuestions: QuestionRequest[];
+  /** Skills the session can run right now (empty until a session exists). */
+  skills: SkillOption[];
 };

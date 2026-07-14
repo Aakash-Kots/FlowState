@@ -11,7 +11,7 @@
  * :root; .dark mirrors them so shadcn primitives that assume `.dark` resolve.
  */
 :root {
-  --background: 220 5% 5%; /* near-black app canvas   #0d0d0e */
+  --background: 15 11% 7%; /* warm dark-grey canvas   #141110 — darker shade of secondary */
   --foreground: 220 6% 91%; /* near-white grey text */
   --card: 220 5% 9%; /* lighter grey surface    #16171a */
   --card-foreground: 220 6% 91%;
@@ -19,7 +19,7 @@
   --popover-foreground: 220 6% 91%;
   --primary: 44 48% 90%; /* light cream accent      #f2ecd9 */
   --primary-foreground: 220 5% 5%; /* dark text on cream */
-  --secondary: 40 4% 9%; /* chat/plan textbox shade #161616 */
+  --secondary: 30 8% 10%; /* chat/plan textbox shade #1b1917 */
   --secondary-foreground: 220 6% 91%;
   --muted: 220 5% 12%; /* raised fill             #1d1e21 */
   --muted-foreground: 220 4% 58%; /* dim grey text           #8f9194 */
@@ -33,7 +33,7 @@
   --radius: 0.5rem;
 
   /* Sidebar mirrors the secondary surface. */
-  --sidebar-background: 40 4% 9%;
+  --sidebar-background: 30 8% 10%;
   --sidebar-foreground: 220 6% 91%;
   --sidebar-primary: 44 48% 90%;
   --sidebar-primary-foreground: 220 5% 5%;
@@ -44,7 +44,7 @@
 }
 
 .dark {
-  --background: 220 5% 5%;
+  --background: 15 11% 7%;
   --foreground: 220 6% 91%;
   --card: 220 5% 9%;
   --card-foreground: 220 6% 91%;
@@ -52,7 +52,7 @@
   --popover-foreground: 220 6% 91%;
   --primary: 44 48% 90%;
   --primary-foreground: 220 5% 5%;
-  --secondary: 40 4% 9%;
+  --secondary: 40 4% 12%;
   --secondary-foreground: 220 6% 91%;
   --muted: 220 5% 12%;
   --muted-foreground: 220 4% 58%;
@@ -64,7 +64,7 @@
   --input: 220 4% 13%;
   --ring: 44 48% 90%;
 
-  --sidebar-background: 40 4% 9%;
+  --sidebar-background: 40 4% 12%;
   --sidebar-foreground: 220 6% 91%;
   --sidebar-primary: 44 48% 90%;
   --sidebar-primary-foreground: 220 5% 5%;

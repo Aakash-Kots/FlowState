@@ -7,6 +7,7 @@
  */
 import { z } from 'zod';
 import { ClaudeSessionState } from '../enums/claude';
+import type { RecentWorkspaceEntry } from '../types/workspace';
 import { claudeSessionStateSchema } from './claude';
 import { linearIssueRefSchema } from './linear';
 
@@ -24,6 +25,13 @@ export const workspaceSchema = z.object({
   archivedAt: z.string().nullable().default(null),
   createdAt: z.string().datetime(),
 });
+
+export const recentWorkspaceEntrySchema: z.ZodType<RecentWorkspaceEntry> = z.object({
+  workspaceId: z.string(),
+  tabId: z.string().nullable(),
+});
+
+export const recentWorkspacesSchema = z.array(recentWorkspaceEntrySchema);
 
 export const createWorkspaceInputSchema = z.object({
   repoRoot: z.string(),
