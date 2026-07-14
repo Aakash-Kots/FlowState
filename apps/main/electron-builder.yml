@@ -16,15 +16,15 @@ asar: true
 
 mac:
   category: public.app-category.developer-tools
+  # Apple Silicon only — every target Mac is arm64, so skipping x64 halves the
+  # build time and the ~350MB-per-arch upload payload.
   target:
     - target: dmg
       arch:
         - arm64
-        - x64
     - target: zip # required for electron-updater auto-update
       arch:
         - arm64
-        - x64
   # Signing & notarization — supplied via CI env / a local .env, never committed:
   #   CSC_LINK, CSC_KEY_PASSWORD (Developer ID Application cert)
   #   APPLE_API_KEY, APPLE_API_KEY_ID, APPLE_API_ISSUER (notarytool)
