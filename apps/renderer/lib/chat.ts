@@ -573,11 +573,12 @@ export function setPermissionMode(tabId: string, permissionMode: PermissionMode)
   void trpc().claude.setPermissionMode.mutate({ tabId, permissionMode });
 }
 
-// The Shift+Tab cycle order (Claude Code style): normal → auto-accept → plan → …
+// The Shift+Tab cycle order: normal → plan → auto-accept → … so the first shift
+// reaches plan mode.
 const PERMISSION_MODE_CYCLE: PermissionMode[] = [
   PermissionMode.Default,
-  PermissionMode.BypassPermissions,
   PermissionMode.Plan,
+  PermissionMode.BypassPermissions,
 ];
 
 /** Advance a tab to the next permission mode — the Shift+Tab cycle. */

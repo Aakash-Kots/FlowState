@@ -1,48 +1,16 @@
 'use client';
 
-import { useState } from 'react';
 import { ChatBlockType, ChatMessageRole, type ChatMessage } from '@flowstate/shared';
-import type { ToolResultBlock } from '@/lib/types/chat';
 import { formatDuration } from '@/lib/format';
-import { Markdown } from './Markdown';
-import { ToolUseRow } from './ToolUseRow';
 import { TurnSummary } from './TurnSummary';
 
-function ThinkingBlock({ text }: { text: string }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="text-xs italic text-muted-foreground transition-colors hover:text-neutral-300"
-      >
-        {open ? '▾' : '▸'} Thinking
-      </button>
-      {open && (
-        <p className="mt-1 whitespace-pre-wrap border-l-2 border-border pl-3 text-xs italic leading-relaxed text-muted-foreground">
-          {text}
-        </p>
-      )}
-    </div>
-  );
-}
-
 /**
- * Renders one persisted chat message. Tool results are looked up from the
- * whole conversation (they arrive as separate 'tool' messages) so a tool call
- * and its output render as a single collapsible row.
+ * Renders a whole-message bubble — a user prompt or the end-of-turn result
+ * footer. Assistant/tool content (text, thinking, tool runs) is flattened and
+ * rendered by `ChatView` via `groupChatItems`, so this only handles the two
+ * roles that stay message-scoped.
  */
-export function MessageBubble({
-  message,
-  toolResults,
-  toolUseIds,
-}: {
-  message: ChatMessage;
-  toolResults: Map<string, ToolResultBlock>;
-  /** Ids of every tool_use block in the conversation — a result whose call is known renders inside that call's row. */
-  toolUseIds: Set<string>;
-}) {
+export function MessageBubble({ message }: { message: ChatMessage }) {
   if (message.role === ChatMessageRole.User) {
     const text = message.blocks
       .map((b) => (b.type === ChatBlockType.Text ? b.text : ''))
@@ -76,32 +44,5 @@ export function MessageBubble({
     );
   }
 
-  // assistant / tool messages: render blocks in order.
-  return (
-    <div className="space-y-2">
-      {message.blocks.map((block, i) => {
-        switch (block.type) {
-          case ChatBlockType.Text:
-            return <Markdown key={i}>{block.text}</Markdown>;
-          case ChatBlockType.Thinking:
-            return <ThinkingBlock key={i} text={block.text} />;
-          case ChatBlockType.ToolUse:
-            return <ToolUseRow key={block.id} block={block} result={toolResults.get(block.id)} />;
-          case ChatBlockType.ToolResult:
-            // Rendered inline with its tool_use row; skip standalone output
-            // unless the call is missing (defensive).
-            return toolUseIds.has(block.toolUseId) ? null : (
-              <pre
-                key={i}
-                className="max-h-48 overflow-auto whitespace-pre-wrap rounded border border-border bg-muted p-2 font-mono text-xs text-neutral-300"
-              >
-                {block.content}
-              </pre>
-            );
-          default:
-            return null;
-        }
-      })}
-    </div>
-  );
+  return null;
 }

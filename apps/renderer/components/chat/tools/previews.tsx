@@ -1,6 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
+import { ClipboardList } from 'lucide-react';
 import { highlightToHtml } from '@/lib/highlight';
 import type { TodoItem } from '@/lib/types/toolInput';
 import { DiffView } from '../../git/DiffView';
@@ -115,6 +116,31 @@ export function PlanPreview({ plan }: { plan: string }) {
   return (
     <div className="max-h-[32rem] w-[40rem] max-w-[calc(100vw-2rem)] overflow-auto px-4 py-3">
       <Markdown>{clamp(plan)}</Markdown>
+    </div>
+  );
+}
+
+/** The proposed plan rendered inline in the message stream as an "opened
+ * document" — full-width, with a file-style header — while it awaits the user's
+ * decision. Unlike {@link PlanPreview} (a fixed-width hover-card glance) this is
+ * the primary reading surface, so it fills the bubble and doesn't clamp. */
+export function PlanDocument({ plan }: { plan: string }) {
+  if (!plan.trim()) {
+    return (
+      <div className="rounded-lg border border-border bg-background px-4 py-3 text-xs text-muted-foreground">
+        Empty plan.
+      </div>
+    );
+  }
+  return (
+    <div className="w-full overflow-hidden rounded-lg border border-amber-300/30 bg-background">
+      <div className="flex items-center gap-2 border-b border-border/60 bg-secondary/40 px-3 py-1.5 font-mono text-xs">
+        <ClipboardList className="size-3.5 text-amber-300" />
+        <span className="font-medium text-amber-300">Plan</span>
+      </div>
+      <div className="max-h-[32rem] overflow-auto px-4 py-3">
+        <Markdown>{plan}</Markdown>
+      </div>
     </div>
   );
 }

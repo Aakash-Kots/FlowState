@@ -42,7 +42,7 @@ export function DefaultToolRow({ block, result }: ToolRowProps) {
   const summary = summarizeInput(block.input);
 
   return (
-    <div className="font-mono text-xs">
+    <div className="font-mono text-[11px]">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
