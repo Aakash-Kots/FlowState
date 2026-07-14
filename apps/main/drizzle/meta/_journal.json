@@ -71,6 +71,13 @@
       "when": 1783987291586,
       "tag": "0009_magical_radioactive_man",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1783989615706,
+      "tag": "0010_faithful_electro",
+      "breakpoints": true
     }
   ]
 }
