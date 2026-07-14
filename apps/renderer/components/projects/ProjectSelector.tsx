@@ -1,10 +1,10 @@
 'use client';
 
-import { Folder, FolderPlus, GitBranch, Plus } from 'lucide-react';
+import { FolderPlus, GitBranch, Plus } from 'lucide-react';
 import type { Project } from '@flowstate/shared';
 import { openCreateWorktree, selectWorktree, setAddOpen, useProjects } from '@/lib/projects';
-import { shortenPath } from '@/lib/paths';
 import { Button } from '@/components/ui/Button';
+import { ProjectAvatar } from './ProjectAvatar';
 
 ///////////////////
 // Sub-components //
@@ -28,14 +28,9 @@ function ProjectCard({ project }: { project: Project }) {
       className="group flex min-w-0 flex-col gap-3 rounded-xl border border-border bg-secondary p-4 text-left transition-colors hover:border-border/80 hover:bg-muted focus:outline-none focus-visible:ring-1 focus-visible:ring-ring/60"
     >
       <div className="flex min-w-0 items-center gap-3">
-        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground transition-colors group-hover:text-foreground">
-          <Folder className="size-5" />
-        </div>
+        <ProjectAvatar owner={project.owner} className="size-9 shrink-0 rounded-lg" />
         <div className="min-w-0">
           <p className="truncate text-sm font-medium text-foreground">{project.name}</p>
-          <p className="truncate font-mono text-xs text-muted-foreground">
-            {shortenPath(project.localPath)}
-          </p>
         </div>
       </div>
       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
