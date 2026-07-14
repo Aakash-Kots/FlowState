@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import Link from 'next/link';
-import { Archive, Folder, GitBranch, Plug, Plus, Settings, Trash2 } from 'lucide-react';
+import { Archive, GitBranch, Plug, Plus, Settings, Trash2 } from 'lucide-react';
 import { DEFAULT_WORKSPACE_ID, type Project, type Workspace } from '@flowstate/shared';
 import {
   archiveWorktree,
@@ -20,6 +20,7 @@ import { useWorktreeState, useWorktreeUnread } from '@/lib/tabStates';
 import { pickWorkingFolder, useWorkspace } from '@/lib/workspace';
 import { AddProjectModal } from '../projects/AddProjectModal';
 import { CreateWorktreeModal } from '../projects/CreateWorktreeModal';
+import { ProjectAvatar } from '../projects/ProjectAvatar';
 import { CtaIconButton } from '../shared/CtaIconButton';
 import { cn } from '../ui/cn';
 import { StateIndicator } from '../ui/StateIndicator';
@@ -71,35 +72,6 @@ function FlowStateMark({ className }: { className?: string }) {
         opacity="0.4"
       />
     </svg>
-  );
-}
-
-/**
- * A project's avatar: the GitHub owner's picture, falling back to the linked
- * user's own avatar, then a folder icon — advancing past any source that 404s or
- * fails to load (e.g. a local repo with no owner, or offline).
- */
-function ProjectAvatar({ owner, className }: { owner: string; className?: string }) {
-  const viewer = useProjects((s) => s.viewer);
-  const [failed, setFailed] = useState(0);
-  const sources = [
-    owner ? `https://github.com/${owner}.png?size=64` : null,
-    viewer?.avatarUrl ?? null,
-  ].filter((s): s is string => !!s);
-  const src = sources[failed];
-  if (!src) {
-    return <Folder className={cn('size-5 shrink-0', className)} />;
-  }
-  return (
-    // A tiny remote avatar in a statically-exported Electron app — `next/image`
-    // buys nothing here (optimization is off) and can't take a bare remote URL.
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={src}
-      alt=""
-      className={cn('size-5 shrink-0 rounded-sm object-cover', className)}
-      onError={() => setFailed((n) => n + 1)}
-    />
   );
 }
 
