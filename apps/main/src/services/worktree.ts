@@ -7,7 +7,7 @@
  */
 import { existsSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
-import { simpleGit } from 'simple-git';
+import { simpleGit, type SimpleGit } from 'simple-git';
 import { WORKTREES_DIR_SUFFIX } from '../lib/constants/worktree';
 
 ///////////
@@ -84,7 +84,11 @@ export class WorktreeService {
     return join(dirname(repoRoot), dir, slugifyBranch(branch));
   }
 
-  /** Create a worktree on a fresh `branch` cut from `baseRef`. */
+  /**
+   * Create a worktree on a fresh `branch` cut from `baseRef`. Prefers the
+   * remote-tracking `origin/<baseRef>` when it exists (the caller fetches first)
+   * so the worktree is cut from the latest base, not a stale local branch.
+   */
   async create(opts: {
     repoRoot: string;
     branch: string;
@@ -99,8 +103,23 @@ export class WorktreeService {
     if (existsSync(opts.worktreePath)) {
       throw new Error(`A folder already exists at ${opts.worktreePath}.`);
     }
-    await git.raw(['worktree', 'add', '-b', opts.branch, opts.worktreePath, opts.baseRef]);
-    return { path: opts.worktreePath, branch: opts.branch, head: opts.baseRef };
+    const startPoint = (await this.remoteBranchExists(git, opts.baseRef))
+      ? `origin/${opts.baseRef}`
+      : opts.baseRef;
+    // `--no-track` keeps the new branch upstream-less even when cut from the
+    // remote ref, so its ahead/behind header and first push stay correct.
+    await git.raw(['worktree', 'add', '--no-track', '-b', opts.branch, opts.worktreePath, startPoint]);
+    return { path: opts.worktreePath, branch: opts.branch, head: startPoint };
+  }
+
+  /** Whether an up-to-date `origin/<branch>` remote-tracking ref exists locally. */
+  private async remoteBranchExists(git: SimpleGit, branch: string): Promise<boolean> {
+    try {
+      await git.raw(['rev-parse', '--verify', '--quiet', `refs/remotes/origin/${branch}`]);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /** The repo's local branch names — the choices for a new worktree's base ref. */

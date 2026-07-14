@@ -99,6 +99,11 @@ export const worktreeRouter = router({
       const branch = await worktreeService.uniqueBranchName(repoRoot, randomBranchName());
       const worktreePath = worktreeService.worktreePathFor(repoRoot, branch);
 
+      // Refresh remote refs so the worktree is cut from the latest base branch,
+      // not a stale local one. Best-effort: local-only repos (no GitHub origin)
+      // throw here and fall back to the local base ref inside `create`.
+      await githubService.fetch(repoRoot).catch(() => {});
+
       // 1. Create the worktree + branch.
       try {
         await worktreeService.create({ repoRoot, branch, baseRef, worktreePath });
