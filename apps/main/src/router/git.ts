@@ -19,8 +19,10 @@ import {
   gitWorkspaceInputSchema,
 } from '@flowstate/shared';
 import { TRPCError } from '@trpc/server';
+import { observable } from '@trpc/server/observable';
 import { getProject, getWorkspace } from '../store';
 import { GitService } from '../services/git';
+import { gitWatcherService } from '../services/gitWatcher';
 import { githubService } from '../services/github';
 import { publicProcedure, router } from '../trpc';
 
@@ -49,6 +51,19 @@ export const gitRouter = router({
     const ws = requireWorkspace(input.workspaceId);
     return new GitService(ws.worktreePath).status();
   }),
+
+  /**
+   * Fires whenever the worktree's files change on disk (from Claude, a terminal,
+   * or anything else), so the changes view can refresh without polling. The
+   * payload is a bare signal — the renderer re-queries `status` on each tick.
+   */
+  onChange: publicProcedure
+    .input(gitWorkspaceInputSchema)
+    .subscription(({ input }) =>
+      observable<null>((emit) =>
+        gitWatcherService.onChange(input.workspaceId, () => emit.next(null)),
+      ),
+    ),
 
   /** Total lines added/removed on this worktree's branch vs its base (for the sidebar badge). */
   diffStat: publicProcedure

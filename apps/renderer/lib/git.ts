@@ -92,8 +92,31 @@ export function resetGit(workspaceId: string): void {
   useGit.setState({ ...INITIAL, workspaceId });
 }
 
+// The status fetch spawns several `git` subprocesses, and several triggers
+// (tab-open, window focus, the file watcher) commonly fire at once. Coalesce
+// them: while one refresh is in flight, later callers ride the same promise and
+// request a single trailing re-run so the final state still reflects the latest
+// change.
+let statusInFlight: Promise<void> | null = null;
+let statusRerun = false;
+
 /** (Re)load the active worktree's status, preserving a still-valid selection. */
-export async function refreshStatus(): Promise<void> {
+export function refreshStatus(): Promise<void> {
+  if (statusInFlight) {
+    statusRerun = true;
+    return statusInFlight;
+  }
+  statusInFlight = loadStatus().finally(() => {
+    statusInFlight = null;
+    if (statusRerun) {
+      statusRerun = false;
+      void refreshStatus();
+    }
+  });
+  return statusInFlight;
+}
+
+async function loadStatus(): Promise<void> {
   const workspaceId = activeWorkspaceId();
   useGit.setState({ loading: true, error: null });
   try {
@@ -364,6 +387,18 @@ export function useGitSync(): void {
     };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
+  }, [workspaceId]);
+
+  // Reflect on-disk changes (from Claude, a terminal, anything) as they happen,
+  // so the changes view is fresh without waiting for a focus event or manual
+  // refresh. Debounced main-side; `refreshStatus` coalesces the bursts.
+  useEffect(() => {
+    if (workspaceId === DEFAULT_WORKSPACE_ID) return;
+    const sub = trpc().git.onChange.subscribe(
+      { workspaceId },
+      { onData: () => void refreshStatus(), onError: () => {} },
+    );
+    return () => sub.unsubscribe();
   }, [workspaceId]);
 
   useEffect(() => {

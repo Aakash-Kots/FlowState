@@ -73,6 +73,7 @@ export const chatBlockSchema: z.ZodType<ChatBlock> = z.discriminatedUnion('type'
     id: z.string(),
     name: z.string(),
     input: z.unknown(),
+    parentToolUseId: z.string().optional(),
   }),
   z.object({
     type: z.literal(ChatBlockType.ToolResult),
@@ -170,12 +171,6 @@ export const chatEventSchema: z.ZodType<ChatEvent> = z.discriminatedUnion('kind'
     kind: z.literal(ChatEventKind.ToolProgress),
     toolName: z.string(),
     elapsedSeconds: z.number(),
-  }),
-  z.object({
-    kind: z.literal(ChatEventKind.TaskProgress),
-    subagentType: z.string().optional(),
-    description: z.string(),
-    toolUses: z.number(),
   }),
   z.object({
     kind: z.literal(ChatEventKind.ApiRetry),

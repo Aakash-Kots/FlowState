@@ -61,8 +61,11 @@ async function diffCounts(
 export class GitService {
   constructor(private readonly worktreePath: string) {}
 
+  private gitInstance: SimpleGit | null = null;
+
+  /** One simple-git client per service, reused across this instance's calls. */
   private get git(): SimpleGit {
-    return simpleGit(this.worktreePath);
+    return (this.gitInstance ??= simpleGit(this.worktreePath));
   }
 
   /** True when the worktree has uncommitted changes — guards destructive removal. */
