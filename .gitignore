@@ -14,6 +14,11 @@ build/
 out/
 *.tsbuildinfo
 
+# ...but keep the electron-builder icon assets (buildResources) tracked.
+!apps/main/build/
+!apps/main/build/icon.icns
+!apps/main/build/icon.png
+
 # Electron packaging artifacts
 *.dmg
 *.zip

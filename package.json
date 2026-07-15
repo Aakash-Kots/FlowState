@@ -1,6 +1,6 @@
 {
   "name": "flowstate",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "private": true,
   "description": "One command center for your development workflow — Claude Code, Git, terminals, worktrees, and Linear in one flow.",
   "workspaces": [
