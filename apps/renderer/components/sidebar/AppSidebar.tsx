@@ -8,6 +8,7 @@ import {
   archiveWorktree,
   loadProjects,
   openCreateWorktree,
+  removeProject,
   removeWorktree,
   renameWorktree,
   selectWorktree,
@@ -237,6 +238,24 @@ function ProjectGroup({ project }: { project: Project }) {
         >
           <Plus />
           <span className="sr-only">New worktree</span>
+        </SidebarMenuAction>
+        <SidebarMenuAction
+          showOnHover
+          className="right-7 text-muted-foreground hover:text-foreground"
+          title="Delete project"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (
+              window.confirm(
+                `Delete "${project.name}" from FlowState?\n\nThis removes the project and all its worktrees. If it's a FlowState clone, its folder is also deleted from disk.`,
+              )
+            ) {
+              void removeProject(project);
+            }
+          }}
+        >
+          <Trash2 />
+          <span className="sr-only">Delete project</span>
         </SidebarMenuAction>
       </SidebarMenuItem>
       <SidebarMenuSub className="mx-0 border-l-0 px-0">

@@ -163,11 +163,36 @@ export class WorktreeService {
     return parseWorktreeList(out);
   }
 
-  /** Remove a worktree from disk + the repo's registry (caller guards dirtiness). */
+  /**
+   * Remove a worktree from disk + the repo's registry (caller guards dirtiness).
+   * Tolerant of an already-gone worktree: if `git worktree remove` fails but the
+   * path no longer exists (or git no longer tracks it), the worktree is
+   * effectively gone — prune the stale registry entry and return successfully so
+   * callers can still delete its row. Real failures (e.g. a dirty worktree with
+   * no `--force`) still throw.
+   */
   async remove(opts: { repoRoot: string; worktreePath: string; force?: boolean }): Promise<void> {
+    const git = simpleGit(opts.repoRoot);
     const args = ['worktree', 'remove', opts.worktreePath];
     if (opts.force) args.push('--force');
-    await simpleGit(opts.repoRoot).raw(args);
+    try {
+      await git.raw(args);
+    } catch (err) {
+      if (existsSync(opts.worktreePath) && (await this.isRegistered(opts.repoRoot, opts.worktreePath))) {
+        throw err; // Still present and tracked — a genuine failure.
+      }
+      // Already gone: clear any stale registry entry and treat it as removed.
+      await git.raw(['worktree', 'prune']).catch(() => {});
+    }
+  }
+
+  /** Whether `worktreePath` is still a registered worktree on the repo. */
+  private async isRegistered(repoRoot: string, worktreePath: string): Promise<boolean> {
+    try {
+      return (await this.list(repoRoot)).some((w) => w.path === worktreePath);
+    } catch {
+      return false;
+    }
   }
 }
 
