@@ -10,7 +10,6 @@
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
-import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
 import { promisify } from 'node:util';
 import type {
@@ -21,6 +20,7 @@ import type {
   PrStatus,
 } from '@flowstate/shared';
 import { PrChecks, PrState } from '@flowstate/shared';
+import { PROJECTS_DIR } from '../lib/constants/project';
 import { SecretName } from '../lib/enums/secret';
 import { getSecret } from '../store/secrets';
 import { authService } from './auth';
@@ -29,8 +29,6 @@ import { authService } from './auth';
 // Constants //
 ///////////////
 
-/** Where cloned projects live: `~/FlowState/projects/<repo>`. */
-const PROJECTS_DIR = join(homedir(), 'FlowState', 'projects');
 const GITHUB_API = 'https://api.github.com';
 
 /////////////
