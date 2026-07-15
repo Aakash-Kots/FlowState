@@ -20,6 +20,14 @@ export type FilesListInput = {
   workspaceId: string;
 };
 
+/**
+ * List every file in a project's local clone — the candidate set for the `@`
+ * file-mention menu in the create-worktree modal, which has no worktree yet.
+ */
+export type FilesListForProjectInput = {
+  projectId: string;
+};
+
 /** Read a single worktree-relative file's contents. */
 export type FileReadInput = {
   workspaceId: string;
