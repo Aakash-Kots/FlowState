@@ -8,11 +8,13 @@ import {
   ChatEventKind,
   ClaudeSessionState,
   CURATED_MODELS,
+  ImageMediaType,
   mergeModelOptions,
   PermissionBehavior,
   PermissionMode,
   ReasoningEffort,
   type ChatEvent,
+  type ChatImageInput,
   type ChatMessage,
   type ModelOption,
   type PermissionRequest,
@@ -410,11 +412,45 @@ export function useChatSync(tabId: string): void {
 
 // Actions
 
-export function sendPrompt(tabId: string, text: string): void {
+// The image formats the Agent SDK accepts, keyed by MIME string — anything else
+// (heic, bmp, svg…) is skipped rather than sent and rejected downstream.
+const SUPPORTED_IMAGE_TYPES: Record<string, ImageMediaType> = {
+  'image/png': ImageMediaType.Png,
+  'image/jpeg': ImageMediaType.Jpeg,
+  'image/gif': ImageMediaType.Gif,
+  'image/webp': ImageMediaType.Webp,
+};
+
+/**
+ * Read a pasted/uploaded image `File` into a `ChatImageInput` (raw base64, no
+ * `data:` prefix). Resolves `null` for unsupported types or read failures so the
+ * caller can silently skip it. Shared by the composer's paste + upload paths.
+ */
+export async function fileToChatImage(file: File): Promise<ChatImageInput | null> {
+  const mediaType = SUPPORTED_IMAGE_TYPES[file.type];
+  if (!mediaType) return null;
+  try {
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    });
+    const comma = dataUrl.indexOf(',');
+    const data = comma >= 0 ? dataUrl.slice(comma + 1) : '';
+    // Clipboard pastes arrive as a generic `image.png`; uploads keep their name.
+    const name = file.name || `image.${mediaType.split('/')[1] ?? 'png'}`;
+    return data ? { mediaType, data, name } : null;
+  } catch {
+    return null;
+  }
+}
+
+export function sendPrompt(tabId: string, text: string, images?: ChatImageInput[]): void {
   const trimmed = text.trim();
-  if (!trimmed) return;
+  if (!trimmed && !images?.length) return;
   storeFor(tabId).setState({ error: null });
-  void trpc().claude.send.mutate({ tabId, text: trimmed });
+  void trpc().claude.send.mutate({ tabId, text: trimmed, images });
 }
 
 export function interruptSession(tabId: string): void {

@@ -1,7 +1,13 @@
 'use client';
 
-import { ChatBlockType, ChatMessageRole, type ChatMessage } from '@flowstate/shared';
+import {
+  ChatBlockType,
+  ChatMessageRole,
+  type ChatBlock,
+  type ChatMessage,
+} from '@flowstate/shared';
 import { formatDuration } from '@/lib/format';
+import { ImagePill } from './ImagePill';
 import { TurnSummary } from './TurnSummary';
 
 /**
@@ -16,11 +22,26 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
       .map((b) => (b.type === ChatBlockType.Text ? b.text : ''))
       .join('')
       .trim();
-    if (!text) return null;
+    const imageBlocks = message.blocks.filter(
+      (b): b is Extract<ChatBlock, { type: ChatBlockType.Image }> => b.type === ChatBlockType.Image,
+    );
+    if (!text && imageBlocks.length === 0) return null;
     return (
       <div className="flex justify-end">
-        <div className="max-w-[85%] whitespace-pre-wrap rounded-lg border border-border bg-muted px-3.5 py-2.5 text-sm leading-relaxed text-neutral-100">
-          {text}
+        <div className="flex max-w-[85%] flex-col gap-2 rounded-lg border border-border bg-muted px-3.5 py-2.5 text-sm leading-relaxed text-neutral-100">
+          {imageBlocks.length > 0 && (
+            <div className="flex flex-wrap justify-end gap-1.5">
+              {imageBlocks.map((b, i) => (
+                <ImagePill
+                  key={i}
+                  name={b.name ?? `image.${b.mediaType.split('/')[1] ?? 'png'}`}
+                  mediaType={b.mediaType}
+                  data={b.data}
+                />
+              ))}
+            </div>
+          )}
+          {text && <div className="whitespace-pre-wrap">{text}</div>}
         </div>
       </div>
     );

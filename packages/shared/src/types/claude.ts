@@ -8,6 +8,7 @@ import type {
   ChatEventKind,
   ChatMessageRole,
   ClaudeSessionState,
+  ImageMediaType,
   PermissionBehavior,
   PermissionMode,
   ReasoningEffort,
@@ -42,7 +43,23 @@ export type ChatBlock =
       // so the renderer nests it under that Task row. Absent for top-level calls.
       parentToolUseId?: string;
     }
-  | { type: ChatBlockType.ToolResult; toolUseId: string; content: string; isError: boolean };
+  | { type: ChatBlockType.ToolResult; toolUseId: string; content: string; isError: boolean }
+  // An image the user attached to a prompt, carried as raw base64 (no data-URL
+  // prefix) so it can be rendered as a pill/preview and handed to the SDK
+  // verbatim. `name` is the source filename shown on the pill (may be absent on
+  // messages persisted before filenames were captured).
+  | { type: ChatBlockType.Image; mediaType: ImageMediaType; data: string; name?: string };
+
+/**
+ * An image attached to an outgoing user prompt, as it crosses the send boundary
+ * (renderer → tRPC → service). `data` is raw base64 with no `data:` prefix;
+ * `name` is the source filename (e.g. `image.png`) shown on the image pill.
+ */
+export type ChatImageInput = {
+  mediaType: ImageMediaType;
+  data: string;
+  name?: string;
+};
 
 /**
  * One file changed during a single turn, with the turn's own line counts —

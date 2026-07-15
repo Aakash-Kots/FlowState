@@ -1,7 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, ImagePlus } from 'lucide-react';
 import {
   CURATED_MODELS,
   DEFAULT_EFFORT,
@@ -50,11 +50,14 @@ const MODELS = CURATED_MODELS;
 export function InputToolbar({
   disabled,
   trailing,
+  onAttachImage,
 }: {
   disabled: boolean;
   // Right-aligned slot for the send/stop control so it sits on the same row as
   // the model/effort pickers.
   trailing?: ReactNode;
+  // Opens the composer's image file picker (the leading attach button).
+  onAttachImage?: () => void;
 }) {
   const tabId = useTabId();
   // Fall back to the defaults so the picker always shows a concrete model +
@@ -75,6 +78,21 @@ export function InputToolbar({
 
   return (
     <div className="flex items-center gap-1 px-1.5 pb-1.5 pt-1">
+      {onAttachImage && (
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={onAttachImage}
+          title="Attach an image"
+          className={cn(
+            'inline-flex items-center rounded-md transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+            triggerClass,
+          )}
+        >
+          <ImagePlus className="h-4 w-4" />
+        </button>
+      )}
+
       {modePill && (
         <button
           type="button"

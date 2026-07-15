@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import {
   ClaudeSessionState,
   PermissionBehavior,
@@ -10,6 +10,7 @@ import {
 import {
   clearChat,
   cyclePermissionMode,
+  fileToChatImage,
   interruptSession,
   loadSupportedSkills,
   respondPermission,
@@ -19,20 +20,19 @@ import {
   usePrefillComposer,
   useTabId,
 } from '@/lib/chat';
+import { MAX_COMPOSER_IMAGE_BYTES } from '@/lib/constants/chat';
 import { EXIT_PLAN_MODE_TOOL } from '@/lib/constants/tools';
 import { cn } from '../ui/cn';
 import { Button } from '../ui/Button';
+import { ComposerEditor, type ComposerDraft, type ComposerEditorHandle } from './ComposerEditor';
 import { InlinePrompt } from './InlinePrompt';
 import { InputToolbar } from './InputToolbar';
 import { SlashMenu } from './SlashMenu';
 
-const MAX_ROWS = 8;
-const LINE_HEIGHT_PX = 20;
-
 /**
  * The floating prompt bar: a rounded card overlaid on the bottom of the
- * conversation (which scrolls beneath it behind a gradient fade). Holds an
- * auto-growing textarea + model/effort toolbar, and swaps to an inline
+ * conversation (which scrolls beneath it behind a gradient fade). Holds a rich
+ * text-plus-image-pill composer + model/effort toolbar, and swaps to an inline
  * permission/question prompt when Claude is waiting on the user.
  */
 export function InputBar({ disabled }: { disabled: boolean }) {
@@ -52,15 +52,20 @@ export function InputBar({ disabled }: { disabled: boolean }) {
       s.pendingQuestions.length > 0 ||
       s.pendingPermissions.some((p) => p.toolName !== EXIT_PLAN_MODE_TOOL),
   );
+  // `text` mirrors the editor's plain text (drives the slash menu + send gating);
+  // `hasImages` tracks whether the draft carries any attachments. The editor owns
+  // the actual content — read the authoritative draft via `editorRef.getDraft()`.
   const [text, setText] = useState('');
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [hasImages, setHasImages] = useState(false);
+  const editorRef = useRef<ComposerEditorHandle>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const busy =
     sessionState === ClaudeSessionState.Running || sessionState === ClaudeSessionState.Waiting;
 
   useEffect(() => {
-    if (!disabled && !hasPrompt) textareaRef.current?.focus();
+    if (!disabled && !hasPrompt) editorRef.current?.focus();
   }, [disabled, hasPrompt]);
 
   // Publish the composer's live height as `--input-h` on the shared session
@@ -82,14 +87,7 @@ export function InputBar({ disabled }: { disabled: boolean }) {
   }, []);
 
   // Let the FocusInput shortcut focus the composer from anywhere.
-  useFocusInput(() => textareaRef.current?.focus());
-
-  const resize = () => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, MAX_ROWS * LINE_HEIGHT_PX + 20)}px`;
-  };
+  useFocusInput(() => editorRef.current?.focus());
 
   // The `/` skill menu: open while the composer holds a lone `/<query>` token (no
   // space yet) and the user hasn't dismissed it — showing a loading state while
@@ -125,19 +123,13 @@ export function InputBar({ disabled }: { disabled: boolean }) {
     setMenuIndex(0);
   }, [slashQuery]);
 
-  // Drop `text` into the composer, focus it, and put the cursor at the end —
-  // shared by a `/` menu selection and the Skills & Actions panel's prefill.
+  // Drop plain `text` into the composer, focus it, and put the cursor at the end
+  // — shared by a `/` menu selection and the Skills & Actions panel's prefill.
   const setComposer = (next: string) => {
+    editorRef.current?.setText(next);
     setText(next);
+    setHasImages(false);
     setMenuDismissed(true);
-    requestAnimationFrame(() => {
-      const el = textareaRef.current;
-      if (el) {
-        el.focus();
-        el.setSelectionRange(next.length, next.length);
-      }
-      resize();
-    });
   };
 
   const selectSkill = (skill: SkillOption) => setComposer(`/${skill.name} `);
@@ -170,28 +162,96 @@ export function InputBar({ disabled }: { disabled: boolean }) {
     if (scroller) scroller.scrollTop += e.deltaY;
   };
 
+  // Keep the mirrored plain text + attachment flag in sync as the user edits, and
+  // re-enable the slash menu the moment they type again.
+  const onEditorChange = (draft: ComposerDraft) => {
+    setText(draft.text);
+    setHasImages(draft.images.length > 0);
+    setMenuDismissed(false);
+  };
+
+  // The toolbar's image button routes through a hidden file input; convert the
+  // picks and hand them to the editor to insert at the caret.
+  const onPickImages = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []).filter(
+      (f) => f.size <= MAX_COMPOSER_IMAGE_BYTES,
+    );
+    void Promise.all(files.map(fileToChatImage)).then((imgs) => {
+      const valid = imgs.filter((img): img is NonNullable<typeof img> => img !== null);
+      if (valid.length) editorRef.current?.insertImages(valid);
+    });
+    e.target.value = ''; // let the same file be picked again after removal
+  };
+
+  const resetComposer = () => {
+    editorRef.current?.clear();
+    setText('');
+    setHasImages(false);
+  };
+
   const submit = () => {
-    if (disabled || !text.trim()) return;
+    const draft = editorRef.current?.getDraft() ?? { text: '', images: [] };
+    const trimmed = draft.text.trim();
+    if (disabled || (!trimmed && draft.images.length === 0)) return;
     // `/clear` is an in-app command, not a prompt: wipe the chat and start fresh
     // rather than sending the literal text to the SDK.
-    if (text.trim() === '/clear') {
+    if (trimmed === '/clear') {
       clearChat(tabId);
-      setText('');
-      requestAnimationFrame(resize);
+      resetComposer();
       return;
     }
     // While a plan awaits a decision, a typed message means "keep planning":
     // deny the plan and hand Claude the note so it revises without leaving plan
     // mode (the reply-to-keep-planning path from the old inline prompt).
     if (pendingPlan) {
-      respondPermission(tabId, pendingPlan.id, PermissionBehavior.Deny, text.trim());
-      setText('');
-      requestAnimationFrame(resize);
+      respondPermission(tabId, pendingPlan.id, PermissionBehavior.Deny, trimmed);
+      resetComposer();
       return;
     }
-    sendPrompt(tabId, text);
-    setText('');
-    requestAnimationFrame(resize);
+    sendPrompt(tabId, draft.text, draft.images);
+    resetComposer();
+  };
+
+  const onEditorKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    // The `/` menu owns Escape whenever it's open, and Arrow/Enter/Tab once it
+    // actually has skills to pick from.
+    if (menuOpen) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setMenuDismissed(true);
+        return;
+      }
+      if (filteredSkills.length > 0) {
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          setMenuIndex((i) => (i + 1) % filteredSkills.length);
+          return;
+        }
+        if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          setMenuIndex((i) => (i - 1 + filteredSkills.length) % filteredSkills.length);
+          return;
+        }
+        if ((e.key === 'Enter' || e.key === 'Tab') && !e.shiftKey) {
+          e.preventDefault();
+          const skill = filteredSkills[activeIndex];
+          if (skill) selectSkill(skill);
+          return;
+        }
+      }
+    }
+    if (e.key === 'Enter' && !e.shiftKey) {
+      // Enter sends; Shift+Enter falls through to insert a newline in the editor.
+      e.preventDefault();
+      submit();
+    } else if (e.key === 'Tab' && e.shiftKey) {
+      // Cycle permission mode without letting Tab move focus away.
+      e.preventDefault();
+      cyclePermissionMode(tabId);
+    } else if (e.key === 'Escape' && busy) {
+      e.preventDefault();
+      interruptSession(tabId);
+    }
   };
 
   return (
@@ -268,10 +328,8 @@ export function InputBar({ disabled }: { disabled: boolean }) {
                 </div>
               )}
               <div className="px-2.5 py-2">
-                <textarea
-                  ref={textareaRef}
-                  value={text}
-                  rows={3}
+                <ComposerEditor
+                  ref={editorRef}
                   disabled={disabled}
                   placeholder={
                     disabled
@@ -284,58 +342,21 @@ export function InputBar({ disabled }: { disabled: boolean }) {
                             ? 'Auto-accept on — Claude runs hands-off, no prompts (Shift+Tab to cycle)'
                             : 'Message Claude — Enter to send, Shift+Enter for a new line'
                   }
-                  onChange={(e) => {
-                    setText(e.target.value);
-                    setMenuDismissed(false);
-                    resize();
-                  }}
-                  onKeyDown={(e) => {
-                    // The `/` menu owns Escape whenever it's open, and
-                    // Arrow/Enter/Tab once it actually has skills to pick from.
-                    if (menuOpen) {
-                      if (e.key === 'Escape') {
-                        e.preventDefault();
-                        setMenuDismissed(true);
-                        return;
-                      }
-                      if (filteredSkills.length > 0) {
-                        if (e.key === 'ArrowDown') {
-                          e.preventDefault();
-                          setMenuIndex((i) => (i + 1) % filteredSkills.length);
-                          return;
-                        }
-                        if (e.key === 'ArrowUp') {
-                          e.preventDefault();
-                          setMenuIndex(
-                            (i) => (i - 1 + filteredSkills.length) % filteredSkills.length,
-                          );
-                          return;
-                        }
-                        if ((e.key === 'Enter' || e.key === 'Tab') && !e.shiftKey) {
-                          e.preventDefault();
-                          const skill = filteredSkills[activeIndex];
-                          if (skill) selectSkill(skill);
-                          return;
-                        }
-                      }
-                    }
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      submit();
-                    } else if (e.key === 'Tab' && e.shiftKey) {
-                      // Cycle permission mode without letting Tab move focus away.
-                      e.preventDefault();
-                      cyclePermissionMode(tabId);
-                    } else if (e.key === 'Escape' && busy) {
-                      e.preventDefault();
-                      interruptSession(tabId);
-                    }
-                  }}
-                  className="max-h-48 min-h-[76px] w-full resize-none bg-transparent px-2 py-1.5 text-sm leading-5 text-neutral-100 placeholder:text-muted-foreground focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                  onChange={onEditorChange}
+                  onKeyDown={onEditorKeyDown}
                 />
               </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/gif,image/webp"
+                multiple
+                className="hidden"
+                onChange={onPickImages}
+              />
               <InputToolbar
                 disabled={disabled}
+                onAttachImage={() => fileInputRef.current?.click()}
                 trailing={
                   busy && !pendingPlan ? (
                     <Button
@@ -349,7 +370,7 @@ export function InputBar({ disabled }: { disabled: boolean }) {
                     <Button
                       className="px-2.5 py-1 text-xs"
                       onClick={submit}
-                      disabled={disabled || !text.trim()}
+                      disabled={disabled || (!text.trim() && !hasImages)}
                     >
                       Send
                     </Button>
