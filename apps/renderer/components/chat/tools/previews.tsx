@@ -33,7 +33,9 @@ function clamp(text: string): string {
 function PreviewFrame({ children, code = true }: { children: ReactNode; code?: boolean }) {
   return (
     <div
-      className="max-h-[20rem] w-full max-w-[calc(100vw-2rem)] overflow-auto"
+      // `isolate` scopes the diff gutter's `sticky … z-10` to this frame so it
+      // can't paint over the chat content below when the diff scrolls.
+      className="relative isolate max-h-[20rem] w-full max-w-[calc(100vw-2rem)] overflow-auto"
       style={code ? { backgroundColor: 'var(--code-bg)' } : undefined}
     >
       {children}

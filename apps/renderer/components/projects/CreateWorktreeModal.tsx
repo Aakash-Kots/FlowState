@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
-import { ChevronDown, GitBranch, Tag, X } from 'lucide-react';
+import { ChevronDown, GitBranch, Loader2, Tag, X } from 'lucide-react';
 import { PermissionMode } from '@flowstate/shared';
 import type { LinearIssueRef } from '@flowstate/shared';
 import { refreshIssues, useLinear } from '@/lib/linear';
@@ -32,6 +32,7 @@ export function CreateWorktreeModal() {
   const project = useProjects((s) => s.projects.find((p) => p.id === s.createProjectId) ?? null);
   const linearConnected = useOnboarding((s) => s.linearConnected);
   const issues = useLinear((s) => s.issues);
+  const issuesLoading = useLinear((s) => s.loading);
 
   const [baseRef, setBaseRef] = useState('');
   const [prompt, setPrompt] = useState('');
@@ -52,6 +53,15 @@ export function CreateWorktreeModal() {
     setIssueQuery('');
     if (linearConnected) void refreshIssues();
   }, [open, projectId, project?.defaultBranch, linearConnected]);
+
+  // Tickets are created constantly, so re-fetch when the window regains focus
+  // while the modal is open (e.g. after creating a ticket in Linear).
+  useEffect(() => {
+    if (!open || !linearConnected) return;
+    const onFocus = () => void refreshIssues();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [open, linearConnected]);
 
   // Picking an issue seeds the (editable) branch with Linear's suggested name.
   const selectIssue = (issue: LinearIssueRef | null) => {
@@ -110,6 +120,11 @@ export function CreateWorktreeModal() {
                 <DropdownMenu
                   align="end"
                   placement="bottom"
+                  panelClassName="bg-background"
+                  onOpenChange={(o) => {
+                    // Re-fetch each time the picker opens — new tickets may exist.
+                    if (o) void refreshIssues();
+                  }}
                   triggerClassName="gap-1.5 rounded-full border border-border px-2.5 py-1 text-muted-foreground hover:bg-muted hover:text-neutral-100"
                   trigger={
                     <>
@@ -122,44 +137,66 @@ export function CreateWorktreeModal() {
                   }
                 >
                   {(close) => (
-                    <div className="flex flex-col">
-                      <input
-                        autoFocus
-                        value={issueQuery}
-                        onChange={(e) => setIssueQuery(e.target.value)}
-                        placeholder="Search issues…"
-                        spellCheck={false}
-                        className="mb-1 w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-xs text-neutral-100 placeholder:text-muted-foreground focus:border-primary/50 focus:outline-none"
-                      />
-                      <div className="max-h-64 overflow-y-auto">
-                        <DropdownItem
-                          selected={!linearIssue}
-                          onSelect={() => {
+                    <div className="flex w-72 flex-col">
+                      <div className="relative mb-1">
+                        <input
+                          autoFocus
+                          value={issueQuery}
+                          onChange={(e) => setIssueQuery(e.target.value)}
+                          placeholder="Search issues…"
+                          spellCheck={false}
+                          className="h-7 w-full rounded-md border border-border bg-background pl-2 pr-7 text-xs text-neutral-100 placeholder:text-muted-foreground focus:border-primary/50 focus:outline-none"
+                        />
+                        {issuesLoading ? (
+                          <Loader2 className="absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 animate-spin text-muted-foreground" />
+                        ) : null}
+                      </div>
+                      <div className="max-h-56 overflow-y-auto">
+                        <button
+                          type="button"
+                          onClick={() => {
                             selectIssue(null);
                             close();
                           }}
+                          className={cn(
+                            'flex w-full items-center rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-accent',
+                            linearIssue ? 'text-muted-foreground' : 'text-neutral-100',
+                          )}
                         >
                           No issue
-                        </DropdownItem>
+                        </button>
                         {filteredIssues.length === 0 ? (
-                          <div className="px-2.5 py-2 text-xs text-muted-foreground">
-                            {issues.length === 0 ? 'No assigned issues' : 'No matches'}
+                          <div className="flex items-center gap-2 px-2 py-2 text-xs text-muted-foreground">
+                            {issuesLoading && issues.length === 0 ? (
+                              <>
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                Loading issues…
+                              </>
+                            ) : (
+                              <span>{issues.length === 0 ? 'No assigned issues' : 'No matches'}</span>
+                            )}
                           </div>
                         ) : (
                           filteredIssues.map((issue) => (
-                            <DropdownItem
+                            <button
                               key={issue.id}
-                              selected={issue.id === linearIssue?.id}
-                              onSelect={() => {
+                              type="button"
+                              onClick={() => {
                                 selectIssue(issue);
                                 close();
                               }}
+                              className={cn(
+                                'flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-accent',
+                                issue.id === linearIssue?.id ? 'bg-accent/50' : '',
+                              )}
                             >
-                              <span className="truncate">
-                                <span className="text-muted-foreground">{issue.identifier}</span>{' '}
+                              <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+                                {issue.identifier}
+                              </span>
+                              <span className="min-w-0 flex-1 truncate text-neutral-200">
                                 {issue.title}
                               </span>
-                            </DropdownItem>
+                            </button>
                           ))
                         )}
                       </div>

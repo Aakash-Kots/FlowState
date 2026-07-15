@@ -15,11 +15,15 @@ type DropdownMenuProps = {
   /** Rendered inside the trigger button. */
   trigger: ReactNode;
   triggerClassName?: string;
+  /** Extra classes for the popup panel (e.g. to override its background). */
+  panelClassName?: string;
   /** Which edge the panel aligns to. */
   align?: Align;
   /** Whether the panel opens above (`top`) or below (`bottom`) the trigger. */
   placement?: Placement;
   disabled?: boolean;
+  /** Called whenever the panel opens or closes (e.g. to refresh data on open). */
+  onOpenChange?: (open: boolean) => void;
   /** Panel body. Receives a `close` callback to dismiss after a selection. */
   children: (close: () => void) => ReactNode;
 };
@@ -43,21 +47,30 @@ type DropdownItemProps = {
 export function DropdownMenu({
   trigger,
   triggerClassName,
+  panelClassName,
   align = 'start',
   placement = 'top',
   disabled,
+  onOpenChange,
   children,
 }: DropdownMenuProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
+  const setOpenState = (next: boolean) => {
+    setOpen((prev) => {
+      if (prev !== next) onOpenChange?.(next);
+      return next;
+    });
+  };
+
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpenState(false);
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
+      if (e.key === 'Escape') setOpenState(false);
     };
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
@@ -65,6 +78,7 @@ export function DropdownMenu({
       document.removeEventListener('mousedown', onDown);
       document.removeEventListener('keydown', onKey);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   return (
@@ -72,7 +86,7 @@ export function DropdownMenu({
       <button
         type="button"
         disabled={disabled}
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => setOpenState(!open)}
         className={cn(
           'inline-flex items-center gap-1 rounded-md text-xs transition-colors focus:outline-none disabled:cursor-not-allowed disabled:opacity-50',
           triggerClassName,
@@ -86,6 +100,7 @@ export function DropdownMenu({
             'absolute z-50 min-w-[15rem] overflow-hidden rounded-lg border border-border bg-muted p-1 shadow-xl',
             placement === 'bottom' ? 'top-full mt-1.5' : 'bottom-full mb-1.5',
             align === 'end' ? 'right-0' : 'left-0',
+            panelClassName,
           )}
         >
           {children(() => setOpen(false))}
