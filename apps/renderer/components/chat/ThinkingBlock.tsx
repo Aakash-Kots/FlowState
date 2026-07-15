@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { Brain, ChevronRight } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible';
 import { cn } from '../ui/cn';
@@ -14,7 +14,7 @@ import { cn } from '../ui/cn';
  * the reasoning text on click. Rendered only when the message actually carries
  * thinking content, so the header doubles as the signal that the model reasoned.
  */
-export function ThinkingBlock({ text }: { text: string }) {
+export const ThinkingBlock = memo(function ThinkingBlock({ text }: { text: string }) {
   const [open, setOpen] = useState(false);
   const paragraphs = text.split(/\n{2,}/).filter((p) => p.trim());
   // First line of reasoning, shown inline beside the label as a preview (hidden
@@ -46,4 +46,4 @@ export function ThinkingBlock({ text }: { text: string }) {
       </CollapsibleContent>
     </Collapsible>
   );
-}
+});

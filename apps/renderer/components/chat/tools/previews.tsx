@@ -28,24 +28,12 @@ function clamp(text: string): string {
 // Sub-components //
 ///////////////////
 
-/** Scroll frame shared by every preview — capped height, code background
- * (dropped for plain-text previews). Fixed-width for the transcript hover cards;
- * `fluid` fills its container instead (used inline in the permission prompt). */
-function PreviewFrame({
-  children,
-  code = true,
-  fluid = false,
-}: {
-  children: ReactNode;
-  code?: boolean;
-  fluid?: boolean;
-}) {
+/** Scroll frame shared by every preview — capped height, full-width, code
+ * background (dropped for plain-text previews). */
+function PreviewFrame({ children, code = true }: { children: ReactNode; code?: boolean }) {
   return (
     <div
-      className={cn(
-        'max-h-[20rem] max-w-[calc(100vw-2rem)] overflow-auto',
-        fluid ? 'w-full' : 'w-[28rem]',
-      )}
+      className="max-h-[20rem] w-full max-w-[calc(100vw-2rem)] overflow-auto"
       style={code ? { backgroundColor: 'var(--code-bg)' } : undefined}
     >
       {children}
@@ -67,20 +55,12 @@ export function TextPreview({ children }: { children: ReactNode }) {
 }
 
 /** Syntax-highlighted (or plain, when `lang` is null) code/text block. */
-export function CodePreview({
-  code,
-  lang,
-  fluid = false,
-}: {
-  code: string;
-  lang: string | null;
-  fluid?: boolean;
-}) {
+export function CodePreview({ code, lang }: { code: string; lang: string | null }) {
   if (!code.trim()) return <TextPreview>(empty)</TextPreview>;
   const text = clamp(code);
   const html = highlightToHtml(text, lang);
   return (
-    <PreviewFrame fluid={fluid}>
+    <PreviewFrame>
       <pre
         className="code-hl whitespace-pre px-3 py-2 font-mono text-xs leading-5"
         style={{ color: 'var(--code-fg)' }}
@@ -92,18 +72,10 @@ export function CodePreview({
 }
 
 /** A unified-diff preview (Edit/MultiEdit), reusing the Git `DiffView`. */
-export function DiffPreview({
-  patch,
-  lang,
-  fluid = false,
-}: {
-  patch: string;
-  lang: string | null;
-  fluid?: boolean;
-}) {
+export function DiffPreview({ patch, lang }: { patch: string; lang: string | null }) {
   if (!patch.trim()) return <TextPreview>No changes.</TextPreview>;
   return (
-    <PreviewFrame fluid={fluid}>
+    <PreviewFrame>
       <DiffView patch={clamp(patch)} lang={lang} wrap={false} />
     </PreviewFrame>
   );
@@ -146,15 +118,10 @@ export function PlanDocument({ plan }: { plan: string }) {
 }
 
 /** A TodoWrite list preview — status glyph + text, completed struck through. */
-export function TodoPreview({ todos, fluid = false }: { todos: TodoItem[]; fluid?: boolean }) {
+export function TodoPreview({ todos }: { todos: TodoItem[] }) {
   if (todos.length === 0) return <TextPreview>No todos.</TextPreview>;
   return (
-    <div
-      className={cn(
-        'max-w-[calc(100vw-2rem)] space-y-1 px-3 py-2 text-xs',
-        fluid ? 'w-full' : 'w-[26rem]',
-      )}
-    >
+    <div className="w-full max-w-[calc(100vw-2rem)] space-y-1 px-3 py-2 text-xs">
       {todos.map((t, i) => {
         const done = t.status === 'completed';
         const active = t.status === 'in_progress';

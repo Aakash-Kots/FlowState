@@ -1,5 +1,6 @@
 'use client';
 
+import { memo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { highlightToHtml, langForFence } from '@/lib/highlight';
@@ -8,7 +9,7 @@ import { highlightToHtml, langForFence } from '@/lib/highlight';
  * Assistant-message markdown styled onto the app's dark tokens. Pure
  * client-side rendering — safe for the static export.
  */
-export function Markdown({ children }: { children: string }) {
+export const Markdown = memo(function Markdown({ children }: { children: string }) {
   return (
     <div className="space-y-2 text-sm leading-relaxed text-neutral-200">
       <ReactMarkdown
@@ -85,4 +86,4 @@ export function Markdown({ children }: { children: string }) {
       </ReactMarkdown>
     </div>
   );
-}
+});

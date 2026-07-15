@@ -1,5 +1,6 @@
 'use client';
 
+import { memo } from 'react';
 import {
   ChatBlockType,
   ChatMessageRole,
@@ -16,7 +17,7 @@ import { TurnSummary } from './TurnSummary';
  * rendered by `ChatView` via `groupChatItems`, so this only handles the two
  * roles that stay message-scoped.
  */
-export function MessageBubble({ message }: { message: ChatMessage }) {
+export const MessageBubble = memo(function MessageBubble({ message }: { message: ChatMessage }) {
   if (message.role === ChatMessageRole.User) {
     const text = message.blocks
       .map((b) => (b.type === ChatBlockType.Text ? b.text : ''))
@@ -66,4 +67,4 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
   }
 
   return null;
-}
+});

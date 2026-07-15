@@ -51,9 +51,19 @@ const EXT_TO_LANG: Record<string, string> = {
   toml: 'toml',
 };
 
+/** Upper bound on cached highlight results before the cache is cleared wholesale. */
+const HIGHLIGHT_CACHE_LIMIT = 500;
+
 /////////////
 // Helpers //
 /////////////
+
+// Memoize highlight output keyed by `lang\ncode`: the transcript re-renders the
+// same code blocks constantly (every streamed token, every tool event), and
+// re-tokenizing all of them through Prism each time is a visible cost. The cache
+// is cleared wholesale once it grows past the limit — a session with thousands
+// of distinct blocks is unrealistic, and the simple reset avoids LRU bookkeeping.
+const highlightCache = new Map<string, string>();
 
 /** The Prism language id for a file path, or null when we can't highlight it. */
 export function langForPath(path: string): string | null {
@@ -80,5 +90,11 @@ export function highlightToHtml(code: string, lang: string | null): string | nul
   if (!lang) return null;
   const grammar = Prism.languages[lang];
   if (!grammar) return null;
-  return Prism.highlight(code, grammar, lang);
+  const key = `${lang}\n${code}`;
+  const cached = highlightCache.get(key);
+  if (cached !== undefined) return cached;
+  const html = Prism.highlight(code, grammar, lang);
+  if (highlightCache.size >= HIGHLIGHT_CACHE_LIMIT) highlightCache.clear();
+  highlightCache.set(key, html);
+  return html;
 }

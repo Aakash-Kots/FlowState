@@ -6,6 +6,7 @@ import { ActivityIndicator, ChatItemKind } from '@/lib/enums/chat';
 import type { ToolResultBlock } from '@/lib/types/chat';
 import { groupChatItems } from '@/lib/chatItems';
 import { useChat } from '@/lib/chat';
+import { verbForTool } from '@/lib/constants/tools';
 import { formatDuration } from '@/lib/format';
 import { EmptyChat } from './EmptyChat';
 import { Markdown } from './Markdown';
@@ -38,6 +39,7 @@ export function ChatView() {
   const messages = useChat((s) => s.messages);
   const streamingText = useChat((s) => s.streamingText);
   const activeIndicator = useChat((s) => s.activeIndicator);
+  const activeToolName = useChat((s) => s.activeToolName);
   const toolProgress = useChat((s) => s.toolProgress);
   const apiRetry = useChat((s) => s.apiRetry);
   const pendingCount = useChat((s) => s.pendingPermissions.length + s.pendingQuestions.length);
@@ -73,8 +75,13 @@ export function ChatView() {
   };
 
   useEffect(() => {
-    const el = scrollRef.current;
-    if (el && pinnedToBottom.current) el.scrollTop = el.scrollHeight;
+    // Defer the layout write to the next frame so it lands after paint instead
+    // of forcing a synchronous reflow on every token / progress tick.
+    const id = requestAnimationFrame(() => {
+      const el = scrollRef.current;
+      if (el && pinnedToBottom.current) el.scrollTop = el.scrollHeight;
+    });
+    return () => cancelAnimationFrame(id);
   }, [messages, streamingText, activeIndicator, pendingCount, toolProgress, apiRetry]);
 
   const showWorking = sessionState === ClaudeSessionState.Running && !streamingText;
@@ -87,7 +94,7 @@ export function ChatView() {
     ? { text: `Retrying… ${apiRetry.attempt}/${apiRetry.maxRetries}`, warn: true, showElapsed: false }
     : toolProgress
       ? {
-          text: `Running ${toolProgress.toolName}… · ${toolProgress.elapsedSeconds}s`,
+          text: `${verbForTool(toolProgress.toolName)}… · ${toolProgress.elapsedSeconds}s`,
           warn: false,
           showElapsed: false,
         }
@@ -156,7 +163,7 @@ export function ChatView() {
             ) : activeIndicator === ActivityIndicator.Thinking ? (
               'Thinking…'
             ) : activeIndicator === ActivityIndicator.Tool ? (
-              'Running a tool…'
+              `${verbForTool(activeToolName)}…`
             ) : (
               'Working…'
             )}

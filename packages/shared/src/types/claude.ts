@@ -162,7 +162,8 @@ export type ChatEvent =
   // In-flight assistant text for the current turn; not persisted.
   | { kind: ChatEventKind.TextDelta; text: string }
   // A new content block started streaming — drives the thinking/tool indicator.
-  | { kind: ChatEventKind.BlockStart; blockType: string }
+  // `toolName` is the raw SDK name, present only for tool_use blocks.
+  | { kind: ChatEventKind.BlockStart; blockType: string; toolName?: string }
   // Finalized, persisted message. Authoritative: replaces any delta buffer.
   | { kind: ChatEventKind.Message; message: ChatMessage; createdAt: string }
   | { kind: ChatEventKind.State; state: ClaudeSessionState }
