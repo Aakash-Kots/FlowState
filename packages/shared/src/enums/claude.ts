@@ -26,6 +26,19 @@ export enum ChatBlockType {
   Thinking = 'thinking',
   ToolUse = 'tool_use',
   ToolResult = 'tool_result',
+  Image = 'image',
+}
+
+/**
+ * Media type of an attached image — the four base64 image formats the Agent
+ * SDK's `Base64ImageSource` accepts. Values are the wire MIME strings so they
+ * pass straight to the SDK and into an `<img>` data URL unchanged.
+ */
+export enum ImageMediaType {
+  Png = 'image/png',
+  Jpeg = 'image/jpeg',
+  Gif = 'image/gif',
+  Webp = 'image/webp',
 }
 
 /** Discriminator for a live event streamed over the `claude.onEvent` subscription. */

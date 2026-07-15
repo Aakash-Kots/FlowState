@@ -54,6 +54,7 @@ import {
   mergeModelOptions,
   type ChatBlock,
   type ChatEvent,
+  type ChatImageInput,
   type ChatMessage,
   type ChatSnapshot,
   type ModelOption,
@@ -253,10 +254,7 @@ function blockText(content: unknown): string {
   return content == null ? '' : JSON.stringify(content);
 }
 
-function normalizeAssistantBlocks(
-  content: unknown,
-  parentToolUseId: string | null,
-): ChatBlock[] {
+function normalizeAssistantBlocks(content: unknown, parentToolUseId: string | null): ChatBlock[] {
   if (!Array.isArray(content)) return [];
   const blocks: ChatBlock[] = [];
   for (const raw of content as RawBlock[]) {
@@ -531,7 +529,7 @@ export class ClaudeService {
   }
 
   /** Send a user prompt to a tab's session, starting the session if needed. */
-  send(tabId: string, text: string): void {
+  send(tabId: string, text: string, images?: ChatImageInput[]): void {
     const tab = getTab(tabId);
     if (!tab) {
       this.emit(tabId, { kind: ChatEventKind.Error, message: 'This chat tab no longer exists.' });
@@ -554,19 +552,42 @@ export class ClaudeService {
     }
 
     const session = this.ensureSession(tab, cwd);
+    const trimmed = text.trim();
+    const imageList = images ?? [];
+    // Persisted/rendered form: image blocks first (they lead the bubble), then
+    // the text block when there's any text.
+    const blocks: ChatBlock[] = imageList.map((img) => ({
+      type: ChatBlockType.Image,
+      mediaType: img.mediaType,
+      data: img.data,
+      name: img.name,
+    }));
+    if (trimmed) blocks.push({ type: ChatBlockType.Text, text: trimmed });
     const userMessage: ChatMessage = {
       id: randomUUID(),
       role: ChatMessageRole.User,
-      blocks: [{ type: ChatBlockType.Text, text }],
+      blocks,
     };
     this.persistAndEmit(session, userMessage);
     this.setState(tabId, ClaudeSessionState.Running);
     // Snapshot the worktree now (before the agent's first edit) so the turn's
     // `result` can report exactly which files this run changed. Best-effort.
     session.turnBaseline = new GitService(cwd).snapshotTree().catch(() => null);
+    // Hand the SDK a content-block array when images are attached (text stays a
+    // plain string otherwise). Base64 images map straight to the SDK's
+    // `Base64ImageSource`; the text block trails so the model reads it last.
+    const content: SDKUserMessage['message']['content'] = imageList.length
+      ? [
+          ...imageList.map((img) => ({
+            type: 'image' as const,
+            source: { type: 'base64' as const, media_type: img.mediaType, data: img.data },
+          })),
+          ...(trimmed ? [{ type: 'text' as const, text: trimmed }] : []),
+        ]
+      : trimmed;
     session.queue.push({
       type: 'user',
-      message: { role: 'user', content: text },
+      message: { role: 'user', content },
       parent_tool_use_id: null,
     });
   }

@@ -2,6 +2,7 @@ import { observable } from '@trpc/server/observable';
 import { BrowserWindow, dialog } from 'electron';
 import { z } from 'zod';
 import {
+  chatImageInputSchema,
   PermissionBehavior,
   PermissionMode,
   ReasoningEffort,
@@ -27,9 +28,21 @@ export const claudeRouter = router({
     .query(({ input }) => claudeService.getSnapshot(input.tabId)),
 
   send: publicProcedure
-    .input(z.object({ tabId: z.string(), text: z.string().min(1) }))
+    .input(
+      z
+        .object({
+          tabId: z.string(),
+          text: z.string(),
+          images: z.array(chatImageInputSchema).optional(),
+        })
+        // A prompt must carry text or at least one image (or both) — an empty
+        // send is a no-op the composer already guards against.
+        .refine((v) => v.text.trim().length > 0 || (v.images?.length ?? 0) > 0, {
+          message: 'A prompt needs text or an image.',
+        }),
+    )
     .mutation(({ input }) => {
-      claudeService.send(input.tabId, input.text);
+      claudeService.send(input.tabId, input.text, input.images);
     }),
 
   interrupt: publicProcedure
@@ -38,11 +51,9 @@ export const claudeRouter = router({
 
   // Clear the tab's chat (Claude Code's `/clear`): wipe the transcript and start
   // a fresh session. Also driven by the composer `/clear` and the panel action.
-  clear: publicProcedure
-    .input(z.object({ tabId: z.string() }))
-    .mutation(({ input }) => {
-      claudeService.clear(input.tabId);
-    }),
+  clear: publicProcedure.input(z.object({ tabId: z.string() })).mutation(({ input }) => {
+    claudeService.clear(input.tabId);
+  }),
 
   // Models the tab can run (live from the SDK when a session exists, else defaults).
   supportedModels: publicProcedure

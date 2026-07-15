@@ -375,3 +375,31 @@ body {
 *::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* The chat conversation scrollbar sits a bit thicker and inset from the top/bottom
+   edges so it reads as a shorter handle floating in the pane. */
+[data-chat-scroll]::-webkit-scrollbar {
+  width: 11px;
+}
+[data-chat-scroll]::-webkit-scrollbar-track {
+  margin-top: 3rem;
+  margin-bottom: 3rem;
+}
+
+/*
+ * Center-anchored dialogs (e.g. the New worktree modal) fade in on open. This
+ * animates opacity ONLY — tailwindcss-animate's `animate-in` overrides
+ * `transform`, which would wipe out the `-translate-x/y-1/2` centering mid-flight
+ * and read as a slide from the corner. Keep the transform static; fade the box.
+ */
+@keyframes modal-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.animate-modal-in {
+  animation: modal-fade-in 120ms ease-out;
+}

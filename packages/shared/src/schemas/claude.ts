@@ -10,6 +10,7 @@ import {
   ChatEventKind,
   ChatMessageRole,
   ClaudeSessionState,
+  ImageMediaType,
   PermissionBehavior,
   PermissionMode,
   ReasoningEffort,
@@ -18,6 +19,7 @@ import { GitFileStatus } from '../enums/git';
 import type {
   ChatBlock,
   ChatEvent,
+  ChatImageInput,
   ChatMessage,
   ChatSnapshot,
   ClaudeMessage,
@@ -81,7 +83,19 @@ export const chatBlockSchema: z.ZodType<ChatBlock> = z.discriminatedUnion('type'
     content: z.string(),
     isError: z.boolean(),
   }),
+  z.object({
+    type: z.literal(ChatBlockType.Image),
+    mediaType: z.nativeEnum(ImageMediaType),
+    data: z.string(),
+    name: z.string().optional(),
+  }),
 ]);
+
+export const chatImageInputSchema: z.ZodType<ChatImageInput> = z.object({
+  mediaType: z.nativeEnum(ImageMediaType),
+  data: z.string(),
+  name: z.string().optional(),
+});
 
 export const chatMessageSchema: z.ZodType<ChatMessage> = z.object({
   id: z.string(),

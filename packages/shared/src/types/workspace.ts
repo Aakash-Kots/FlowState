@@ -3,7 +3,7 @@
  * terminals, Claude Code session, and optional Linear issue. Validation lives in
  * `../schemas/workspace`.
  */
-import type { ClaudeSessionState } from '../enums/claude';
+import type { ClaudeSessionState, PermissionMode } from '../enums/claude';
 import type { LinearIssueRef } from './linear';
 
 /**
@@ -60,4 +60,6 @@ export type CreateWorktreeInput = {
   projectId: string;
   baseRef?: string;
   initialPrompt?: string;
+  /** Permission mode the first session starts in (e.g. Plan). Defaults to Default. */
+  permissionMode?: PermissionMode;
 };
