@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect } from 'react';
-import Link from 'next/link';
-import { Archive, GitBranch, Plug, Plus, Settings, Trash2 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Archive, GitBranch, HelpCircle, Plug, Plus, Search, Settings, Trash2 } from 'lucide-react';
 import { DEFAULT_WORKSPACE_ID, type Project, type Workspace } from '@flowstate/shared';
 import {
   archiveWorktree,
@@ -16,13 +16,15 @@ import {
 import { useWorktreeDiffStat, useWorktreePrMerged } from '@/lib/git';
 import { projectName } from '@/lib/paths';
 import { setSettingsOpen, useSettings } from '@/lib/settings';
+import { setHelpOpen, setPaletteOpen } from '@/lib/shortcuts/store';
 import { useWorktreeState, useWorktreeUnread } from '@/lib/tabStates';
 import { pickWorkingFolder, useWorkspace } from '@/lib/workspace';
 import { AddProjectModal } from '../projects/AddProjectModal';
 import { CreateWorktreeModal } from '../projects/CreateWorktreeModal';
 import { ProjectAvatar } from '../projects/ProjectAvatar';
-import { CtaIconButton } from '../shared/CtaIconButton';
 import { cn } from '../ui/cn';
+import { DropdownItem, DropdownMenu } from '../ui/dropdown-menu';
+import { Kbd } from '../ui/kbd';
 import { StateIndicator } from '../ui/StateIndicator';
 import {
   Sidebar,
@@ -41,37 +43,58 @@ import {
   SidebarMenuSubItem,
   SidebarRail,
   SidebarSeparator,
+  SidebarTrigger,
 } from '../ui/sidebar';
 
 ///////////////////
 // Sub-components //
 ///////////////////
 
-/** The FlowState logo mark — three flowing strokes suggesting motion/flow. */
-function FlowStateMark({ className }: { className?: string }) {
+/** The linked GitHub account — avatar + display name, with a menu to the Connect screen. */
+function UserIdentity() {
+  const viewer = useProjects((s) => s.viewer);
+  const router = useRouter();
+  const label = viewer?.name ?? viewer?.login ?? 'Connect account';
+  const initial = label.charAt(0).toUpperCase();
   return (
-    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
-      <path
-        d="M5 8c3.5-3.2 10-3.2 14 0"
-        stroke="currentColor"
-        strokeWidth="2.4"
-        strokeLinecap="round"
-      />
-      <path
-        d="M5 12c3.5-3.2 10-3.2 14 0"
-        stroke="currentColor"
-        strokeWidth="2.4"
-        strokeLinecap="round"
-        opacity="0.7"
-      />
-      <path
-        d="M5 16c3.5-3.2 10-3.2 14 0"
-        stroke="currentColor"
-        strokeWidth="2.4"
-        strokeLinecap="round"
-        opacity="0.4"
-      />
-    </svg>
+    <DropdownMenu
+      placement="bottom"
+      align="start"
+      triggerClassName="flex w-full items-center gap-2 p-1.5 text-sidebar-foreground hover:bg-sidebar-accent group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-1"
+      trigger={
+        <>
+          {viewer?.avatarUrl ? (
+            // Bare remote avatar in a statically-exported Electron app — `next/image`
+            // buys nothing here (optimization is off) and can't take a bare remote URL.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={viewer.avatarUrl}
+              alt=""
+              className="size-7 shrink-0 rounded-full object-cover"
+            />
+          ) : (
+            <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-sidebar-primary text-xs font-semibold text-sidebar-primary-foreground">
+              {initial}
+            </span>
+          )}
+          <span className="flex-1 truncate text-left text-sm font-semibold group-data-[collapsible=icon]:hidden">
+            {label}
+          </span>
+        </>
+      }
+    >
+      {(close) => (
+        <DropdownItem
+          onSelect={() => {
+            close();
+            router.push('/connect');
+          }}
+        >
+          <Plug className="size-4 shrink-0" />
+          <span>Connect</span>
+        </DropdownItem>
+      )}
+    </DropdownMenu>
   );
 }
 
@@ -242,19 +265,25 @@ export function AppSidebar() {
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader>
-        <div className="flex items-center gap-2 px-1 py-1 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
-          <div className="flex aspect-square size-7 shrink-0 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground">
-            <FlowStateMark className="size-4" />
-          </div>
-          <span className="truncate text-sm font-semibold tracking-wide text-sidebar-foreground group-data-[collapsible=icon]:hidden">
-            FlowState
-          </span>
+        <div className="flex items-center px-1 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
+          <SidebarTrigger />
         </div>
-        <div className="px-1 group-data-[collapsible=icon]:px-0">
-          <CtaIconButton icon={Plus} onClick={() => setAddOpen(true)}>
-            Add Project
-          </CtaIconButton>
-        </div>
+        <UserIdentity />
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton tooltip="Create" onClick={() => setAddOpen(true)}>
+              <Plus className="size-4 shrink-0" />
+              <span>Create</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton tooltip="Search" onClick={() => setPaletteOpen(true)}>
+              <Search className="size-4 shrink-0" />
+              <span>Search</span>
+              <Kbd keys={['⌘', 'K']} className="ml-auto group-data-[collapsible=icon]:hidden" />
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
         <SidebarSeparator className="mx-0" />
@@ -270,7 +299,7 @@ export function AppSidebar() {
                 <SidebarMenuItem>
                   <div className="px-2 py-1.5 group-data-[collapsible=icon]:hidden">
                     <p className="text-xs text-sidebar-foreground/60">
-                      No projects yet. Use “Add Project” above.
+                      No projects yet. Use “Create” above.
                     </p>
                   </div>
                 </SidebarMenuItem>
@@ -281,26 +310,29 @@ export function AppSidebar() {
       </SidebarContent>
       <SidebarFooter>
         <SidebarSeparator className="mx-0" />
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              onClick={() => setSettingsOpen(!settingsOpen)}
-              isActive={settingsOpen}
-              tooltip="Settings"
-            >
-              <Settings className="size-4 shrink-0" />
-              <span>Settings</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-          <SidebarMenuItem>
-            <SidebarMenuButton asChild tooltip="Connect">
-              <Link href="/connect">
-                <Plug className="size-4 shrink-0" />
-                <span>Connect</span>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
+        <div className="flex items-center justify-end gap-1 px-1 group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
+          <button
+            type="button"
+            title="Keyboard shortcuts"
+            onClick={() => setHelpOpen(true)}
+            className="flex size-8 items-center justify-center rounded-md text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+          >
+            <HelpCircle className="size-4" />
+            <span className="sr-only">Keyboard shortcuts</span>
+          </button>
+          <button
+            type="button"
+            title="Settings"
+            onClick={() => setSettingsOpen(!settingsOpen)}
+            className={cn(
+              'flex size-8 items-center justify-center rounded-md text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground',
+              settingsOpen && 'bg-sidebar-accent text-sidebar-foreground',
+            )}
+          >
+            <Settings className="size-4" />
+            <span className="sr-only">Settings</span>
+          </button>
+        </div>
       </SidebarFooter>
       <SidebarRail />
       <AddProjectModal />

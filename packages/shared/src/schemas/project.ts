@@ -15,6 +15,7 @@ import type {
 
 export const githubViewerSchema: z.ZodType<GithubViewer> = z.object({
   login: z.string(),
+  name: z.string(),
   avatarUrl: z.string(),
 });
 
