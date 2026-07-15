@@ -83,7 +83,7 @@ import {
 } from '../store';
 import { authService } from './auth';
 import { GitService } from './git';
-import { slugifyTitle, worktreeService } from './worktree';
+import { renameWorktree } from './worktreeEvents';
 
 ///////////
 // Types //
@@ -1414,28 +1414,10 @@ export class ClaudeService {
     const workspace = getWorkspace(session.workspaceId);
     if (workspace && workspace.name === UNTITLED_WORKSPACE_NAME) {
       // Rename the throwaway random branch (e.g. `brave-lark`) to a slug of the
-      // title. Best-effort: a git failure keeps the old branch and never breaks
-      // the chat. Skip entirely for Linear-linked worktrees — their branch is the
-      // ticket's intentional name (e.g. `aakash/cre-1447-…`) and must be preserved.
-      let branch = workspace.branch;
-      if (!workspace.linearIssue) {
-        try {
-          branch = await worktreeService.renameBranch({
-            repoRoot: workspace.repoRoot,
-            oldBranch: workspace.branch,
-            newBranch: slugifyTitle(name),
-          });
-        } catch (err) {
-          console.warn('[claude] branch rename failed', err);
-        }
-      }
-      upsertWorkspace({ ...workspace, name, branch });
-      this.emit(session.tabId, {
-        kind: ChatEventKind.WorktreeName,
-        workspaceId: workspace.id,
-        name,
-        branch,
-      });
+      // title and broadcast — shared with the manual sidebar rename via
+      // `renameWorktree`, so both reach every view (not just this tab). The
+      // Linear-linked guard and best-effort git handling live in that helper.
+      await renameWorktree(workspace.id, name);
     }
   }
 

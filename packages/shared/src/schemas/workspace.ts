@@ -33,6 +33,11 @@ export const recentWorkspaceEntrySchema: z.ZodType<RecentWorkspaceEntry> = z.obj
 
 export const recentWorkspacesSchema = z.array(recentWorkspaceEntrySchema);
 
+export const renameWorktreeInputSchema = z.object({
+  workspaceId: z.string(),
+  name: z.string().trim().min(1),
+});
+
 export const createWorkspaceInputSchema = z.object({
   repoRoot: z.string(),
   branch: z.string(),

@@ -57,6 +57,8 @@ export type GitFileDiff = {
 export type PrStatus = {
   number: number;
   url: string;
+  /** The PR title — shown as the sidebar row label while the PR is open. */
+  title: string;
   state: PrState;
   /** Rolled-up CI state across the head commit (only meaningful while open). */
   checks: PrChecks;
