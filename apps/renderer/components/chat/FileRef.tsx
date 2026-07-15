@@ -34,7 +34,7 @@ export function FileRef({ path, className }: { path: string; className?: string 
       title={path}
     >
       <Icon className={cn('size-3.5 shrink-0', color)} />
-      <span className="min-w-0 truncate text-neutral-200">{basename(path)}</span>
+      <span className="min-w-0 truncate font-mono text-neutral-200">{basename(path)}</span>
     </span>
   );
 }

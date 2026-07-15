@@ -16,12 +16,12 @@ export type ToolRowProps = { block: ToolUseBlock; result?: ToolResultBlock };
 
 /**
  * One item in the flattened transcript that `ChatView` renders: a whole-message
- * bubble, a standalone assistant block, or a collapsed run of tool calls. See
+ * bubble, a standalone assistant block, or a single tool call. See
  * `groupChatItems`. `key` is a stable React key (a message id, `msgId:index`,
- * or the run's first tool-call id).
+ * or a tool-call id).
  */
 export type ChatItem =
   | { kind: ChatItemKind.Message; key: string; entry: ChatSnapshotEntry }
   | { kind: ChatItemKind.Block; key: string; block: TextBlock | ThinkingBlock | ToolResultBlock }
-  | { kind: ChatItemKind.ToolGroup; key: string; blocks: ToolUseBlock[] }
+  | { kind: ChatItemKind.Tool; key: string; block: ToolUseBlock }
   | { kind: ChatItemKind.Plan; key: string; block: ToolUseBlock };

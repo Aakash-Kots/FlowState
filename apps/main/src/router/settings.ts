@@ -1,13 +1,15 @@
 import { z } from 'zod';
-import { ArchiveRetention, CodeTheme } from '@flowstate/shared';
+import { ArchiveRetention, CodeTheme, FontSize } from '@flowstate/shared';
 import {
   getArchiveRetention,
   getCodeTheme,
+  getFontSize,
   getSkillsPanelOpen,
   getSkillsPanelWidth,
   getSoundEnabled,
   setArchiveRetention,
   setCodeTheme,
+  setFontSize,
   setSkillsPanelOpen,
   setSkillsPanelWidth,
   setSoundEnabled,
@@ -24,6 +26,7 @@ export const settingsRouter = router({
   get: publicProcedure.query(() => ({
     soundEnabled: getSoundEnabled(),
     codeTheme: getCodeTheme(),
+    fontSize: getFontSize(),
     archiveRetention: getArchiveRetention(),
     skillsPanelWidth: getSkillsPanelWidth(),
     skillsPanelOpen: getSkillsPanelOpen(),
@@ -39,6 +42,12 @@ export const settingsRouter = router({
     .input(z.object({ theme: z.nativeEnum(CodeTheme) }))
     .mutation(({ input }) => {
       setCodeTheme(input.theme);
+    }),
+
+  setFontSize: publicProcedure
+    .input(z.object({ size: z.nativeEnum(FontSize) }))
+    .mutation(({ input }) => {
+      setFontSize(input.size);
     }),
 
   setArchiveRetention: publicProcedure
