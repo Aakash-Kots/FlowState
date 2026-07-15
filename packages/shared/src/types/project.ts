@@ -6,9 +6,11 @@
  * lives in `../schemas/project`.
  */
 
-/** The linked GitHub account itself — its login and profile avatar. */
+/** The linked GitHub account itself — its login, display name, and profile avatar. */
 export type GithubViewer = {
   login: string;
+  /** The account's display name (GitHub's `name`), falling back to `login`. */
+  name: string;
   /** URL of the account's profile picture. */
   avatarUrl: string;
 };

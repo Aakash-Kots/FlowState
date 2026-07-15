@@ -151,15 +151,16 @@ export class GithubService {
     return token;
   }
 
-  /** The linked account's own login + profile avatar (drives the sidebar fallback). */
+  /** The linked account's own login, display name + profile avatar (drives the sidebar identity). */
   async viewer(): Promise<GithubViewer> {
     const token = await this.token();
     const res = await fetch(`${GITHUB_API}/user`, { headers: this.apiHeaders(token) });
     if (!res.ok) {
       throw new Error(`GitHub API error (${res.status}): failed to read the linked account.`);
     }
-    const user = (await res.json()) as { login: string; avatar_url: string };
-    return { login: user.login, avatarUrl: user.avatar_url };
+    // GitHub's `name` is optional (null when unset) — fall back to the login handle.
+    const user = (await res.json()) as { login: string; avatar_url: string; name: string | null };
+    return { login: user.login, name: user.name ?? user.login, avatarUrl: user.avatar_url };
   }
 
   /** Repositories the linked account can access, most-recently-updated first. */

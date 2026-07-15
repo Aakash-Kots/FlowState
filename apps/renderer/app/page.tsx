@@ -14,7 +14,7 @@ import { GitHeaderButton } from '@/components/git/GitHeaderButton';
 import { ShortcutProvider } from '@/components/shortcuts/ShortcutProvider';
 import { ViewModeTabs } from '@/components/workspace/ViewModeTabs';
 import { WorkspaceViewSwitcher } from '@/components/workspace/WorkspaceViewSwitcher';
-import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
+import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { Toaster } from '@/components/ui/sonner';
 
 export default function Page() {
@@ -69,7 +69,6 @@ function WorkspaceShell() {
         <SidebarInset className="min-h-0 min-w-0">
           <header className="relative flex items-center justify-between border-b border-border bg-secondary px-4 py-2.5">
             <div className="flex items-center gap-2">
-              <SidebarTrigger />
               {onDefaultWorkspace && (
                 <span className="text-xs text-muted-foreground">claude code workspace</span>
               )}
