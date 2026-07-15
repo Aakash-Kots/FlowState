@@ -143,17 +143,28 @@ export enum ClaudeSessionState {
 - **Consumers** compare/construct with enum members (`state === ClaudeSessionState.Running`,
   `{ kind: ChatEventKind.Init, … }`), never raw strings.
 
-### Two boundaries where raw strings stay
+### Mirroring third-party / SDK discriminants
 
-1. **Third-party / SDK string fields** are the vendor's types, not ours. Reading
-   `message.type` or `raw.type` from `@anthropic-ai/claude-agent-sdk`, or passing
-   a `{ behavior: 'allow' }` into the SDK's `PermissionResult`, uses the raw
-   string literal the SDK defines. Only _our_ domain string sets are enums; map
-   explicitly at the boundary when the two meet.
-2. **Purely-presentational React variant props** and **trivial single-file UI
-   state** stay as string-literal unions — enums make JSX unidiomatic. Examples
-   that intentionally remain unions: `Button`'s `variant` prop, `ConnectScreen`'s
-   local `Busy`. These are not domain data and are not exported.
+When we **dispatch on** a third-party / SDK string discriminant (e.g. the
+`subtype` of `@anthropic-ai/claude-agent-sdk`'s `type: 'system'` messages),
+re-declare that fixed set as our own **mirror enum** in `enums/<domain>.ts` and
+branch on its members instead of scattering raw wire strings through a `switch` /
+`if` chain. A string enum whose values are byte-identical to the SDK's still
+narrows the SDK's discriminated union (`message.subtype === SdkSystemSubtype.X`
+narrows `message`), so we get named branches with no loss of type-safety. Keep
+the enum values exactly equal to the vendor's strings, and comment that they must
+stay in sync. See `apps/main/src/lib/enums/claude.ts` (`SdkSystemSubtype`).
+
+Constructing a value the SDK owns (passing `{ behavior: 'allow' }` into the SDK's
+`PermissionResult`) may still use the raw literal the SDK defines — mirror it only
+when we branch on it enough to earn the enum.
+
+### One boundary where raw strings stay
+
+**Purely-presentational React variant props** and **trivial single-file UI
+state** stay as string-literal unions — enums make JSX unidiomatic. Examples that
+intentionally remain unions: `Button`'s `variant` prop, `ConnectScreen`'s local
+`Busy`. These are not domain data and are not exported.
 
 A schema that validates one of these enums uses `z.nativeEnum(TheEnum)` (or
 `z.literal(TheEnum.Member)` inside a discriminated union) — see §5 for where

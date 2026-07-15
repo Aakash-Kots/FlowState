@@ -156,6 +156,16 @@ export type QuestionRequest = {
   questions: QuestionItem[];
 };
 
+/**
+ * One background agent running out of the current turn's view. Mirrors an entry
+ * of the SDK's `background_tasks_changed` level payload (id-only membership).
+ */
+export type BackgroundTask = {
+  id: string;
+  type: string;
+  description: string;
+};
+
 /** Live event streamed over the `claude.onEvent` subscription. */
 export type ChatEvent =
   | { kind: ChatEventKind.Init; sessionId: string; model: string; cwd: string }
@@ -201,6 +211,22 @@ export type ChatEvent =
   | { kind: ChatEventKind.ToolProgress; toolName: string; elapsedSeconds: number }
   // The SDK is retrying a transient API failure; ephemeral, not persisted.
   | { kind: ChatEventKind.ApiRetry; attempt: number; maxRetries: number }
+  // The full set of background agents currently running (REPLACE semantics —
+  // an empty array means none are running). Drives the background-agents overlay.
+  | { kind: ChatEventKind.BackgroundTasks; tasks: BackgroundTask[] }
+  // Live enrichment for a single background agent, keyed by `taskId`. Emitted by
+  // both `task_started` and `task_progress`, so every detail field is optional.
+  | {
+      kind: ChatEventKind.BackgroundTaskProgress;
+      taskId: string;
+      subagentType?: string;
+      prompt?: string;
+      lastToolName?: string;
+      totalTokens?: number;
+      toolUses?: number;
+      durationMs?: number;
+      summary?: string;
+    }
   | { kind: ChatEventKind.Error; message: string };
 
 /**

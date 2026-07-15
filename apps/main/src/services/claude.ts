@@ -81,6 +81,7 @@ import {
   upsertTab,
   upsertWorkspace,
 } from '../store';
+import { SdkSystemSubtype } from '../lib/enums/claude';
 import { authService } from './auth';
 import { GitService } from './git';
 import { renameWorktree } from './worktreeEvents';
@@ -1091,7 +1092,7 @@ export class ClaudeService {
     const { tabId } = session;
     switch (message.type) {
       case 'system': {
-        if (message.subtype === 'init') {
+        if (message.subtype === SdkSystemSubtype.Init) {
           session.sessionId = message.session_id;
           session.reportedModel = message.model;
           const tab = getTab(tabId);
@@ -1104,11 +1105,11 @@ export class ClaudeService {
           });
           // Populate the usage widget as soon as a session opens (before turn 5).
           void this.pollUsageLimits();
-        } else if (message.subtype === 'commands_changed') {
+        } else if (message.subtype === SdkSystemSubtype.CommandsChanged) {
           // The SDK discovered/dropped skills mid-session — replace the cache.
           session.skills = (message.commands as SlashCommand[]).map(toSkillOption);
           this.emit(tabId, { kind: ChatEventKind.SkillsUpdated, skills: session.skills });
-        } else if (message.subtype === 'session_state_changed') {
+        } else if (message.subtype === SdkSystemSubtype.SessionStateChanged) {
           const state: ClaudeSessionState =
             message.state === 'requires_action'
               ? ClaudeSessionState.Waiting
@@ -1116,11 +1117,44 @@ export class ClaudeService {
                 ? ClaudeSessionState.Running
                 : ClaudeSessionState.Idle;
           this.setState(tabId, state);
-        } else if (message.subtype === 'api_retry') {
+        } else if (message.subtype === SdkSystemSubtype.ApiRetry) {
           this.emit(tabId, {
             kind: ChatEventKind.ApiRetry,
             attempt: message.attempt,
             maxRetries: message.max_retries,
+          });
+        } else if (message.subtype === SdkSystemSubtype.BackgroundTasksChanged) {
+          // The level signal: full membership of currently-running background
+          // agents (REPLACE semantics). Drives the overlay; empty ⇒ none running.
+          this.emit(tabId, {
+            kind: ChatEventKind.BackgroundTasks,
+            tasks: message.tasks.map((t) => ({
+              id: t.task_id,
+              type: t.task_type,
+              description: t.description,
+            })),
+          });
+        } else if (message.subtype === SdkSystemSubtype.TaskStarted) {
+          // Enrich a card with launch detail; skip ambient/housekeeping tasks.
+          if (!message.skip_transcript) {
+            this.emit(tabId, {
+              kind: ChatEventKind.BackgroundTaskProgress,
+              taskId: message.task_id,
+              subagentType: message.subagent_type,
+              prompt: message.prompt,
+            });
+          }
+        } else if (message.subtype === SdkSystemSubtype.TaskProgress) {
+          // Live per-task progress (usage is required on this subtype).
+          this.emit(tabId, {
+            kind: ChatEventKind.BackgroundTaskProgress,
+            taskId: message.task_id,
+            subagentType: message.subagent_type,
+            lastToolName: message.last_tool_name,
+            totalTokens: message.usage.total_tokens,
+            toolUses: message.usage.tool_uses,
+            durationMs: message.usage.duration_ms,
+            summary: message.summary,
           });
         }
         break;

@@ -13,6 +13,7 @@ import {
   PermissionBehavior,
   PermissionMode,
   ReasoningEffort,
+  type BackgroundTask,
   type ChatEvent,
   type ChatImageInput,
   type ChatMessage,
@@ -36,6 +37,17 @@ import { useWorkspace } from './workspace';
 type ChatEntry = {
   message: ChatMessage;
   createdAt: string;
+};
+
+/** Live per-task enrichment for a background agent, keyed by task id (all optional). */
+type BackgroundTaskDetail = {
+  subagentType?: string;
+  prompt?: string;
+  lastToolName?: string;
+  totalTokens?: number;
+  toolUses?: number;
+  durationMs?: number;
+  summary?: string;
 };
 
 type ChatState = {
@@ -75,6 +87,10 @@ type ChatState = {
   apiRetry: { attempt: number; maxRetries: number } | null;
   pendingPermissions: PermissionRequest[];
   pendingQuestions: QuestionRequest[];
+  /** Background agents currently running (REPLACE semantics; empty = none). */
+  backgroundTasks: BackgroundTask[];
+  /** Live enrichment per running background agent, keyed by task id. */
+  backgroundTaskDetails: Record<string, BackgroundTaskDetail>;
   error: string | null;
 };
 
@@ -105,6 +121,8 @@ const INITIAL: ChatState = {
   apiRetry: null,
   pendingPermissions: [],
   pendingQuestions: [],
+  backgroundTasks: [],
+  backgroundTaskDetails: {},
   error: null,
 };
 
@@ -124,6 +142,8 @@ const CLEARED_PATCH: Partial<ChatState> = {
   apiRetry: null,
   pendingPermissions: [],
   pendingQuestions: [],
+  backgroundTasks: [],
+  backgroundTaskDetails: {},
   error: null,
 };
 
@@ -194,7 +214,15 @@ function applyEvent(tabId: string, event: ChatEvent): void {
   const set = storeFor(tabId).setState;
   switch (event.kind) {
     case ChatEventKind.Init:
-      set({ sessionId: event.sessionId, model: event.model, cwd: event.cwd });
+      // A (re)started session has no background agents from a prior process — the
+      // level signal is per-process, so reset the set on init.
+      set({
+        sessionId: event.sessionId,
+        model: event.model,
+        cwd: event.cwd,
+        backgroundTasks: [],
+        backgroundTaskDetails: {},
+      });
       break;
     case ChatEventKind.TextDelta:
       set((s) => ({
@@ -334,6 +362,37 @@ function applyEvent(tabId: string, event: ChatEvent): void {
       break;
     case ChatEventKind.ApiRetry:
       set({ apiRetry: { attempt: event.attempt, maxRetries: event.maxRetries } });
+      break;
+    case ChatEventKind.BackgroundTasks:
+      // The level set is authoritative membership — replace it wholesale and
+      // prune enrichment for tasks that are no longer running.
+      set((s) => {
+        const ids = new Set(event.tasks.map((t) => t.id));
+        const details: Record<string, BackgroundTaskDetail> = {};
+        for (const id of Object.keys(s.backgroundTaskDetails)) {
+          if (ids.has(id)) details[id] = s.backgroundTaskDetails[id];
+        }
+        return { backgroundTasks: event.tasks, backgroundTaskDetails: details };
+      });
+      break;
+    case ChatEventKind.BackgroundTaskProgress:
+      // Merge only the defined fields onto the task's existing detail.
+      set((s) => {
+        const patch: BackgroundTaskDetail = {};
+        if (event.subagentType !== undefined) patch.subagentType = event.subagentType;
+        if (event.prompt !== undefined) patch.prompt = event.prompt;
+        if (event.lastToolName !== undefined) patch.lastToolName = event.lastToolName;
+        if (event.totalTokens !== undefined) patch.totalTokens = event.totalTokens;
+        if (event.toolUses !== undefined) patch.toolUses = event.toolUses;
+        if (event.durationMs !== undefined) patch.durationMs = event.durationMs;
+        if (event.summary !== undefined) patch.summary = event.summary;
+        return {
+          backgroundTaskDetails: {
+            ...s.backgroundTaskDetails,
+            [event.taskId]: { ...s.backgroundTaskDetails[event.taskId], ...patch },
+          },
+        };
+      });
       break;
     case ChatEventKind.Error:
       set({
