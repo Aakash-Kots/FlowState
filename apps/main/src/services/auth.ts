@@ -22,6 +22,7 @@ import { SecretName } from '../lib/enums/secret';
 import type { OnboardingStatus } from '../lib/types/onboarding';
 import { getSetting, setSetting } from '../store/settings';
 import { deleteSecret, getSecret, hasSecret, setSecret } from '../store/secrets';
+import { runLinearOAuth } from './linear-oauth';
 import { terminalService } from './terminal';
 
 ///////////////
@@ -96,6 +97,7 @@ async function readClaudeCredential(): Promise<string | null> {
 export class AuthService extends EventEmitter {
   private claudePolling = false;
   private githubPolling = false;
+  private linearLoginAbort: AbortController | null = null;
 
   async checkClaude(): Promise<boolean> {
     const { stdout } = await loginShell('claude auth status');
@@ -118,6 +120,7 @@ export class AuthService extends EventEmitter {
     return {
       claudeConnected: getSetting<boolean>(CLAUDE_CONNECTED_KEY) === true,
       githubConnected: hasSecret(SecretName.GithubToken),
+      linearConnected: hasSecret(SecretName.LinearToken),
     };
   }
 
@@ -215,6 +218,39 @@ export class AuthService extends EventEmitter {
   async githubLogout(terminalId: string): Promise<OnboardingStatus> {
     terminalService.write(terminalId, 'gh auth logout --hostname github.com\r');
     deleteSecret(SecretName.GithubToken);
+    return this.emitStatus();
+  }
+
+  /**
+   * Link a Linear account via OAuth. Unlike Claude/GitHub there is no CLI, so we
+   * run a browser loopback flow (see `runLinearOAuth`). On success the token is
+   * encrypted via safeStorage and a `status` event fires; any failure/cancel/
+   * timeout leaves the status unchanged so the pill simply stays "Connect".
+   */
+  async beginLinearLogin(): Promise<OnboardingStatus> {
+    if (this.linearLoginAbort) return this.status(); // a flow is already running
+    this.linearLoginAbort = new AbortController();
+    try {
+      const { accessToken } = await runLinearOAuth({ signal: this.linearLoginAbort.signal });
+      setSecret(SecretName.LinearToken, accessToken);
+      return this.emitStatus();
+    } catch (err) {
+      console.warn('[auth] Linear login failed/cancelled:', (err as Error).message);
+      return this.status();
+    } finally {
+      this.linearLoginAbort = null;
+    }
+  }
+
+  /** Cancel an in-flight Linear OAuth flow (tears down the loopback listener). */
+  cancelLinearLogin(): OnboardingStatus {
+    this.linearLoginAbort?.abort();
+    return this.status();
+  }
+
+  /** Disconnect Linear and clear the stored token. */
+  linearLogout(): OnboardingStatus {
+    deleteSecret(SecretName.LinearToken);
     return this.emitStatus();
   }
 

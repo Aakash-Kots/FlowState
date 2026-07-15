@@ -12,5 +12,7 @@ export type LinearIssueRef = {
   identifier: string; // e.g. "ENG-142"
   title: string;
   url: string;
+  /** Linear's suggested git branch name, e.g. "aakash/eng-142-fix-login". */
+  branchName: string;
   stateName?: string;
 };

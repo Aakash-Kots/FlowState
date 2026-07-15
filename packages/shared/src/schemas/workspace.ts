@@ -45,4 +45,8 @@ export const createWorktreeInputSchema = z.object({
   baseRef: z.string().optional(),
   initialPrompt: z.string().optional(),
   permissionMode: z.nativeEnum(PermissionMode).optional(),
+  /** Linear issue to link to the new worktree (optional). */
+  linearIssue: linearIssueRefSchema.nullable().optional(),
+  /** Explicit branch name (e.g. from the linked issue), overriding the random one. */
+  branch: z.string().trim().min(1).optional(),
 });

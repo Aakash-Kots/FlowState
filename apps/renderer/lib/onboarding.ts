@@ -4,22 +4,30 @@ import { useEffect } from 'react';
 import { create } from 'zustand';
 import { trpc } from './trpc';
 
-type OnboardingState = {
+type OnboardingStatus = {
   claudeConnected: boolean;
   githubConnected: boolean;
+  linearConnected: boolean;
+};
+
+type OnboardingState = OnboardingStatus & {
   /** True once we've received the first status from the main process. */
   hydrated: boolean;
-  setStatus: (s: { claudeConnected: boolean; githubConnected: boolean }) => void;
+  setStatus: (s: OnboardingStatus) => void;
 };
 
 export const useOnboarding = create<OnboardingState>((set) => ({
   claudeConnected: false,
   githubConnected: false,
+  linearConnected: false,
   hydrated: false,
   setStatus: (s) => set({ ...s, hydrated: true }),
 }));
 
-/** Both providers connected → the first-run gate is satisfied. */
+/**
+ * Claude + GitHub connected → the first-run gate is satisfied. Linear is
+ * intentionally excluded — it is an optional integration, not an onboarding step.
+ */
 export function useIsOnboarded(): boolean {
   return useOnboarding((s) => s.claudeConnected && s.githubConnected);
 }

@@ -5,6 +5,7 @@ import {
   DEFAULT_WORKSPACE_ID,
   type GithubRepo,
   type GithubViewer,
+  type LinearIssueRef,
   type PermissionMode,
   type Project,
   type Workspace,
@@ -218,6 +219,8 @@ export async function createWorktree(input: {
   baseRef?: string;
   initialPrompt?: string;
   permissionMode?: PermissionMode;
+  linearIssue?: LinearIssueRef | null;
+  branch?: string;
 }): Promise<void> {
   const projectId = useProjects.getState().createProjectId;
   if (!projectId) return;
@@ -228,6 +231,8 @@ export async function createWorktree(input: {
       baseRef: input.baseRef?.trim() || undefined,
       initialPrompt: input.initialPrompt?.trim() || undefined,
       permissionMode: input.permissionMode,
+      linearIssue: input.linearIssue ?? undefined,
+      branch: input.branch?.trim() || undefined,
     });
     useProjects.setState((s) => ({
       creating: false,

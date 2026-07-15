@@ -2,8 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
-import { ChevronDown, GitBranch, X } from 'lucide-react';
+import { ChevronDown, GitBranch, Tag, X } from 'lucide-react';
 import { PermissionMode } from '@flowstate/shared';
+import type { LinearIssueRef } from '@flowstate/shared';
+import { refreshIssues, useLinear } from '@/lib/linear';
+import { useOnboarding } from '@/lib/onboarding';
 import { createWorktree, setCreateOpen, useProjects } from '@/lib/projects';
 import { Button } from '@/components/ui/Button';
 import { cn } from '@/components/ui/cn';
@@ -27,18 +30,41 @@ export function CreateWorktreeModal() {
   const error = useProjects((s) => s.createError);
   const branches = useProjects((s) => s.branches);
   const project = useProjects((s) => s.projects.find((p) => p.id === s.createProjectId) ?? null);
+  const linearConnected = useOnboarding((s) => s.linearConnected);
+  const issues = useLinear((s) => s.issues);
 
   const [baseRef, setBaseRef] = useState('');
   const [prompt, setPrompt] = useState('');
   const [planMode, setPlanMode] = useState(false);
+  const [linearIssue, setLinearIssue] = useState<LinearIssueRef | null>(null);
+  const [branch, setBranch] = useState('');
+  const [issueQuery, setIssueQuery] = useState('');
 
-  // Reset the form each time the modal opens, defaulting to the project's branch.
+  // Reset the form each time the modal opens, defaulting to the project's branch,
+  // and pull the latest assigned Linear issues if the account is linked.
   useEffect(() => {
     if (!open) return;
     setBaseRef(project?.defaultBranch ?? '');
     setPrompt('');
     setPlanMode(false);
-  }, [open, projectId, project?.defaultBranch]);
+    setLinearIssue(null);
+    setBranch('');
+    setIssueQuery('');
+    if (linearConnected) void refreshIssues();
+  }, [open, projectId, project?.defaultBranch, linearConnected]);
+
+  // Picking an issue seeds the (editable) branch with Linear's suggested name.
+  const selectIssue = (issue: LinearIssueRef | null) => {
+    setLinearIssue(issue);
+    setBranch(issue?.branchName ?? '');
+    setIssueQuery('');
+  };
+
+  // Filter the assigned issues by identifier + title as the user types.
+  const q = issueQuery.trim().toLowerCase();
+  const filteredIssues = q
+    ? issues.filter((i) => `${i.identifier} ${i.title}`.toLowerCase().includes(q))
+    : issues;
 
   const canSubmit = !creating;
   const submit = () => {
@@ -47,6 +73,8 @@ export function CreateWorktreeModal() {
       baseRef,
       initialPrompt: prompt,
       permissionMode: planMode ? PermissionMode.Plan : PermissionMode.Default,
+      linearIssue,
+      branch: linearIssue ? branch : undefined,
     });
   };
 
@@ -73,14 +101,77 @@ export function CreateWorktreeModal() {
             planMode ? 'border-primary/60' : 'border-border',
           )}
         >
-          <div className="flex items-center justify-between px-4 pb-1.5 pt-3">
+          <div className="flex items-center justify-between gap-2 px-4 pb-1.5 pt-3">
             <DialogPrimitive.Title className="text-sm font-semibold text-foreground">
               New worktree{project ? ` · ${project.name}` : ''}
             </DialogPrimitive.Title>
-            <DialogPrimitive.Close className="text-muted-foreground transition-colors hover:text-foreground">
-              <X className="h-4 w-4" />
-              <span className="sr-only">Close</span>
-            </DialogPrimitive.Close>
+            <div className="flex items-center gap-2">
+              {linearConnected ? (
+                <DropdownMenu
+                  align="end"
+                  placement="bottom"
+                  triggerClassName="gap-1.5 rounded-full border border-border px-2.5 py-1 text-muted-foreground hover:bg-muted hover:text-neutral-100"
+                  trigger={
+                    <>
+                      <Tag className="h-3.5 w-3.5 opacity-70" />
+                      <span className="max-w-[12rem] truncate">
+                        {linearIssue ? linearIssue.identifier : 'Link Linear issue'}
+                      </span>
+                      <ChevronDown className="h-3 w-3 opacity-70" />
+                    </>
+                  }
+                >
+                  {(close) => (
+                    <div className="flex flex-col">
+                      <input
+                        autoFocus
+                        value={issueQuery}
+                        onChange={(e) => setIssueQuery(e.target.value)}
+                        placeholder="Search issues…"
+                        spellCheck={false}
+                        className="mb-1 w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-xs text-neutral-100 placeholder:text-muted-foreground focus:border-primary/50 focus:outline-none"
+                      />
+                      <div className="max-h-64 overflow-y-auto">
+                        <DropdownItem
+                          selected={!linearIssue}
+                          onSelect={() => {
+                            selectIssue(null);
+                            close();
+                          }}
+                        >
+                          No issue
+                        </DropdownItem>
+                        {filteredIssues.length === 0 ? (
+                          <div className="px-2.5 py-2 text-xs text-muted-foreground">
+                            {issues.length === 0 ? 'No assigned issues' : 'No matches'}
+                          </div>
+                        ) : (
+                          filteredIssues.map((issue) => (
+                            <DropdownItem
+                              key={issue.id}
+                              selected={issue.id === linearIssue?.id}
+                              onSelect={() => {
+                                selectIssue(issue);
+                                close();
+                              }}
+                            >
+                              <span className="truncate">
+                                <span className="text-muted-foreground">{issue.identifier}</span>{' '}
+                                {issue.title}
+                              </span>
+                            </DropdownItem>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </DropdownMenu>
+              ) : null}
+              <DialogPrimitive.Close className="text-muted-foreground transition-colors hover:text-foreground">
+                <X className="h-4 w-4" />
+                <span className="sr-only">Close</span>
+              </DialogPrimitive.Close>
+            </div>
           </div>
 
           <textarea
@@ -93,6 +184,19 @@ export function CreateWorktreeModal() {
             placeholder="What should Claude start on in this worktree?"
             className="max-h-80 min-h-[180px] w-full resize-none bg-transparent px-4 py-1 text-sm leading-6 text-foreground placeholder:text-muted-foreground focus:outline-none"
           />
+
+          {linearIssue ? (
+            <div className="flex items-center gap-2 px-4 pb-1 pt-1">
+              <GitBranch className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <input
+                value={branch}
+                onChange={(e) => setBranch(e.target.value)}
+                spellCheck={false}
+                placeholder="branch name"
+                className="min-w-0 flex-1 rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-xs text-neutral-100 placeholder:text-muted-foreground focus:border-primary/50 focus:outline-none"
+              />
+            </div>
+          ) : null}
 
           {error && <p className="px-4 pb-1 text-sm text-warn">{error}</p>}
 
