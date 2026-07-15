@@ -5,6 +5,8 @@
  * lives in GithubService; persistence in the project store.
  */
 import { randomUUID } from 'node:crypto';
+import { rm } from 'node:fs/promises';
+import { basename, dirname, join } from 'node:path';
 import { TRPCError } from '@trpc/server';
 import { BrowserWindow, dialog } from 'electron';
 import {
@@ -14,7 +16,17 @@ import {
   type Project,
 } from '@flowstate/shared';
 import { z } from 'zod';
-import { getProject, listProjects, setProjectScripts, upsertProject } from '../store';
+import { isManagedClone } from '../lib/constants/project';
+import { WORKTREES_DIR_SUFFIX } from '../lib/constants/worktree';
+import {
+  deleteProject,
+  getProject,
+  listProjects,
+  listWorkspacesByProject,
+  setProjectScripts,
+  upsertProject,
+} from '../store';
+import { teardownWorkspace } from '../services/archive';
 import { claudeService } from '../services/claude';
 import { githubService } from '../services/github';
 import { publicProcedure, router } from '../trpc';
@@ -106,6 +118,36 @@ export const projectsRouter = router({
       claudeService.setCwd(DEFAULT_WORKSPACE_ID, project.localPath);
 
       return project;
+    }),
+
+  /**
+   * Remove a project from FlowState: tear down every worktree, delete its clone
+   * folder from disk (only for FlowState-managed clones — never a folder the user
+   * brought in from elsewhere), then delete its row (cascading workspaces + pins).
+   */
+  remove: publicProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ input }): Promise<void> => {
+      const project = getProject(input.id);
+      if (!project) throw new TRPCError({ code: 'NOT_FOUND', message: 'Project not found.' });
+
+      // Tear down each worktree first (force — the whole project is going away).
+      for (const ws of listWorkspacesByProject(project.id)) {
+        await teardownWorkspace(ws, true);
+      }
+
+      // Only delete from disk when it's a clone FlowState created and manages.
+      if (isManagedClone(project.localPath)) {
+        await rm(project.localPath, { recursive: true, force: true });
+        // The sibling `<repo>-worktrees/` dir is now empty — clean it up too.
+        const worktreesDir = join(
+          dirname(project.localPath),
+          `${basename(project.localPath)}${WORKTREES_DIR_SUFFIX}`,
+        );
+        await rm(worktreesDir, { recursive: true, force: true }).catch(() => {});
+      }
+
+      deleteProject(project.id);
     }),
 
   /** Set a project's Setup/Run scripts (shared by every worktree of the project). */

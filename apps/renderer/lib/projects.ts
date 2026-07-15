@@ -180,6 +180,47 @@ export async function addProject(repo: GithubRepo): Promise<void> {
   }
 }
 
+/**
+ * Delete a project, optimistically: it (and its worktrees) leave the sidebar
+ * immediately while the teardown runs in the background. On failure the project
+ * and its worktrees are restored in place and the error is toasted. The main
+ * process tears down every worktree and deletes the clone folder from disk (only
+ * for FlowState-managed clones). If the active workspace belonged to this
+ * project, fall back to the default workspace.
+ */
+export async function removeProject(project: Project): Promise<void> {
+  const state = useProjects.getState();
+  const index = state.projects.findIndex((p) => p.id === project.id);
+  const worktrees = state.worktrees[project.id] ?? [];
+
+  const activeId = useWorkspace.getState().workspaceId;
+  const wasActive =
+    worktrees.some((w) => w.id === activeId) ||
+    (activeId === DEFAULT_WORKSPACE_ID && useWorkspace.getState().cwd === project.localPath);
+
+  useProjects.setState((s) => {
+    const nextWorktrees = { ...s.worktrees };
+    delete nextWorktrees[project.id];
+    return {
+      projects: s.projects.filter((p) => p.id !== project.id),
+      worktrees: nextWorktrees,
+    };
+  });
+  if (wasActive) void selectWorkspace(DEFAULT_WORKSPACE_ID);
+
+  try {
+    await trpc().projects.remove.mutate({ id: project.id });
+  } catch (err) {
+    useProjects.setState((s) => {
+      if (s.projects.some((p) => p.id === project.id)) return {};
+      const next = [...s.projects];
+      next.splice(index < 0 ? next.length : Math.min(index, next.length), 0, project);
+      return { projects: next, worktrees: { ...s.worktrees, [project.id]: worktrees } };
+    });
+    toast.error(`Couldn't delete ${project.name}`, { description: message(err) });
+  }
+}
+
 ////////////////
 // Worktrees  //
 ////////////////
