@@ -1,8 +1,12 @@
 'use client';
 
-import { useLayoutEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { FileImage, X } from 'lucide-react';
+
+// Hover-intent delay before the preview opens, so brushing past a pill while
+// typing/scrolling doesn't flash the image.
+const HOVER_DELAY_MS = 450;
 
 /**
  * A pasted/uploaded image rendered as a compact inline chip — a green image
@@ -30,6 +34,7 @@ export function ImagePill({
   // flip to `true` next frame to ease in, and back to `false` on leave — the
   // element unmounts only once the fade-out transition finishes.
   const [shown, setShown] = useState(false);
+  const openTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const src = `data:${mediaType};base64,${data}`;
 
   useLayoutEffect(() => {
@@ -38,12 +43,26 @@ export function ImagePill({
     return () => cancelAnimationFrame(frame);
   }, [rect]);
 
+  // Never leave a pending open timer running past unmount.
+  useEffect(() => () => clearTimeout(openTimer.current ?? undefined), []);
+
+  const scheduleOpen = (el: HTMLElement) => {
+    clearTimeout(openTimer.current ?? undefined);
+    openTimer.current = setTimeout(() => setRect(el.getBoundingClientRect()), HOVER_DELAY_MS);
+  };
+
+  const cancel = () => {
+    clearTimeout(openTimer.current ?? undefined);
+    openTimer.current = null;
+    setShown(false);
+  };
+
   return (
     <span
       className="inline-flex max-w-[12rem] select-none items-center gap-1.5 rounded-md border border-border bg-secondary py-0.5 pl-1.5 pr-1 align-middle text-xs"
       title={name}
-      onMouseEnter={(e) => setRect(e.currentTarget.getBoundingClientRect())}
-      onMouseLeave={() => setShown(false)}
+      onMouseEnter={(e) => scheduleOpen(e.currentTarget)}
+      onMouseLeave={cancel}
     >
       <FileImage className="size-3.5 shrink-0 text-green-500" />
       <span className="min-w-0 truncate text-neutral-200">{name}</span>
