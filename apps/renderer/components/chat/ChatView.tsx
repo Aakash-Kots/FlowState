@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChatBlockType, ClaudeSessionState } from '@flowstate/shared';
 import { ActivityIndicator, ChatItemKind } from '@/lib/enums/chat';
-import type { ToolResultBlock, ToolUseBlock } from '@/lib/types/chat';
+import type { ToolResultBlock } from '@/lib/types/chat';
 import { groupChatItems } from '@/lib/chatItems';
 import { useChat } from '@/lib/chat';
 import { formatDuration } from '@/lib/format';
@@ -12,7 +12,7 @@ import { Markdown } from './Markdown';
 import { MessageBubble } from './MessageBubble';
 import { PlanMessage } from './PlanMessage';
 import { ThinkingBlock } from './ThinkingBlock';
-import { ToolGroup } from './ToolGroup';
+import { ToolUseRow } from './ToolUseRow';
 
 const NEAR_BOTTOM_PX = 80;
 
@@ -49,30 +49,21 @@ export function ChatView() {
   const pinnedToBottom = useRef(true);
 
   // Index every tool result (and every tool call id) across the conversation so a
-  // call and its output render together, plus group subagent calls by their parent
-  // Task id so the Task row can render them nested.
-  const { toolResults, toolUseIds, childrenByParent } = useMemo(() => {
+  // call and its output render together.
+  const { toolResults, toolUseIds } = useMemo(() => {
     const results = new Map<string, ToolResultBlock>();
     const ids = new Set<string>();
-    const children = new Map<string, ToolUseBlock[]>();
     for (const { message } of messages) {
       for (const block of message.blocks) {
         if (block.type === ChatBlockType.ToolResult) results.set(block.toolUseId, block);
-        else if (block.type === ChatBlockType.ToolUse) {
-          ids.add(block.id);
-          if (block.parentToolUseId) {
-            const list = children.get(block.parentToolUseId);
-            if (list) list.push(block);
-            else children.set(block.parentToolUseId, [block]);
-          }
-        }
+        else if (block.type === ChatBlockType.ToolUse) ids.add(block.id);
       }
     }
-    return { toolResults: results, toolUseIds: ids, childrenByParent: children };
+    return { toolResults: results, toolUseIds: ids };
   }, [messages]);
 
   // Flatten the transcript into render items: whole-message bubbles, standalone
-  // text/thinking blocks, and collapsed runs of tool calls.
+  // text/thinking blocks, and individual inline tool-call rows.
   const items = useMemo(() => groupChatItems(messages, toolUseIds), [messages, toolUseIds]);
 
   const handleScroll = () => {
@@ -122,13 +113,12 @@ export function ChatView() {
           switch (item.kind) {
             case ChatItemKind.Message:
               return <MessageBubble key={item.key} message={item.entry.message} />;
-            case ChatItemKind.ToolGroup:
+            case ChatItemKind.Tool:
               return (
-                <ToolGroup
+                <ToolUseRow
                   key={item.key}
-                  blocks={item.blocks}
-                  toolResults={toolResults}
-                  childrenByParent={childrenByParent}
+                  block={item.block}
+                  result={toolResults.get(item.block.id)}
                 />
               );
             case ChatItemKind.Plan:

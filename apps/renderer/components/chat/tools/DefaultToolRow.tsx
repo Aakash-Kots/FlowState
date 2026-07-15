@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { colorForTool } from '@/lib/constants/tools';
 import type { ToolRowProps } from '@/lib/types/chat';
 import { cn } from '../../ui/cn';
 
@@ -42,7 +41,7 @@ export function DefaultToolRow({ block, result }: ToolRowProps) {
   const summary = summarizeInput(block.input);
 
   return (
-    <div className="font-mono text-[11px]">
+    <div className="font-mono text-xs">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -54,7 +53,7 @@ export function DefaultToolRow({ block, result }: ToolRowProps) {
         <span className={cn('shrink-0', result?.isError ? 'text-danger' : 'text-muted-foreground')}>
           ⚙
         </span>
-        <span className={cn('shrink-0 font-medium', colorForTool(block.name))}>{block.name}</span>
+        <span className="shrink-0 font-medium text-neutral-200">{block.name}</span>
         {summary && <span className="truncate">{summary}</span>}
         <span className="ml-auto shrink-0 text-[10px]">{open ? '▾' : '▸'}</span>
       </button>

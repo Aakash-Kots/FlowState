@@ -6,6 +6,7 @@ import { eq } from 'drizzle-orm';
 import {
   ArchiveRetention,
   CodeTheme,
+  FontSize,
   type RecentWorkspaceEntry,
   recentWorkspacesSchema,
 } from '@flowstate/shared';
@@ -30,6 +31,7 @@ type WindowBounds = {
 const WINDOW_BOUNDS_KEY = 'window.bounds';
 const SOUND_ENABLED_KEY = 'notifications.soundEnabled';
 const CODE_THEME_KEY = 'appearance.codeTheme';
+const FONT_SIZE_KEY = 'appearance.fontSize';
 const ARCHIVE_RETENTION_KEY = 'worktree.archiveRetention';
 const SKILLS_PANEL_WIDTH_KEY = 'skillsPanel.width';
 const SKILLS_PANEL_OPEN_KEY = 'skillsPanel.open';
@@ -45,6 +47,9 @@ const MAX_SKILLS_PANEL_WIDTH = 520;
 
 /** The syntax-highlighting palette applied when the user hasn't picked one. */
 const DEFAULT_CODE_THEME = CodeTheme.GithubDark;
+
+/** The base UI text size applied when the user hasn't picked one. */
+const DEFAULT_FONT_SIZE = FontSize.Default;
 
 /** How long an archived worktree lingers on disk when the user hasn't chosen. */
 const DEFAULT_ARCHIVE_RETENTION = ArchiveRetention.OneDay;
@@ -89,6 +94,17 @@ export function getCodeTheme(): CodeTheme {
 
 export function setCodeTheme(theme: CodeTheme): void {
   setSetting(CODE_THEME_KEY, theme);
+}
+
+/** The chosen base UI text size (defaults to Default). */
+export function getFontSize(): FontSize {
+  const stored = getSetting<FontSize>(FONT_SIZE_KEY);
+  // Guard against a stale/renamed value lingering in the KV store.
+  return stored && Object.values(FontSize).includes(stored) ? stored : DEFAULT_FONT_SIZE;
+}
+
+export function setFontSize(size: FontSize): void {
+  setSetting(FONT_SIZE_KEY, size);
 }
 
 /** How long the reaper waits before deleting an archived worktree (default 24h). */

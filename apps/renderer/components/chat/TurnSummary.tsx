@@ -6,6 +6,7 @@ import type { ChatMessageMeta, TurnFileChange } from '@flowstate/shared';
 import { fileTypeForPath } from '@/lib/constants/fileTypes';
 import { formatDuration } from '@/lib/format';
 import { cn } from '../ui/cn';
+import { DiffCounts } from './DiffCounts';
 
 ///////////////
 // Constants //
@@ -44,17 +45,6 @@ function summaryText(changes: TurnFileChange[]): string {
 // Sub-components //
 ///////////////////
 
-/** Green `+N` / red `−N` counts, matching the git ChangeList styling. */
-function Counts({ insertions, deletions }: { insertions: number; deletions: number }) {
-  return (
-    <span className="flex shrink-0 items-center gap-1 tabular-nums">
-      {insertions > 0 && <span className="text-success">+{insertions}</span>}
-      {deletions > 0 && <span className="text-danger">−{deletions}</span>}
-      {insertions === 0 && deletions === 0 && <span className="text-muted-foreground">·</span>}
-    </span>
-  );
-}
-
 /** One file pill: type icon, filename, and its per-turn line counts. */
 function FilePill({ change }: { change: TurnFileChange }) {
   const { Icon, color } = fileTypeForPath(change.path);
@@ -65,7 +55,7 @@ function FilePill({ change }: { change: TurnFileChange }) {
     >
       <Icon className={cn('size-3.5 shrink-0', color)} />
       <span className="max-w-[12rem] truncate text-neutral-200">{basename(change.path)}</span>
-      <Counts insertions={change.insertions} deletions={change.deletions} />
+      <DiffCounts added={change.insertions} removed={change.deletions} />
     </span>
   );
 }
@@ -120,7 +110,7 @@ export function TurnSummary({ meta }: { meta: ChatMessageMeta }) {
           title={overflow.map((c) => c.path).join('\n')}
         >
           <span>+{overflow.length} more</span>
-          <Counts insertions={overflowTotals.insertions} deletions={overflowTotals.deletions} />
+          <DiffCounts added={overflowTotals.insertions} removed={overflowTotals.deletions} />
         </span>
       )}
     </div>

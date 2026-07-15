@@ -2,15 +2,67 @@
 
 import { useEffect } from 'react';
 import { X } from 'lucide-react';
+import { FontSize } from '@flowstate/shared';
 import { CODE_THEMES } from '@/lib/constants/codeThemes';
-import { setCodeTheme, setSettingsOpen, setSoundEnabled, useSettings } from '@/lib/settings';
+import {
+  setCodeTheme,
+  setFontSize,
+  setSettingsOpen,
+  setSoundEnabled,
+  useSettings,
+} from '@/lib/settings';
 import { cn } from '../ui/cn';
 import { ArchiveRetentionCard } from './ArchiveRetentionCard';
 import { CodeThemeCard } from './CodeThemeCard';
 
+///////////////
+// Constants //
+///////////////
+
+/** The text-size choices, ascending, with their user-facing labels. */
+const FONT_SIZE_OPTIONS: { value: FontSize; label: string }[] = [
+  { value: FontSize.Small, label: 'Small' },
+  { value: FontSize.Default, label: 'Default' },
+  { value: FontSize.Large, label: 'Large' },
+  { value: FontSize.ExtraLarge, label: 'Extra Large' },
+];
+
 ///////////////////
 // Sub-components //
 ///////////////////
+
+/** A segmented button group for picking the base UI text size. */
+function FontSizeControl({
+  value,
+  onChange,
+}: {
+  value: FontSize;
+  onChange: (v: FontSize) => void;
+}) {
+  return (
+    <div className="inline-flex rounded-md border border-border p-0.5">
+      {FONT_SIZE_OPTIONS.map((option) => {
+        const selected = option.value === value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            aria-pressed={selected}
+            onClick={() => onChange(option.value)}
+            className={cn(
+              'rounded px-3 py-1 text-sm transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-ring/60',
+              selected
+                ? 'bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 /** A pill toggle switch for a boolean setting. */
 function Toggle({
@@ -99,6 +151,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 export function SettingsPage() {
   const soundEnabled = useSettings((s) => s.soundEnabled);
   const codeTheme = useSettings((s) => s.codeTheme);
+  const fontSize = useSettings((s) => s.fontSize);
 
   // Esc closes the page — a familiar exit for a modal-like full surface.
   useEffect(() => {
@@ -127,6 +180,19 @@ export function SettingsPage() {
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-3xl space-y-8 px-6 py-8">
           <Section title="Appearance">
+            <SettingRow
+              stack
+              title="Text size"
+              description="Scale the whole interface up or down."
+              control={
+                <div className="space-y-3">
+                  <FontSizeControl value={fontSize} onChange={setFontSize} />
+                  <p className="text-sm text-muted-foreground">
+                    The quick brown fox jumps over the lazy dog.
+                  </p>
+                </div>
+              }
+            />
             <SettingRow
               stack
               title="Code theme"

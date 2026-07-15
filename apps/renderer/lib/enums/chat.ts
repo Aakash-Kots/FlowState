@@ -14,8 +14,8 @@ export enum ChatItemKind {
   Message = 'message',
   /** A standalone assistant block: text, thinking, or an orphan tool result. */
   Block = 'block',
-  /** A maximal contiguous run of tool calls, collapsed under one summary bar. */
-  ToolGroup = 'toolgroup',
+  /** A single tool call, rendered flat inline in the transcript. */
+  Tool = 'tool',
   /** A proposed plan (`ExitPlanMode`), rendered inline as a markdown message. */
   Plan = 'plan',
 }

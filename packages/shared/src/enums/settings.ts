@@ -21,3 +21,15 @@ export enum CodeTheme {
   SolarizedDark = 'solarized-dark',
   GithubLight = 'github-light',
 }
+
+/**
+ * The base UI text size. Drives the renderer's root `html` font size, which the
+ * rem-based Tailwind scale multiplies from — so the whole interface scales with
+ * it. Values are stable wire strings persisted in SQLite and sent over IPC.
+ */
+export enum FontSize {
+  Small = 'small',
+  Default = 'default',
+  Large = 'large',
+  ExtraLarge = 'extra-large',
+}
