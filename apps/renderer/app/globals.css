@@ -375,3 +375,13 @@ body {
 *::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* The chat conversation scrollbar sits a bit thicker and inset from the top/bottom
+   edges so it reads as a shorter handle floating in the pane. */
+[data-chat-scroll]::-webkit-scrollbar {
+  width: 11px;
+}
+[data-chat-scroll]::-webkit-scrollbar-track {
+  margin-top: 3rem;
+  margin-bottom: 3rem;
+}
