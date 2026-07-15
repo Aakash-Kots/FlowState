@@ -51,8 +51,11 @@ change done.
   (services, routers, store accessors, `cn`) legitimately stays put.
 - **Enums, not string unions:** model fixed domain string sets as string `enum`s
   in `enums/<domain>.ts`; validate with `z.nativeEnum` / `z.literal(Enum.Member)`.
-  Third-party/SDK string fields and presentational React variant props stay as
-  raw strings.
+  When we dispatch on a third-party/SDK string discriminant, re-declare it as a
+  **mirror enum** (values byte-identical to the vendor's; it still narrows the SDK
+  union) rather than branching on raw strings — see `SdkSystemSubtype`. Only
+  presentational React variant props / trivial single-file UI state stay as raw
+  string-literal unions.
 - **Types vs schemas:** hand-declare shapes with `export type X = …` in
   `types/<domain>.ts` (the source-of-truth shape — do NOT use `z.infer` as your
   type system, and do NOT use `interface` — `type` only, everywhere). Put zod

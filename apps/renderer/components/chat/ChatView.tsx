@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { ChatBlockType, ClaudeSessionState } from '@flowstate/shared';
 import { ActivityIndicator, ChatItemKind } from '@/lib/enums/chat';
 import type { ToolResultBlock } from '@/lib/types/chat';
@@ -8,6 +8,7 @@ import { groupChatItems } from '@/lib/chatItems';
 import { useChat } from '@/lib/chat';
 import { verbForTool } from '@/lib/constants/tools';
 import { formatDuration } from '@/lib/format';
+import { useElapsed } from '@/lib/hooks/useElapsed';
 import { EmptyChat } from './EmptyChat';
 import { Markdown } from './Markdown';
 import { MessageBubble } from './MessageBubble';
@@ -16,18 +17,6 @@ import { ThinkingBlock } from './ThinkingBlock';
 import { ToolUseRow } from './ToolUseRow';
 
 const NEAR_BOTTOM_PX = 80;
-
-/** Live elapsed milliseconds since `startedAt`, ticking each second (null = off). */
-function useElapsed(startedAt: number | null): number | null {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (startedAt == null) return;
-    setNow(Date.now());
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, [startedAt]);
-  return startedAt == null ? null : Math.max(0, now - startedAt);
-}
 
 /**
  * Scrollable conversation: persisted messages then the in-flight streaming
