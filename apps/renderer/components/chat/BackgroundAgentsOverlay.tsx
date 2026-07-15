@@ -1,9 +1,8 @@
 'use client';
 
-import { useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Loader2, X } from 'lucide-react';
 import type { BackgroundTask } from '@flowstate/shared';
-import { useChat } from '@/lib/chat';
+import { dismissBackgroundTasks, useChat, useTabId } from '@/lib/chat';
 import { colorForTool, iconForTool, verbForTool } from '@/lib/constants/tools';
 import { formatDuration } from '@/lib/format';
 import { useElapsed } from '@/lib/hooks/useElapsed';
@@ -31,8 +30,9 @@ function formatTokens(n: number): string {
 /** One running background agent: level entry joined with its live detail. */
 function BackgroundAgentCard({ task }: { task: BackgroundTask }) {
   const detail = useChat((s) => s.backgroundTaskDetails[task.id]);
-  // The SDK gives no per-task start time, so time from when the card first mounts.
-  const [startedAt] = useState(() => Date.now());
+  // The SDK gives no per-task start time; the store stamps a first-seen time when
+  // the task appears, so the elapsed timer survives navigating away and back.
+  const startedAt = useChat((s) => s.backgroundTaskStartedAt[task.id] ?? null);
   const elapsed = useElapsed(startedAt);
 
   const title = detail?.subagentType ?? task.description;
@@ -76,6 +76,7 @@ function BackgroundAgentCard({ task }: { task: BackgroundTask }) {
  * set empties, the parent unmounts this and the normal chat view is revealed.
  */
 export function BackgroundAgentsOverlay() {
+  const tabId = useTabId();
   const tasks = useChat((s) => s.backgroundTasks);
 
   return (
@@ -89,6 +90,16 @@ export function BackgroundAgentsOverlay() {
       <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-neutral-100">
         <Loader2 className="size-4 animate-spin text-warn" />
         {tasks.length} background {tasks.length === 1 ? 'agent' : 'agents'} running
+        {/* Hide the overlay for this batch (agents keep running); the store
+            re-surfaces it for the next batch once this set empties. */}
+        <button
+          type="button"
+          onClick={() => dismissBackgroundTasks(tabId)}
+          className="ml-auto flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-neutral-100"
+        >
+          <X className="size-3.5" />
+          Dismiss
+        </button>
       </div>
       <div className="flex flex-col gap-2">
         {tasks.map((task) => (

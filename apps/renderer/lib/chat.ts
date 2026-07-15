@@ -91,6 +91,12 @@ type ChatState = {
   backgroundTasks: BackgroundTask[];
   /** Live enrichment per running background agent, keyed by task id. */
   backgroundTaskDetails: Record<string, BackgroundTaskDetail>;
+  /** When each background agent was first seen (`Date.now()`), keyed by task id.
+   * Lives in the (persistent) store so the elapsed timer survives navigation. */
+  backgroundTaskStartedAt: Record<string, number>;
+  /** True while the user has hidden the background-agents overlay for the current
+   * batch; auto-reset when the set empties so a new batch re-surfaces it. */
+  backgroundTasksDismissed: boolean;
   error: string | null;
 };
 
@@ -123,6 +129,8 @@ const INITIAL: ChatState = {
   pendingQuestions: [],
   backgroundTasks: [],
   backgroundTaskDetails: {},
+  backgroundTaskStartedAt: {},
+  backgroundTasksDismissed: false,
   error: null,
 };
 
@@ -144,6 +152,8 @@ const CLEARED_PATCH: Partial<ChatState> = {
   pendingQuestions: [],
   backgroundTasks: [],
   backgroundTaskDetails: {},
+  backgroundTaskStartedAt: {},
+  backgroundTasksDismissed: false,
   error: null,
 };
 
@@ -222,6 +232,8 @@ function applyEvent(tabId: string, event: ChatEvent): void {
         cwd: event.cwd,
         backgroundTasks: [],
         backgroundTaskDetails: {},
+        backgroundTaskStartedAt: {},
+        backgroundTasksDismissed: false,
       });
       break;
     case ChatEventKind.TextDelta:
@@ -364,15 +376,25 @@ function applyEvent(tabId: string, event: ChatEvent): void {
       set({ apiRetry: { attempt: event.attempt, maxRetries: event.maxRetries } });
       break;
     case ChatEventKind.BackgroundTasks:
-      // The level set is authoritative membership — replace it wholesale and
-      // prune enrichment for tasks that are no longer running.
+      // The level set is authoritative membership — replace it wholesale, prune
+      // per-task enrichment + start-time for tasks no longer running, and stamp a
+      // first-seen time for newly-appeared ones (so the timer counts from arrival,
+      // surviving navigation). Dismissal is per-batch: clear it once the set empties
+      // so a fresh batch re-surfaces the overlay.
       set((s) => {
         const ids = new Set(event.tasks.map((t) => t.id));
         const details: Record<string, BackgroundTaskDetail> = {};
-        for (const id of Object.keys(s.backgroundTaskDetails)) {
-          if (ids.has(id)) details[id] = s.backgroundTaskDetails[id];
+        const startedAt: Record<string, number> = {};
+        for (const task of event.tasks) {
+          if (s.backgroundTaskDetails[task.id]) details[task.id] = s.backgroundTaskDetails[task.id];
+          startedAt[task.id] = s.backgroundTaskStartedAt[task.id] ?? Date.now();
         }
-        return { backgroundTasks: event.tasks, backgroundTaskDetails: details };
+        return {
+          backgroundTasks: event.tasks,
+          backgroundTaskDetails: details,
+          backgroundTaskStartedAt: startedAt,
+          ...(event.tasks.length === 0 ? { backgroundTasksDismissed: false } : {}),
+        };
       });
       break;
     case ChatEventKind.BackgroundTaskProgress:
@@ -546,6 +568,15 @@ export function interruptSession(tabId: string): void {
 export function clearChat(tabId: string): void {
   storeFor(tabId).setState(CLEARED_PATCH);
   void trpc().claude.clear.mutate({ tabId });
+}
+
+/**
+ * Hide the background-agents overlay for the current batch (purely local — the
+ * agents keep running). The flag auto-resets in the `BackgroundTasks` reducer
+ * once the set empties, so the next batch of agents re-surfaces the overlay.
+ */
+export function dismissBackgroundTasks(tabId: string): void {
+  storeFor(tabId).setState({ backgroundTasksDismissed: true });
 }
 
 // Focus bus — lets a keyboard shortcut focus the active tab's composer without

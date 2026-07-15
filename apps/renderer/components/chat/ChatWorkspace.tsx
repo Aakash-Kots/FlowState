@@ -22,7 +22,9 @@ function ChatSession() {
   useChatSync(tabId);
   const hydrated = useChat((s) => s.hydrated);
   const cwd = useChat((s) => s.cwd);
-  const hasBackgroundAgents = useChat((s) => s.backgroundTasks.length > 0);
+  const hasBackgroundAgents = useChat(
+    (s) => s.backgroundTasks.length > 0 && !s.backgroundTasksDismissed,
+  );
   const [picking, setPicking] = useState(false);
 
   const pickFolder = async () => {
