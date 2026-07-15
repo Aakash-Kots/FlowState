@@ -22,8 +22,10 @@ import {
 } from '@/lib/chat';
 import { MAX_COMPOSER_IMAGE_BYTES } from '@/lib/constants/chat';
 import { EXIT_PLAN_MODE_TOOL } from '@/lib/constants/tools';
+import { ArrowUp, Square } from 'lucide-react';
 import { cn } from '../ui/cn';
 import { Button } from '../ui/Button';
+import { IconButton } from '../ui/IconButton';
 import { ComposerEditor, type ComposerDraft, type ComposerEditorHandle } from './ComposerEditor';
 import { InlinePrompt } from './InlinePrompt';
 import { InputToolbar } from './InputToolbar';
@@ -359,21 +361,24 @@ export function InputBar({ disabled }: { disabled: boolean }) {
                 onAttachImage={() => fileInputRef.current?.click()}
                 trailing={
                   busy && !pendingPlan ? (
-                    <Button
+                    <IconButton
                       variant="secondary"
-                      className="px-2.5 py-1 text-xs text-danger"
+                      className="text-danger"
                       onClick={() => interruptSession(tabId)}
+                      title="Stop"
+                      aria-label="Stop"
                     >
-                      Stop
-                    </Button>
+                      <Square className="h-3.5 w-3.5 fill-current" />
+                    </IconButton>
                   ) : (
-                    <Button
-                      className="px-2.5 py-1 text-xs"
+                    <IconButton
                       onClick={submit}
                       disabled={disabled || (!text.trim() && !hasImages)}
+                      title="Send"
+                      aria-label="Send"
                     >
-                      Send
-                    </Button>
+                      <ArrowUp className="h-4 w-4" />
+                    </IconButton>
                   )
                 }
               />

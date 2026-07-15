@@ -65,6 +65,10 @@ type ChatState = {
   streamingText: string | null;
   /** What the agent is doing between text, for the activity indicator. */
   activeIndicator: ActivityIndicator | null;
+  /** Raw SDK name of the in-flight top-level tool; null when none running.
+   * Names the activity indicator ("Reading a file…") the instant a tool starts,
+   * before the periodic `toolProgress` tick arrives. */
+  activeToolName: string | null;
   /** Live elapsed time for the current top-level tool; null when none running. */
   toolProgress: { toolName: string; elapsedSeconds: number } | null;
   /** Set while the SDK is retrying a transient API failure; null otherwise. */
@@ -96,6 +100,7 @@ const INITIAL: ChatState = {
   messages: [],
   streamingText: null,
   activeIndicator: null,
+  activeToolName: null,
   toolProgress: null,
   apiRetry: null,
   pendingPermissions: [],
@@ -114,6 +119,7 @@ const CLEARED_PATCH: Partial<ChatState> = {
   runStartedAt: null,
   streamingText: null,
   activeIndicator: null,
+  activeToolName: null,
   toolProgress: null,
   apiRetry: null,
   pendingPermissions: [],
@@ -194,21 +200,24 @@ function applyEvent(tabId: string, event: ChatEvent): void {
       set((s) => ({
         streamingText: (s.streamingText ?? '') + event.text,
         activeIndicator: null,
+        activeToolName: null,
         // Text output means the in-flight step advanced — drop stale progress.
         toolProgress: null,
         apiRetry: null,
       }));
       break;
-    case ChatEventKind.BlockStart:
+    case ChatEventKind.BlockStart: {
+      const isTool = event.blockType === ChatBlockType.ToolUse;
       set({
-        activeIndicator:
-          event.blockType === ChatBlockType.Thinking
+        activeIndicator: isTool
+          ? ActivityIndicator.Tool
+          : event.blockType === ChatBlockType.Thinking
             ? ActivityIndicator.Thinking
-            : event.blockType === ChatBlockType.ToolUse
-              ? ActivityIndicator.Tool
-              : null,
+            : null,
+        activeToolName: isTool ? (event.toolName ?? null) : null,
       });
       break;
+    }
     case ChatEventKind.Message:
       set((s) => pushMessage(s, { message: event.message, createdAt: event.createdAt }));
       break;
@@ -232,6 +241,7 @@ function applyEvent(tabId: string, event: ChatEvent): void {
           ? {
               streamingText: null,
               activeIndicator: null,
+              activeToolName: null,
               toolProgress: null,
               apiRetry: null,
             }
@@ -279,7 +289,13 @@ function applyEvent(tabId: string, event: ChatEvent): void {
     case ChatEventKind.Cwd:
       // Folder change resets the session but keeps the persisted transcript
       // (which is what a restart would show anyway).
-      set({ cwd: event.cwd, sessionId: null, streamingText: null, activeIndicator: null });
+      set({
+        cwd: event.cwd,
+        sessionId: null,
+        streamingText: null,
+        activeIndicator: null,
+        activeToolName: null,
+      });
       break;
     case ChatEventKind.Cleared:
       // Transcript wiped + session reset in the main process — mirror it here.
@@ -320,7 +336,12 @@ function applyEvent(tabId: string, event: ChatEvent): void {
       set({ apiRetry: { attempt: event.attempt, maxRetries: event.maxRetries } });
       break;
     case ChatEventKind.Error:
-      set({ error: event.message, streamingText: null, activeIndicator: null });
+      set({
+        error: event.message,
+        streamingText: null,
+        activeIndicator: null,
+        activeToolName: null,
+      });
       break;
   }
 }

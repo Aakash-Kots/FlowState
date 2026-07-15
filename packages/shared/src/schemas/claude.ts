@@ -136,7 +136,11 @@ export const chatEventSchema: z.ZodType<ChatEvent> = z.discriminatedUnion('kind'
     cwd: z.string(),
   }),
   z.object({ kind: z.literal(ChatEventKind.TextDelta), text: z.string() }),
-  z.object({ kind: z.literal(ChatEventKind.BlockStart), blockType: z.string() }),
+  z.object({
+    kind: z.literal(ChatEventKind.BlockStart),
+    blockType: z.string(),
+    toolName: z.string().optional(),
+  }),
   z.object({
     kind: z.literal(ChatEventKind.Message),
     message: chatMessageSchema,

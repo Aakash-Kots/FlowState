@@ -8,15 +8,17 @@ import { BUTTON_BASE, BUTTON_VARIANTS, type ButtonVariant } from './buttonVarian
 // Types //
 ///////////
 
-type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
+type IconButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: ButtonVariant;
 };
 
-export function Button({ variant = 'primary', className, ...props }: ButtonProps) {
+/** Square, icon-only button sharing {@link Button}'s variants. Children = a
+ * lucide icon; always pass a `title`/`aria-label` for accessibility. */
+export function IconButton({ variant = 'primary', className, ...props }: IconButtonProps) {
   return (
     <button
       className={cn(
-        'inline-flex items-center justify-center gap-2 rounded-md px-3.5 py-2 text-sm font-medium',
+        'inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md',
         BUTTON_BASE,
         BUTTON_VARIANTS[variant],
         className,

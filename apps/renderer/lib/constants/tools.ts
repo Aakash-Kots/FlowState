@@ -69,6 +69,27 @@ const TOOL_COLORS: Record<string, string> = {
 /** Neutral fallback for tools without a signature color. */
 const DEFAULT_TOOL_COLOR = 'text-neutral-300';
 
+/** Raw SDK tool name → present-tense phrase for the activity indicator (the
+ * transient "…" status line, which only knows the tool name — not its args —
+ * at block-start). Keyed by the same names as `TOOL_ICONS`; unlisted / `mcp__*`
+ * tools are handled by `verbForTool`. No trailing ellipsis — callers append it. */
+const TOOL_VERBS: Record<string, string> = {
+  Edit: 'Editing a file',
+  MultiEdit: 'Editing a file',
+  Write: 'Writing a file',
+  Read: 'Reading a file',
+  Grep: 'Searching',
+  Glob: 'Finding files',
+  Bash: 'Running a command',
+  WebFetch: 'Fetching a page',
+  Task: 'Running a subagent',
+  TodoWrite: 'Updating todos',
+  ExitPlanMode: 'Finishing the plan',
+};
+
+/** Neutral fallback phrase for tools without a signature verb. */
+const DEFAULT_TOOL_VERB = 'Running a tool';
+
 /////////////
 // Helpers //
 /////////////
@@ -89,4 +110,18 @@ export function iconForTool(name: string): LucideIcon {
   if (TOOL_ICONS[name]) return TOOL_ICONS[name];
   if (name.startsWith('mcp__')) return Plug;
   return DEFAULT_TOOL_ICON;
+}
+
+/** Present-tense phrase for the activity indicator (no trailing ellipsis): the
+ * tool's mapped verb, the bare tool name for an `mcp__*` tool, or a neutral
+ * default when the name is unknown or absent. Mirrors the fallback shape of
+ * `iconForTool`. */
+export function verbForTool(name: string | null | undefined): string {
+  if (!name) return DEFAULT_TOOL_VERB;
+  if (TOOL_VERBS[name]) return TOOL_VERBS[name];
+  if (name.startsWith('mcp__')) {
+    const tool = name.split('__').slice(2).join('__');
+    return tool ? `Running ${tool}` : DEFAULT_TOOL_VERB;
+  }
+  return `Running ${name}`;
 }

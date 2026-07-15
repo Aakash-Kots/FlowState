@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { Check, ChevronRight, ClipboardList, Copy } from 'lucide-react';
 import { EXIT_PLAN_MODE_TOOL } from '@/lib/constants/tools';
 import { exitPlanModeInputSchema } from '@/lib/schemas/toolInput';
@@ -18,7 +18,7 @@ import { Markdown } from './Markdown';
  * resolved. The approve / keep-planning controls live on the composer
  * (`InputBar`), keyed off the pending permission.
  */
-export function PlanMessage({ block }: { block: ToolUseBlock }) {
+export const PlanMessage = memo(function PlanMessage({ block }: { block: ToolUseBlock }) {
   const parsed = exitPlanModeInputSchema.safeParse(block.input);
   const plan = parsed.success ? parsed.data.plan : null;
   // The tool_use block and its permission request share no id, so correlate on
@@ -69,4 +69,4 @@ export function PlanMessage({ block }: { block: ToolUseBlock }) {
       </CollapsibleContent>
     </Collapsible>
   );
-}
+});

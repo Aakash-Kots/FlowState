@@ -57,7 +57,6 @@ export function ToolInputPreview({ toolName, input }: { toolName: string; input:
         <DiffPreview
           patch={buildEditPatch(file_path, old_string, new_string)}
           lang={langForPath(file_path)}
-          fluid
         />
       );
     }
@@ -69,13 +68,13 @@ export function ToolInputPreview({ toolName, input }: { toolName: string; input:
         file_path,
         edits.map((e) => ({ oldString: e.old_string, newString: e.new_string })),
       );
-      return <DiffPreview patch={patch} lang={langForPath(file_path)} fluid />;
+      return <DiffPreview patch={patch} lang={langForPath(file_path)} />;
     }
     case 'Write': {
       const parsed = writeInputSchema.safeParse(input);
       if (!parsed.success) break;
       const { file_path, content } = parsed.data;
-      return <CodePreview code={content} lang={langForPath(file_path)} fluid />;
+      return <CodePreview code={content} lang={langForPath(file_path)} />;
     }
     case 'Bash': {
       const parsed = bashInputSchema.safeParse(input);
@@ -84,14 +83,14 @@ export function ToolInputPreview({ toolName, input }: { toolName: string; input:
       return (
         <>
           {description && <Summary>{description}</Summary>}
-          <CodePreview code={`$ ${command}`} lang={null} fluid />
+          <CodePreview code={`$ ${command}`} lang={null} />
         </>
       );
     }
     case 'TodoWrite': {
       const parsed = todoWriteInputSchema.safeParse(input);
       if (!parsed.success) break;
-      return <TodoPreview todos={parsed.data.todos} fluid />;
+      return <TodoPreview todos={parsed.data.todos} />;
     }
     case 'Read': {
       const parsed = readInputSchema.safeParse(input);

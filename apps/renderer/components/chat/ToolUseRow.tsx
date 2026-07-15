@@ -1,5 +1,6 @@
 'use client';
 
+import { memo } from 'react';
 import type { ToolResultBlock, ToolUseBlock } from '@/lib/types/chat';
 import { rowForTool } from './tools/registry';
 
@@ -8,7 +9,13 @@ import { rowForTool } from './tools/registry';
  * (Edit → a diff hover card, Read → the file, Grep → matches, …) or the raw-JSON
  * fallback for tools without one. Dispatch lives in `tools/registry`.
  */
-export function ToolUseRow({ block, result }: { block: ToolUseBlock; result?: ToolResultBlock }) {
+export const ToolUseRow = memo(function ToolUseRow({
+  block,
+  result,
+}: {
+  block: ToolUseBlock;
+  result?: ToolResultBlock;
+}) {
   const Row = rowForTool(block.name);
   return <Row block={block} result={result} />;
-}
+});

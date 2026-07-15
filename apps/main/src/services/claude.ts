@@ -1151,6 +1151,8 @@ export class ClaudeService {
           this.emit(tabId, {
             kind: ChatEventKind.BlockStart,
             blockType: event.content_block.type,
+            // Present only for tool_use blocks; drives the named activity indicator.
+            toolName: event.content_block.name,
           });
         }
         break;

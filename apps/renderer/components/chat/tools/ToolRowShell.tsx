@@ -170,7 +170,7 @@ export function ToolRowShell({
       )}
 
       {expandable && expanded && (
-        <div className="ml-2 mt-1.5 w-fit max-w-full overflow-hidden rounded-md border border-border">
+        <div className="ml-2 mt-1.5 w-full overflow-hidden rounded-md border border-border">
           {preview}
         </div>
       )}
