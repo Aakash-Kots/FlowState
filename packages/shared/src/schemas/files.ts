@@ -5,11 +5,21 @@
  * `../types/files`.
  */
 import { z } from 'zod';
-import type { FileReadInput, FileWriteInput, FilesListInput } from '../types/files';
+import type {
+  FileReadInput,
+  FileWriteInput,
+  FilesListForProjectInput,
+  FilesListInput,
+} from '../types/files';
 
 /** List every file in a workspace's worktree. */
 export const filesListInputSchema: z.ZodType<FilesListInput> = z.object({
   workspaceId: z.string(),
+});
+
+/** List every file in a project's local clone (create-worktree mention menu). */
+export const filesListForProjectInputSchema: z.ZodType<FilesListForProjectInput> = z.object({
+  projectId: z.string(),
 });
 
 /** Read a single worktree-relative file. */

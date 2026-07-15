@@ -22,6 +22,8 @@ import {
 } from '@/lib/chat';
 import { MAX_COMPOSER_IMAGE_BYTES } from '@/lib/constants/chat';
 import { EXIT_PLAN_MODE_TOOL } from '@/lib/constants/tools';
+import { trpc } from '@/lib/trpc';
+import { useWorkspace } from '@/lib/workspace';
 import { ArrowUp, Square } from 'lucide-react';
 import { cn } from '../ui/cn';
 import { Button } from '../ui/Button';
@@ -39,6 +41,7 @@ import { SlashMenu } from './SlashMenu';
  */
 export function InputBar({ disabled }: { disabled: boolean }) {
   const tabId = useTabId();
+  const workspaceId = useWorkspace((s) => s.workspaceId);
   const sessionState = useChat((s) => s.sessionState);
   const permissionMode = useChat((s) => s.permissionMode);
   const error = useChat((s) => s.error);
@@ -346,6 +349,7 @@ export function InputBar({ disabled }: { disabled: boolean }) {
                   }
                   onChange={onEditorChange}
                   onKeyDown={onEditorKeyDown}
+                  mentions={{ fetch: () => trpc().files.list.query({ workspaceId }) }}
                 />
               </div>
               <input

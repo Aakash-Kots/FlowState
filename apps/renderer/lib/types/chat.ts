@@ -14,6 +14,9 @@ export type ThinkingBlock = Extract<ChatBlock, { type: ChatBlockType.Thinking }>
  * (absent while the tool is still running). */
 export type ToolRowProps = { block: ToolUseBlock; result?: ToolResultBlock };
 
+/** Viewport coordinates of the caret the `@`-mention menu anchors itself to. */
+export type MentionCaret = { left: number; top: number; bottom: number };
+
 /**
  * One item in the flattened transcript that `ChatView` renders: a whole-message
  * bubble, a standalone assistant block, or a single tool call. See
