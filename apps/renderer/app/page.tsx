@@ -15,6 +15,7 @@ import { ShortcutProvider } from '@/components/shortcuts/ShortcutProvider';
 import { ViewModeTabs } from '@/components/workspace/ViewModeTabs';
 import { WorkspaceViewSwitcher } from '@/components/workspace/WorkspaceViewSwitcher';
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
+import { Toaster } from '@/components/ui/sonner';
 
 export default function Page() {
   // Keep onboarding status live for the whole app and drive the first-run gate.
@@ -22,6 +23,16 @@ export default function Page() {
   const hydrated = useOnboarding((s) => s.hydrated);
   const onboarded = useIsOnboarded();
 
+  return (
+    <>
+      <PageBody hydrated={hydrated} onboarded={onboarded} />
+      {/* One toast host for the whole app — worktree remove/archive errors, etc. */}
+      <Toaster />
+    </>
+  );
+}
+
+function PageBody({ hydrated, onboarded }: { hydrated: boolean; onboarded: boolean }) {
   if (!hydrated) {
     return (
       <main className="flex h-screen items-center justify-center bg-background text-sm text-muted-foreground">

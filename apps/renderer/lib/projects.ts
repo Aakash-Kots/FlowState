@@ -8,6 +8,7 @@ import {
   type Project,
   type Workspace,
 } from '@flowstate/shared';
+import { toast } from '@/components/ui/sonner';
 import { refreshTerminals } from './terminals';
 import { trpc } from './trpc';
 import { selectWorkspace, useWorkspace } from './workspace';
@@ -257,54 +258,74 @@ export async function saveProjectScripts(
 }
 
 /**
- * Remove a worktree (guards uncommitted changes unless the user forces it). If
- * it was the active workspace, fall back to the project's clone.
+ * Drop a worktree from the sidebar tree right away and return a `restore` that
+ * re-inserts it at its original position (idempotent — a no-op if it's already
+ * back). Lets remove/archive update optimistically, then roll back if the
+ * background teardown fails.
  */
-export async function removeWorktree(workspace: Workspace): Promise<void> {
+function optimisticallyDropWorktree(workspace: Workspace): { restore: () => void } {
   const projectId = workspace.projectId ?? '';
-  const wasActive = useWorkspace.getState().workspaceId === workspace.id;
-  try {
-    await trpc().worktree.remove.mutate({ workspaceId: workspace.id });
-  } catch (err) {
-    const dirty = message(err).toLowerCase().includes('uncommitted');
-    if (!dirty || !window.confirm(`${message(err)}\n\nRemove it anyway and discard the changes?`)) {
-      return;
-    }
-    try {
-      await trpc().worktree.remove.mutate({ workspaceId: workspace.id, force: true });
-    } catch (forceErr) {
-      window.alert(message(forceErr));
-      return;
-    }
-  }
+  const index = (useProjects.getState().worktrees[projectId] ?? []).findIndex(
+    (w) => w.id === workspace.id,
+  );
   useProjects.setState((s) => ({
     worktrees: {
       ...s.worktrees,
       [projectId]: (s.worktrees[projectId] ?? []).filter((w) => w.id !== workspace.id),
     },
   }));
-  if (wasActive) await selectWorkspace(DEFAULT_WORKSPACE_ID);
+  return {
+    restore() {
+      useProjects.setState((s) => {
+        const current = s.worktrees[projectId] ?? [];
+        if (current.some((w) => w.id === workspace.id)) return {};
+        const next = [...current];
+        next.splice(index < 0 ? next.length : Math.min(index, next.length), 0, workspace);
+        return { worktrees: { ...s.worktrees, [projectId]: next } };
+      });
+    },
+  };
 }
 
 /**
- * Archive a merged worktree: drop it from the sidebar immediately (the main
- * process hides it and the background reaper deletes it from disk after the
- * configured delay). If it was active, fall back to the project's clone.
+ * Remove a worktree, optimistically: it leaves the sidebar immediately and the
+ * teardown runs in the background. On failure the row is restored in place and
+ * the error is toasted. Uncommitted changes are guarded — the first attempt is
+ * rejected server-side, we ask to discard, then retry with `force` (again in the
+ * background). If it was the active workspace, fall back to the project's clone.
+ */
+export async function removeWorktree(workspace: Workspace, force = false): Promise<void> {
+  const wasActive = useWorkspace.getState().workspaceId === workspace.id;
+  const { restore } = optimisticallyDropWorktree(workspace);
+  if (wasActive) void selectWorkspace(DEFAULT_WORKSPACE_ID);
+  try {
+    await trpc().worktree.remove.mutate({ workspaceId: workspace.id, force });
+  } catch (err) {
+    restore();
+    if (!force && message(err).toLowerCase().includes('uncommitted')) {
+      if (window.confirm(`${message(err)}\n\nRemove it anyway and discard the changes?`)) {
+        void removeWorktree(workspace, true);
+      }
+      return;
+    }
+    toast.error(`Couldn't remove ${workspace.branch}`, { description: message(err) });
+  }
+}
+
+/**
+ * Archive a merged worktree, optimistically: it leaves the sidebar immediately
+ * (the main process hides it and the background reaper deletes it from disk after
+ * the configured delay). On failure the row is restored and the error is toasted.
+ * If it was active, fall back to the project's clone.
  */
 export async function archiveWorktree(workspace: Workspace): Promise<void> {
-  const projectId = workspace.projectId ?? '';
   const wasActive = useWorkspace.getState().workspaceId === workspace.id;
+  const { restore } = optimisticallyDropWorktree(workspace);
+  if (wasActive) void selectWorkspace(DEFAULT_WORKSPACE_ID);
   try {
     await trpc().worktree.archive.mutate({ workspaceId: workspace.id });
   } catch (err) {
-    window.alert(message(err));
-    return;
+    restore();
+    toast.error(`Couldn't archive ${workspace.branch}`, { description: message(err) });
   }
-  useProjects.setState((s) => ({
-    worktrees: {
-      ...s.worktrees,
-      [projectId]: (s.worktrees[projectId] ?? []).filter((w) => w.id !== workspace.id),
-    },
-  }));
-  if (wasActive) await selectWorkspace(DEFAULT_WORKSPACE_ID);
 }
