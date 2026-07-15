@@ -2,6 +2,7 @@
 
 import { DEFAULT_WORKSPACE_ID } from '@flowstate/shared';
 import { useIsOnboarded, useOnboarding, useOnboardingSync } from '@/lib/onboarding';
+import { useWorktreeSync } from '@/lib/projects';
 import { useSettings, useSettingsSync } from '@/lib/settings';
 import { useTabStatesSync } from '@/lib/tabStates';
 import { useWorkspace, useWorkspaceSync } from '@/lib/workspace';
@@ -57,6 +58,9 @@ function WorkspaceShell() {
   // Keep every tab's live agent status flowing for the status dots (tab strip
   // + sidebar), not just the active tab.
   useTabStatesSync();
+  // Keep the sidebar's worktree names/branches live when a worktree is renamed
+  // (auto-title, manual rename, or the in-chat agent renaming its branch).
+  useWorktreeSync();
   // No worktree selected (the startup/default state) → land on the project picker
   // instead of the empty default-workspace chat.
   const onDefaultWorkspace = useWorkspace((s) => s.workspaceId) === DEFAULT_WORKSPACE_ID;

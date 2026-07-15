@@ -15,10 +15,13 @@ import {
   TerminalKind,
   UNTITLED_WORKSPACE_NAME,
   createWorktreeInputSchema,
+  renameWorktreeInputSchema,
   type RecentWorkspaceEntry,
   type Tab,
   type Workspace,
+  type WorktreeChange,
 } from '@flowstate/shared';
+import { observable } from '@trpc/server/observable';
 import { z } from 'zod';
 import {
   archiveWorkspace,
@@ -43,6 +46,7 @@ import { githubService } from '../services/github';
 import { fileLinkService } from '../services/links';
 import { terminalService } from '../services/terminal';
 import { worktreeService } from '../services/worktree';
+import { renameWorktree, worktreeEvents } from '../services/worktreeEvents';
 import { makeTab } from './tabs';
 import { publicProcedure, router } from '../trpc';
 
@@ -51,6 +55,28 @@ export const worktreeRouter = router({
   list: publicProcedure
     .input(z.object({ projectId: z.string() }))
     .query(({ input }) => listWorkspacesByProject(input.projectId)),
+
+  /**
+   * Rename a worktree: set its display name and rename its branch to a slug of
+   * that name (directory stays put). Broadcasts on `onChange` so every view —
+   * not just the caller — reflects the new name/branch. Shared with the
+   * auto-title flow via `renameWorktree`.
+   */
+  rename: publicProcedure
+    .input(renameWorktreeInputSchema)
+    .mutation(async ({ input }): Promise<Workspace> => {
+      const updated = await renameWorktree(input.workspaceId, input.name);
+      if (!updated) throw new TRPCError({ code: 'NOT_FOUND', message: 'Workspace not found.' });
+      return updated;
+    }),
+
+  /**
+   * App-wide feed of worktree metadata changes (rename or a branch reconciled
+   * from disk). The sidebar subscribes once and patches its cached worktree list.
+   */
+  onChange: publicProcedure.subscription(() =>
+    observable<WorktreeChange>((emit) => worktreeEvents.onChange((change) => emit.next(change))),
+  ),
 
   /**
    * The worktree + chat tab to reopen on reload: the first "recently active"

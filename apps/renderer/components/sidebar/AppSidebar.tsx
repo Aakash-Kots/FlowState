@@ -1,19 +1,20 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Archive, GitBranch, Plug, Plus, Settings, Trash2 } from 'lucide-react';
-import { DEFAULT_WORKSPACE_ID, type Project, type Workspace } from '@flowstate/shared';
+import { DEFAULT_WORKSPACE_ID, PrState, type Project, type Workspace } from '@flowstate/shared';
 import {
   archiveWorktree,
   loadProjects,
   openCreateWorktree,
   removeWorktree,
+  renameWorktree,
   selectWorktree,
   setAddOpen,
   useProjects,
 } from '@/lib/projects';
-import { useWorktreeDiffStat, useWorktreePrMerged } from '@/lib/git';
+import { useWorktreeDiffStat, useWorktreePr } from '@/lib/git';
 import { projectName } from '@/lib/paths';
 import { setSettingsOpen, useSettings } from '@/lib/settings';
 import { useWorktreeState, useWorktreeUnread } from '@/lib/tabStates';
@@ -76,25 +77,83 @@ function FlowStateMark({ className }: { className?: string }) {
 }
 
 /** One worktree sub-tab: its branch, selectable, with a hover remove control. */
+/** Inline rename field for a worktree row: Enter/blur commits, Escape cancels. */
+function WorktreeNameInput({ workspace, onDone }: { workspace: Workspace; onDone: () => void }) {
+  const [value, setValue] = useState(workspace.branch);
+  // Guard so the blur that follows an Enter/Escape doesn't commit a second time.
+  const settled = useRef(false);
+
+  const commit = () => {
+    if (settled.current) return;
+    settled.current = true;
+    void renameWorktree(workspace, value);
+    onDone();
+  };
+  const cancel = () => {
+    settled.current = true;
+    onDone();
+  };
+
+  return (
+    <input
+      autoFocus
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      onFocus={(e) => e.target.select()}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          commit();
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          cancel();
+        }
+      }}
+      onBlur={commit}
+      className="h-6 min-w-0 flex-1 rounded border border-input bg-background px-1 text-sm outline-none focus:ring-1 focus:ring-ring"
+    />
+  );
+}
+
 function WorktreeRow({ workspace }: { workspace: Workspace }) {
   const active = useWorkspace((s) => s.workspaceId) === workspace.id;
   const stat = useWorktreeDiffStat(workspace.id);
   const hasStat = !!stat && (stat.insertions > 0 || stat.deletions > 0);
   const state = useWorktreeState(workspace.id);
   const unread = useWorktreeUnread(workspace.id);
-  // The Archive control appears only once the branch's PR is merged.
-  const merged = useWorktreePrMerged(workspace.id);
+  // The branch's PR drives both the Archive gate (merged) and the row's open-PR
+  // styling: a green icon + the PR title in place of the branch name.
+  const pr = useWorktreePr(workspace.id);
+  const merged = pr?.state === PrState.Merged;
+  const prOpen = pr?.state === PrState.Open;
+  const [editing, setEditing] = useState(false);
+
+  // Double-click the label to rename the worktree in place.
+  if (editing) {
+    return (
+      <SidebarMenuSubItem>
+        <div className="flex h-8 items-center gap-2 pl-6 pr-2">
+          <GitBranch className="size-4 shrink-0" />
+          <WorktreeNameInput workspace={workspace} onDone={() => setEditing(false)} />
+        </div>
+      </SidebarMenuSubItem>
+    );
+  }
+
   return (
     <SidebarMenuSubItem>
       <SidebarMenuSubButton asChild isActive={active}>
         <button
           type="button"
           onClick={() => selectWorktree(workspace)}
+          onDoubleClick={() => setEditing(true)}
           title={workspace.branch}
           className="group/wt w-full cursor-pointer pl-6"
         >
-          <GitBranch className="size-4 shrink-0" />
-          <span className="flex-1 truncate">{workspace.branch}</span>
+          <GitBranch
+            className={cn('size-4 shrink-0', prOpen && 'text-green-600 dark:text-green-500')}
+          />
+          <span className="flex-1 truncate">{prOpen ? pr.title : workspace.branch}</span>
           <StateIndicator state={state} unread={unread} />
           {/* Trailing slot: diff badge by default, hover controls (archive when
               merged, remove) on hover — they overlap so row width stays stable. */}

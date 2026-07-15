@@ -331,22 +331,23 @@ export function useWorktreeDiffStat(workspaceId: string): GitDiffStat | null {
 }
 
 /**
- * Whether this worktree's branch has a merged PR — gates the sidebar's Archive
- * control. Self-contained per row (mirrors `useWorktreeDiffStat`): a best-effort
+ * This worktree's branch PR (title, state, CI/merge signal), or null if none —
+ * drives the sidebar row's green icon + PR-title label and the Archive gate.
+ * Self-contained per row (mirrors `useWorktreeDiffStat`): a best-effort
  * `git.prStatus` read on mount/worktree-change and on window focus. One GitHub
- * call per row; failures/no-PR read as not-merged.
+ * call per row; failures/no-PR read as null.
  */
-export function useWorktreePrMerged(workspaceId: string): boolean {
-  const [merged, setMerged] = useState(false);
+export function useWorktreePr(workspaceId: string): PrStatus | null {
+  const [pr, setPr] = useState<PrStatus | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
       try {
-        const pr = await trpc().git.prStatus.query({ workspaceId });
-        if (!cancelled) setMerged(pr?.state === PrState.Merged);
+        const next = await trpc().git.prStatus.query({ workspaceId });
+        if (!cancelled) setPr(next);
       } catch {
-        if (!cancelled) setMerged(false);
+        if (!cancelled) setPr(null);
       }
     };
     void load();
@@ -358,7 +359,7 @@ export function useWorktreePrMerged(workspaceId: string): boolean {
     };
   }, [workspaceId]);
 
-  return merged;
+  return pr;
 }
 
 /**

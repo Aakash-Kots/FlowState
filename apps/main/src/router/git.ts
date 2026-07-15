@@ -24,6 +24,7 @@ import { getProject, getWorkspace } from '../store';
 import { GitService } from '../services/git';
 import { gitWatcherService } from '../services/gitWatcher';
 import { githubService } from '../services/github';
+import { reconcileWorktreeBranch } from '../services/worktreeEvents';
 import { publicProcedure, router } from '../trpc';
 
 /////////////
@@ -47,10 +48,17 @@ function remoteError(err: unknown): TRPCError {
 
 export const gitRouter = router({
   /** The worktree's uncommitted changes + branch/upstream sync position. */
-  status: publicProcedure.input(gitWorkspaceInputSchema).query(({ input }): Promise<GitStatus> => {
-    const ws = requireWorkspace(input.workspaceId);
-    return new GitService(ws.worktreePath).status();
-  }),
+  status: publicProcedure
+    .input(gitWorkspaceInputSchema)
+    .query(async ({ input }): Promise<GitStatus> => {
+      const ws = requireWorkspace(input.workspaceId);
+      const status = await new GitService(ws.worktreePath).status();
+      // Reconcile the stored branch with what's actually checked out — covers the
+      // in-chat agent renaming the branch itself (`git branch -m`), which fires no
+      // FlowState event. A no-op when they already match; broadcasts otherwise.
+      reconcileWorktreeBranch(ws.id, status.branch);
+      return status;
+    }),
 
   /**
    * Fires whenever the worktree's files change on disk (from Claude, a terminal,

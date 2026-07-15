@@ -33,6 +33,24 @@ export type Workspace = {
 };
 
 /**
+ * Broadcast whenever a worktree's display name or branch changes — from the
+ * auto-title flow, the manual sidebar rename, or a branch reconciled from disk
+ * (the in-chat agent running `git branch -m` itself). The sidebar subscribes
+ * once and patches its cached worktree list so every view stays in sync.
+ */
+export type WorktreeChange = {
+  workspaceId: string;
+  name: string;
+  branch: string;
+};
+
+/** Input to rename a worktree: sets its display name (and slugged branch). */
+export type RenameWorktreeInput = {
+  workspaceId: string;
+  name: string;
+};
+
+/**
  * One entry in the "recently active" list persisted across reloads: the worktree
  * the user visited and the exact chat tab they had focused (null if unknown).
  * The list is most-recent-first, so its first still-existing entry is what the

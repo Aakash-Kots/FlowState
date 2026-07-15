@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect } from 'react';
 import { create } from 'zustand';
 import {
   DEFAULT_WORKSPACE_ID,
@@ -9,6 +10,7 @@ import {
   type PermissionMode,
   type Project,
   type Workspace,
+  type WorktreeChange,
 } from '@flowstate/shared';
 import { toast } from '@/components/ui/sonner';
 import { refreshTerminals } from './terminals';
@@ -101,6 +103,39 @@ export async function loadWorktrees(projectId: string): Promise<void> {
   } catch {
     // Non-fatal.
   }
+}
+
+/** Patch a renamed/reconciled worktree's name + branch in the sidebar's tree. */
+function applyWorktreeChange(change: WorktreeChange): void {
+  useProjects.setState((s) => ({
+    worktrees: Object.fromEntries(
+      Object.entries(s.worktrees).map(([pid, list]) => [
+        pid,
+        list.map((w) =>
+          w.id === change.workspaceId ? { ...w, name: change.name, branch: change.branch } : w,
+        ),
+      ]),
+    ),
+  }));
+}
+
+let worktreeSyncStarted = false;
+
+/**
+ * Subscribe once (app lifetime) to worktree renames/branch reconciliations from
+ * any trigger — the auto-title flow, the manual sidebar rename, or the in-chat
+ * agent running `git branch -m` — and patch the sidebar's cached tree. Mounted
+ * once by the page shell, mirroring `useTabStatesSync`.
+ */
+export function useWorktreeSync(): void {
+  useEffect(() => {
+    if (worktreeSyncStarted) return;
+    worktreeSyncStarted = true;
+    trpc().worktree.onChange.subscribe(undefined, {
+      onData: (change) => applyWorktreeChange(change),
+      onError: () => {},
+    });
+  }, []);
 }
 
 /** Make an existing project's clone the active working folder (the default workspace). */
@@ -248,6 +283,22 @@ export async function createWorktree(input: {
 /** Switch the active workspace to a worktree. */
 export function selectWorktree(workspace: Workspace): void {
   void selectWorkspace(workspace.id);
+}
+
+/**
+ * Rename a worktree: sets its display name and renames its branch to a slug of
+ * that name. The sidebar tree is patched by the app-wide `worktree.onChange`
+ * subscription (`useWorktreeSync`), so no optimistic update here; errors toast.
+ * A blank or unchanged value is a no-op.
+ */
+export async function renameWorktree(workspace: Workspace, name: string): Promise<void> {
+  const trimmed = name.trim();
+  if (!trimmed || trimmed === workspace.branch) return;
+  try {
+    await trpc().worktree.rename.mutate({ workspaceId: workspace.id, name: trimmed });
+  } catch (err) {
+    toast.error(`Couldn't rename ${workspace.branch}`, { description: message(err) });
+  }
 }
 
 /**

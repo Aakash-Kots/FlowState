@@ -114,6 +114,7 @@ type GithubApiRepo = {
 type GithubApiPull = {
   number: number;
   html_url: string;
+  title: string;
   state: 'open' | 'closed';
   merged_at: string | null;
   head: { sha: string };
@@ -448,6 +449,7 @@ export class GithubService {
       return {
         number: pr.number,
         url: pr.html_url,
+        title: pr.title,
         state,
         checks: PrChecks.None,
         pending: 0,
@@ -462,6 +464,7 @@ export class GithubService {
     return {
       number: pr.number,
       url: pr.html_url,
+      title: pr.title,
       state,
       checks: checks.state,
       pending: checks.pending,
