@@ -5,6 +5,7 @@ import {
   DEFAULT_WORKSPACE_ID,
   type GithubRepo,
   type GithubViewer,
+  type PermissionMode,
   type Project,
   type Workspace,
 } from '@flowstate/shared';
@@ -215,6 +216,7 @@ export function setCreateOpen(open: boolean): void {
 export async function createWorktree(input: {
   baseRef?: string;
   initialPrompt?: string;
+  permissionMode?: PermissionMode;
 }): Promise<void> {
   const projectId = useProjects.getState().createProjectId;
   if (!projectId) return;
@@ -224,6 +226,7 @@ export async function createWorktree(input: {
       projectId,
       baseRef: input.baseRef?.trim() || undefined,
       initialPrompt: input.initialPrompt?.trim() || undefined,
+      permissionMode: input.permissionMode,
     });
     useProjects.setState((s) => ({
       creating: false,

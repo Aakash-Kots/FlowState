@@ -6,7 +6,7 @@
  * `parse()`-and-return sites (`workspaces.ts`) enforce the output shape.
  */
 import { z } from 'zod';
-import { ClaudeSessionState } from '../enums/claude';
+import { ClaudeSessionState, PermissionMode } from '../enums/claude';
 import type { RecentWorkspaceEntry } from '../types/workspace';
 import { claudeSessionStateSchema } from './claude';
 import { linearIssueRefSchema } from './linear';
@@ -44,4 +44,5 @@ export const createWorktreeInputSchema = z.object({
   projectId: z.string(),
   baseRef: z.string().optional(),
   initialPrompt: z.string().optional(),
+  permissionMode: z.nativeEnum(PermissionMode).optional(),
 });

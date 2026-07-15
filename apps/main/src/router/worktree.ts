@@ -137,7 +137,12 @@ export const worktreeRouter = router({
           archivedAt: null,
           createdAt: new Date().toISOString(),
         });
-        const tab = upsertTab(makeTab(workspace.id, DEFAULT_TAB_TITLE, 0));
+        const tab = upsertTab({
+          ...makeTab(workspace.id, DEFAULT_TAB_TITLE, 0),
+          // Start the first session in the requested mode (e.g. Plan) — seeded on
+          // the tab so ensureSession picks it up before the initial prompt runs.
+          ...(input.permissionMode ? { permissionMode: input.permissionMode } : {}),
+        });
 
         // 4. Seed the Setup/Run terminals; auto-run the project's setup script
         //    in the new worktree so dependencies install the moment it exists.
