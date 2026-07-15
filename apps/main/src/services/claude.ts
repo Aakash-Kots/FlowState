@@ -1415,16 +1415,19 @@ export class ClaudeService {
     if (workspace && workspace.name === UNTITLED_WORKSPACE_NAME) {
       // Rename the throwaway random branch (e.g. `brave-lark`) to a slug of the
       // title. Best-effort: a git failure keeps the old branch and never breaks
-      // the chat.
+      // the chat. Skip entirely for Linear-linked worktrees — their branch is the
+      // ticket's intentional name (e.g. `aakash/cre-1447-…`) and must be preserved.
       let branch = workspace.branch;
-      try {
-        branch = await worktreeService.renameBranch({
-          repoRoot: workspace.repoRoot,
-          oldBranch: workspace.branch,
-          newBranch: slugifyTitle(name),
-        });
-      } catch (err) {
-        console.warn('[claude] branch rename failed', err);
+      if (!workspace.linearIssue) {
+        try {
+          branch = await worktreeService.renameBranch({
+            repoRoot: workspace.repoRoot,
+            oldBranch: workspace.branch,
+            newBranch: slugifyTitle(name),
+          });
+        } catch (err) {
+          console.warn('[claude] branch rename failed', err);
+        }
       }
       upsertWorkspace({ ...workspace, name, branch });
       this.emit(session.tabId, {

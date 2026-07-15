@@ -52,4 +52,13 @@ export const onboardingRouter = router({
   githubSetToken: publicProcedure
     .input(z.object({ token: z.string().min(1) }))
     .mutation(({ input }) => authService.setGithubToken(input.token)),
+
+  /** Start the Linear OAuth browser flow (no terminal — opens the system browser). */
+  linearBeginLogin: publicProcedure.mutation(() => authService.beginLinearLogin()),
+
+  /** Cancel an in-flight Linear OAuth flow. */
+  linearCancelLogin: publicProcedure.mutation(() => authService.cancelLinearLogin()),
+
+  /** Disconnect Linear and clear the stored token. */
+  linearLogout: publicProcedure.mutation(() => authService.linearLogout()),
 });

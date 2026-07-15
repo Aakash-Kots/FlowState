@@ -9,11 +9,12 @@ import { Card, CardHeader } from './ui/Card';
 import { StatusPill } from './ui/StatusPill';
 import { TerminalView } from './TerminalView';
 
-type Busy = null | 'claude' | 'github' | 'refresh' | 'pat';
+type Busy = null | 'claude' | 'github' | 'linear' | 'refresh' | 'pat';
 
 export function ConnectScreen({ onClose }: { onClose?: () => void }) {
   const claudeConnected = useOnboarding((s) => s.claudeConnected);
   const githubConnected = useOnboarding((s) => s.githubConnected);
+  const linearConnected = useOnboarding((s) => s.linearConnected);
 
   const [terminalId, setTerminalId] = useState<string | null>(null);
   const [hasGh, setHasGh] = useState<boolean | null>(null);
@@ -88,6 +89,29 @@ export function ConnectScreen({ onClose }: { onClose?: () => void }) {
     }
   };
 
+  const linearLogin = async () => {
+    setBusy('linear');
+    try {
+      // Resolves when the browser OAuth round-trip finishes (or is cancelled).
+      await trpc().onboarding.linearBeginLogin.mutate();
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const linearCancel = async () => {
+    await trpc().onboarding.linearCancelLogin.mutate();
+  };
+
+  const linearLogout = async () => {
+    setBusy('linear');
+    try {
+      await trpc().onboarding.linearLogout.mutate();
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const recheck = async () => {
     setBusy('refresh');
     try {
@@ -105,6 +129,11 @@ export function ConnectScreen({ onClose }: { onClose?: () => void }) {
   const githubStatus: ConnStatus = githubConnected
     ? ConnStatus.Connected
     : busy === 'github'
+      ? ConnStatus.Pending
+      : ConnStatus.Idle;
+  const linearStatus: ConnStatus = linearConnected
+    ? ConnStatus.Connected
+    : busy === 'linear'
       ? ConnStatus.Pending
       : ConnStatus.Idle;
 
@@ -234,6 +263,42 @@ export function ConnectScreen({ onClose }: { onClose?: () => void }) {
               <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
                 Runs <code className="text-neutral-300">gh auth login</code> in the terminal. The
                 token is encrypted with your OS keychain — only ciphertext is written to disk.
+              </p>
+            </div>
+          </Card>
+
+          <Card>
+            <CardHeader
+              title="Linear"
+              subtitle="Link Linear so your tickets flow in and new worktrees can name themselves from an issue."
+              right={<StatusPill status={linearStatus} />}
+            />
+            <div className="px-4 py-4">
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  onClick={linearLogin}
+                  disabled={busy === 'linear'}
+                  variant={linearConnected ? 'secondary' : 'primary'}
+                >
+                  {busy === 'linear'
+                    ? 'Waiting for browser…'
+                    : linearConnected
+                      ? 'Sign in to a different account'
+                      : 'Sign in to Linear'}
+                </Button>
+                {busy === 'linear' ? (
+                  <Button variant="ghost" onClick={linearCancel}>
+                    Cancel
+                  </Button>
+                ) : linearConnected ? (
+                  <Button variant="ghost" onClick={linearLogout}>
+                    Log out
+                  </Button>
+                ) : null}
+              </div>
+              <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+                Opens your browser to authorize FlowState. The token is encrypted with your OS
+                keychain — only ciphertext is written to disk.
               </p>
             </div>
           </Card>

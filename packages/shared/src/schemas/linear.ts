@@ -9,5 +9,6 @@ export const linearIssueRefSchema: z.ZodType<LinearIssueRef> = z.object({
   identifier: z.string(),
   title: z.string(),
   url: z.string().url(),
+  branchName: z.string(),
   stateName: z.string().optional(),
 });

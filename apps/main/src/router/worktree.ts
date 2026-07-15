@@ -93,10 +93,13 @@ export const worktreeRouter = router({
 
       const repoRoot = project.localPath;
       const baseRef = input.baseRef?.trim() || project.defaultBranch;
-      // The user no longer names the branch: it starts as a friendly random name
-      // (e.g. `brave-lark`), then `maybeGenerateTitle` renames it to a slug of the
-      // first chat. Made unique so a name collision never fails creation.
-      const branch = await worktreeService.uniqueBranchName(repoRoot, randomBranchName());
+      // Branch name: an explicit override (e.g. the user-edited Linear branch), else
+      // the linked issue's suggested branch, else a friendly random name that
+      // `maybeGenerateTitle` later renames to a slug of the first chat. Made unique
+      // so a name collision never fails creation.
+      const desiredBranch =
+        input.branch?.trim() || input.linearIssue?.branchName || randomBranchName();
+      const branch = await worktreeService.uniqueBranchName(repoRoot, desiredBranch);
       const worktreePath = worktreeService.worktreePathFor(repoRoot, branch);
 
       // Refresh remote refs so the worktree is cut from the latest base branch,
@@ -131,7 +134,7 @@ export const worktreeRouter = router({
           worktreePath,
           branch,
           baseRef,
-          linearIssue: null,
+          linearIssue: input.linearIssue ?? null,
           claudeState: ClaudeSessionState.Idle,
           claudeSessionId: null,
           archivedAt: null,
