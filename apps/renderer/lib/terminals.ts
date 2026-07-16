@@ -37,8 +37,10 @@ function shellCount(tabs: TerminalTab[]): number {
 
 /**
  * Load a workspace's terminal tabs (seeding the Setup/Run defaults on the main
- * side) and focus the first one. A no-op if that workspace is already loaded, so
- * toggling between the Workspace and Terminals views keeps the active terminal.
+ * side) and focus a shell — the first existing one, or a freshly created one if
+ * the workspace has none yet — rather than the Setup tab. A no-op if that
+ * workspace is already loaded, so re-opening the panel's Terminal tab keeps the
+ * active terminal.
  */
 export async function loadTerminals(workspaceId: string): Promise<void> {
   if (useTerminals.getState().workspaceId === workspaceId) return;
@@ -49,13 +51,21 @@ export async function loadTerminals(workspaceId: string): Promise<void> {
     activeTerminalTabId: null,
   });
   try {
-    const terminalTabs = await trpc().terminal.listTabs.query({ workspaceId });
+    let terminalTabs = await trpc().terminal.listTabs.query({ workspaceId });
     // Guard against an out-of-order response after another workspace was selected.
     if (useTerminals.getState().workspaceId !== workspaceId) return;
+    // Default to a shell: focus the first one, or create one if there are none.
+    let activeId = terminalTabs.find((t) => t.kind === TerminalKind.Shell)?.id ?? null;
+    if (!activeId) {
+      const shell = await trpc().terminal.createTab.mutate({ workspaceId });
+      if (useTerminals.getState().workspaceId !== workspaceId) return;
+      terminalTabs = [...terminalTabs, shell];
+      activeId = shell.id;
+    }
     useTerminals.setState({
       hydrated: true,
       terminalTabs,
-      activeTerminalTabId: terminalTabs[0]?.id ?? null,
+      activeTerminalTabId: activeId,
     });
   } catch {
     useTerminals.setState({ hydrated: true });

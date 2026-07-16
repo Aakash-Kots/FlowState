@@ -26,6 +26,8 @@ type SettingsState = {
   skillsPanelWidth: number;
   /** Whether the Skills & Actions panel is expanded. */
   skillsPanelOpen: boolean;
+  /** Fraction (0–1) of the panel's height given to its bottom terminal section. */
+  terminalPanelFraction: number;
 };
 
 ///////////////
@@ -39,8 +41,9 @@ const INITIAL: SettingsState = {
   fontSize: FontSize.Default,
   archiveRetention: ArchiveRetention.OneDay,
   settingsOpen: false,
-  skillsPanelWidth: 280,
+  skillsPanelWidth: 360,
   skillsPanelOpen: true,
+  terminalPanelFraction: 0.5,
 };
 
 export const useSettings = create<SettingsState>(() => INITIAL);
@@ -90,6 +93,7 @@ export function useSettingsSync(): void {
           archiveRetention,
           skillsPanelWidth,
           skillsPanelOpen,
+          terminalPanelFraction,
         }) => {
           useSettings.setState({
             hydrated: true,
@@ -99,6 +103,7 @@ export function useSettingsSync(): void {
             archiveRetention,
             skillsPanelWidth,
             skillsPanelOpen,
+            terminalPanelFraction,
           });
           applyCodeTheme(codeTheme);
           applyFontSize(fontSize);
@@ -139,9 +144,9 @@ export function setSettingsOpen(open: boolean): void {
   useSettings.setState({ settingsOpen: open });
 }
 
-/** Clamp range for the Skills & Actions panel width (mirrors the main store). */
+/** Clamp range for the right-hand panel width (mirrors the main store). */
 const SKILLS_PANEL_MIN_WIDTH = 200;
-const SKILLS_PANEL_MAX_WIDTH = 520;
+const SKILLS_PANEL_MAX_WIDTH = 640;
 
 /** Set the Skills & Actions panel width live; persist separately on drag end. */
 export function setSkillsPanelWidth(width: number): void {
@@ -160,4 +165,24 @@ export function persistSkillsPanelWidth(): void {
 export function setSkillsPanelOpen(open: boolean): void {
   useSettings.setState({ skillsPanelOpen: open });
   void trpc().settings.setSkillsPanelOpen.mutate({ open });
+}
+
+/** Clamp range for the terminal section's height fraction (mirrors the main store). */
+const TERMINAL_PANEL_MIN_FRACTION = 0.15;
+const TERMINAL_PANEL_MAX_FRACTION = 0.85;
+
+/** Set the terminal section's height fraction live; persist separately on drag end. */
+export function setTerminalPanelFraction(fraction: number): void {
+  const clamped = Math.min(
+    TERMINAL_PANEL_MAX_FRACTION,
+    Math.max(TERMINAL_PANEL_MIN_FRACTION, fraction),
+  );
+  useSettings.setState({ terminalPanelFraction: clamped });
+}
+
+/** Persist the terminal section's height fraction (called once when a drag finishes). */
+export function persistTerminalPanelFraction(): void {
+  void trpc().settings.setTerminalPanelFraction.mutate({
+    fraction: useSettings.getState().terminalPanelFraction,
+  });
 }

@@ -9,6 +9,12 @@ export type FileEntry = {
   path: string;
 };
 
+/** One entry in a single directory listing of the worktree (a folder or a file). */
+export type DirEntry = {
+  name: string;
+  isDir: boolean;
+};
+
 /** A file's full text, echoed back with the worktree-relative path it came from. */
 export type FileContent = {
   path: string;
@@ -26,6 +32,15 @@ export type FilesListInput = {
  */
 export type FilesListForProjectInput = {
   projectId: string;
+};
+
+/**
+ * Read one directory level of a workspace's worktree — the lazy tree expansion
+ * for the file browser. `dir` is worktree-relative; `''` means the worktree root.
+ */
+export type FilesReadDirInput = {
+  workspaceId: string;
+  dir: string;
 };
 
 /** Read a single worktree-relative file's contents. */

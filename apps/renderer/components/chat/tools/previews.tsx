@@ -89,7 +89,7 @@ export function PlanPreview({ plan }: { plan: string }) {
   if (!plan.trim()) return <TextPreview>Empty plan.</TextPreview>;
   return (
     <div className="max-h-[32rem] w-[40rem] max-w-[calc(100vw-2rem)] overflow-auto px-4 py-3">
-      <Markdown>{clamp(plan)}</Markdown>
+      <Markdown variant="plan">{clamp(plan)}</Markdown>
     </div>
   );
 }
@@ -113,7 +113,7 @@ export function PlanDocument({ plan }: { plan: string }) {
         <span className="font-medium text-amber-300">Plan</span>
       </div>
       <div className="max-h-[32rem] overflow-auto px-4 py-3">
-        <Markdown>{plan}</Markdown>
+        <Markdown variant="plan">{plan}</Markdown>
       </div>
     </div>
   );

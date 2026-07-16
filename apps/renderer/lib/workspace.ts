@@ -127,7 +127,7 @@ export function selectTab(tabId: string): void {
   rememberActive(useWorkspace.getState().workspaceId, tabId);
 }
 
-/** Switch the worktree's top-level surface (chat tabs ↔ terminals). */
+/** Switch the worktree's top-level surface (chat tabs ↔ git changes). */
 export function setViewMode(viewMode: WorkspaceView): void {
   useWorkspace.setState({ viewMode });
   // Returning to the chat surface means you're now looking at the active tab.

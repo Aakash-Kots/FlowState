@@ -1,12 +1,13 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
-import { ChevronLeft, ChevronRight, Eraser, Play, Plus, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Eraser, FolderTree, Play, Plus, Sparkles, X } from 'lucide-react';
 import {
   BUILTIN_ACTIONS,
   BuiltinActionKind,
   PinnedItemKind,
+  TabKind,
   type BuiltinAction,
   type PinnedItem,
   type SkillOption,
@@ -17,14 +18,25 @@ import { pinItem, unpinItem, usePins, usePinsSync } from '@/lib/pins';
 import { useProjects } from '@/lib/projects';
 import {
   persistSkillsPanelWidth,
+  persistTerminalPanelFraction,
   setSkillsPanelOpen,
   setSkillsPanelWidth,
+  setTerminalPanelFraction,
   useSettings,
 } from '@/lib/settings';
 import { useWorkspace } from '@/lib/workspace';
+import { FileBrowser } from '../files/FileBrowser';
+import { TerminalTabs } from '../terminal/TerminalTabs';
 import { cn } from '../ui/cn';
-import { UsageIndicator } from '../usage/UsageIndicator';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { SkillPicker } from './SkillPicker';
+
+///////////
+// Types //
+///////////
+
+/** Which tab of the right panel's top half is showing. */
+type PanelTab = 'skills' | 'files';
 
 ///////////////////
 // Sub-components //
@@ -136,6 +148,7 @@ function ConfirmClearDialog({
 export function SkillsPanel() {
   const open = useSettings((s) => s.skillsPanelOpen);
   const width = useSettings((s) => s.skillsPanelWidth);
+  const terminalFraction = useSettings((s) => s.terminalPanelFraction);
   const workspaceId = useWorkspace((s) => s.workspaceId);
   const projectId = useProjects(
     (s) =>
@@ -148,7 +161,13 @@ export function SkillsPanel() {
   const repoPins = usePins((s) => s.repo);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [confirmClearOpen, setConfirmClearOpen] = useState(false);
+  const [panelTab, setPanelTab] = useState<PanelTab>('skills');
   const tabId = useTabId();
+  // The panel is mounted for file tabs too (so the tree persists while browsing),
+  // but skills/actions act on a chat session — gate that content on a chat tab.
+  const isChatTab = useWorkspace(
+    (s) => s.tabs.find((t) => t.id === s.activeTabId)?.kind === TabKind.Chat,
+  );
 
   usePinsSync(workspaceId, projectId);
 
@@ -158,6 +177,10 @@ export function SkillsPanel() {
     [skills],
   );
   const describe = (pin: PinnedItem) => skillByName.get(pin.ref)?.description;
+
+  // Measures the stacked-halves column so the vertical drag can map pixels to a
+  // height fraction.
+  const splitRef = useRef<HTMLDivElement>(null);
 
   const startResize = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -169,6 +192,26 @@ export function SkillsPanel() {
       window.removeEventListener('mouseup', onUp);
       document.body.style.userSelect = '';
       persistSkillsPanelWidth();
+    };
+    document.body.style.userSelect = 'none';
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+
+  // Drag the divider between the two halves: pulling it down shrinks the terminal.
+  const startVResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const total = splitRef.current?.clientHeight ?? 0;
+    if (total <= 0) return;
+    const startY = e.clientY;
+    const startFraction = useSettings.getState().terminalPanelFraction;
+    const onMove = (ev: MouseEvent) =>
+      setTerminalPanelFraction(startFraction - (ev.clientY - startY) / total);
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      document.body.style.userSelect = '';
+      persistTerminalPanelFraction();
     };
     document.body.style.userSelect = 'none';
     window.addEventListener('mousemove', onMove);
@@ -200,66 +243,125 @@ export function SkillsPanel() {
       >
         <div className="absolute inset-y-0 -left-1 w-2" />
       </div>
-      <div className="flex min-w-0 flex-1 flex-col bg-secondary">
-        <div className="flex items-center justify-between border-b border-border px-3 py-2">
-          <span className="text-xs font-semibold text-neutral-100">Skills &amp; Actions</span>
-          <div className="flex items-center gap-0.5">
-            <button
-              type="button"
-              onClick={() => setPickerOpen(true)}
-              title="Pin a skill"
-              className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <Plus className="size-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setSkillsPanelOpen(false)}
-              title="Hide panel"
-              className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <ChevronRight className="size-4" />
-            </button>
+      <div ref={splitRef} className="flex min-h-0 min-w-0 flex-1 flex-col bg-secondary">
+        {/* Top section: Skills & Actions / Files. */}
+        <Tabs
+          value={panelTab}
+          onValueChange={(v) => setPanelTab(v as PanelTab)}
+          className="flex min-h-0 flex-col"
+          style={{ flex: `${1 - terminalFraction} 1 0%` }}
+        >
+          <div className="flex items-center justify-between gap-1 border-b border-border px-2 py-1.5">
+            <TabsList className="h-7 gap-0.5 bg-transparent p-0">
+              <TabsTrigger
+                value="skills"
+                className="h-7 gap-1 px-2 text-xs data-[state=active]:bg-muted data-[state=active]:shadow-none"
+              >
+                <Sparkles className="size-3.5 shrink-0" />
+                <span className="truncate">Skills &amp; Actions</span>
+              </TabsTrigger>
+              <TabsTrigger
+                value="files"
+                className="h-7 gap-1 px-2 text-xs data-[state=active]:bg-muted data-[state=active]:shadow-none"
+              >
+                <FolderTree className="size-3.5 shrink-0" />
+                Files
+              </TabsTrigger>
+            </TabsList>
+            <div className="flex shrink-0 items-center gap-0.5">
+              {panelTab === 'skills' && isChatTab && (
+                <button
+                  type="button"
+                  onClick={() => setPickerOpen(true)}
+                  title="Pin a skill"
+                  className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  <Plus className="size-4" />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setSkillsPanelOpen(false)}
+                title="Hide panel"
+                className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <ChevronRight className="size-4" />
+              </button>
+            </div>
           </div>
+
+          <TabsContent
+            value="skills"
+            className="mt-0 hidden min-h-0 flex-1 flex-col data-[state=active]:flex"
+          >
+            {isChatTab ? (
+              <>
+                <div className="min-h-0 flex-1 overflow-y-auto pb-3">
+                  {worktreePins.length > 0 && (
+                    <>
+                      <SectionHeading>This worktree</SectionHeading>
+                      {worktreePins.map((pin) => (
+                        <PinRow key={pin.id} pin={pin} description={describe(pin)} />
+                      ))}
+                    </>
+                  )}
+
+                  {repoPins.length > 0 && (
+                    <>
+                      <SectionHeading>This repo</SectionHeading>
+                      {repoPins.map((pin) => (
+                        <PinRow key={pin.id} pin={pin} description={describe(pin)} />
+                      ))}
+                    </>
+                  )}
+
+                  {!hasPins && (
+                    <p className="px-3 pt-3 text-[11px] leading-relaxed text-muted-foreground">
+                      Pin a skill with <span className="text-neutral-300">+</span> to run it here in
+                      one click.
+                    </p>
+                  )}
+
+                  <SectionHeading>Actions</SectionHeading>
+                  {BUILTIN_ACTIONS.map((action) => (
+                    <ActionRow
+                      key={action.id}
+                      action={action}
+                      onClearChat={() => setConfirmClearOpen(true)}
+                    />
+                  ))}
+                </div>
+              </>
+            ) : (
+              <p className="px-3 pt-3 text-[11px] leading-relaxed text-muted-foreground">
+                Open a chat tab to use skills &amp; actions.
+              </p>
+            )}
+          </TabsContent>
+
+          <TabsContent
+            value="files"
+            className="mt-0 hidden min-h-0 flex-1 flex-col data-[state=active]:flex"
+          >
+            <FileBrowser />
+          </TabsContent>
+        </Tabs>
+
+        {/* Draggable divider between the two sections (drag up/down to resize). */}
+        <div
+          onMouseDown={startVResize}
+          className="group relative h-px shrink-0 cursor-row-resize bg-border transition-colors hover:bg-primary/40"
+        >
+          <div className="absolute inset-x-0 -top-1 h-2" />
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto pb-3">
-          {worktreePins.length > 0 && (
-            <>
-              <SectionHeading>This worktree</SectionHeading>
-              {worktreePins.map((pin) => (
-                <PinRow key={pin.id} pin={pin} description={describe(pin)} />
-              ))}
-            </>
-          )}
-
-          {repoPins.length > 0 && (
-            <>
-              <SectionHeading>This repo</SectionHeading>
-              {repoPins.map((pin) => (
-                <PinRow key={pin.id} pin={pin} description={describe(pin)} />
-              ))}
-            </>
-          )}
-
-          {!hasPins && (
-            <p className="px-3 pt-3 text-[11px] leading-relaxed text-muted-foreground">
-              Pin a skill with <span className="text-neutral-300">+</span> to run it here in one
-              click.
-            </p>
-          )}
-
-          <SectionHeading>Actions</SectionHeading>
-          {BUILTIN_ACTIONS.map((action) => (
-            <ActionRow
-              key={action.id}
-              action={action}
-              onClearChat={() => setConfirmClearOpen(true)}
-            />
-          ))}
+        {/* Bottom section: a live terminal, always present for this worktree. */}
+        <div
+          className="flex min-h-0 flex-col"
+          style={{ flex: `${terminalFraction} 1 0%` }}
+        >
+          <TerminalTabs />
         </div>
-
-        <UsageIndicator />
       </div>
 
       <SkillPicker
