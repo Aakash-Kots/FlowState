@@ -1,6 +1,8 @@
 import { app, shell } from 'electron';
+import { observable } from '@trpc/server/observable';
 import type { AppInfo } from '@flowstate/shared';
 import { z } from 'zod';
+import { fullScreenService } from '../services/fullscreen';
 import { publicProcedure, router } from '../trpc';
 
 /**
@@ -21,4 +23,15 @@ export const appRouter = router({
   openExternal: publicProcedure
     .input(z.object({ url: z.string().url() }))
     .mutation(({ input }) => shell.openExternal(input.url)),
+
+  /** Current window full-screen state (seeds the renderer on load). */
+  isFullScreen: publicProcedure.query(() => fullScreenService.get()),
+
+  /** Push full-screen transitions to the renderer (drives sidebar opacity). */
+  onFullScreen: publicProcedure.subscription(() =>
+    observable<boolean>((emit) => {
+      emit.next(fullScreenService.get());
+      return fullScreenService.onChange((v) => emit.next(v));
+    }),
+  ),
 });
