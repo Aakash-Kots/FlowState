@@ -32,6 +32,15 @@
   --ring: 44 48% 90%; /* cream focus ring */
   --radius: 0.5rem;
 
+  /* Categorical chart palette — distinct hues at similar lightness for the dark
+   * warm canvas (analytics page). chart-1 is the brand cream. */
+  --chart-1: 44 48% 78%;
+  --chart-2: 190 60% 55%;
+  --chart-3: 260 55% 70%;
+  --chart-4: 150 48% 55%;
+  --chart-5: 25 80% 63%;
+  --chart-6: 340 62% 66%;
+
   /* Sidebar mirrors the secondary surface. */
   --sidebar-background: 30 8% 10%;
   --sidebar-foreground: 220 6% 91%;
@@ -63,6 +72,13 @@
   --border: 220 4% 13%;
   --input: 220 4% 13%;
   --ring: 44 48% 90%;
+
+  --chart-1: 44 48% 78%;
+  --chart-2: 190 60% 55%;
+  --chart-3: 260 55% 70%;
+  --chart-4: 150 48% 55%;
+  --chart-5: 25 80% 63%;
+  --chart-6: 340 62% 66%;
 
   --sidebar-background: 40 4% 12%;
   --sidebar-foreground: 220 6% 91%;

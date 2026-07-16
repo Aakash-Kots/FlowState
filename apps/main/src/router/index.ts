@@ -1,4 +1,5 @@
 import { router } from '../trpc';
+import { analyticsRouter } from './analytics';
 import { appRouter as appMeta } from './app';
 import { claudeRouter } from './claude';
 import { filesRouter } from './files';
@@ -33,6 +34,7 @@ export const appRouter = router({
   shortcuts: shortcutsRouter,
   settings: settingsRouter,
   usage: usageRouter,
+  analytics: analyticsRouter,
 });
 
 /** Exported for the renderer's typed tRPC client (type-only import). */

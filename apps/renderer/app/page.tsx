@@ -7,6 +7,8 @@ import { useWorktreeSync } from '@/lib/projects';
 import { useSettings, useSettingsSync } from '@/lib/settings';
 import { useTabStatesSync } from '@/lib/tabStates';
 import { useWorkspace, useWorkspaceSync } from '@/lib/workspace';
+import { AnalyticsButton } from '@/components/analytics/AnalyticsButton';
+import { AnalyticsPage } from '@/components/analytics/AnalyticsPage';
 import { ConnectScreen } from '@/components/ConnectScreen';
 import { SettingsPage } from '@/components/settings/SettingsPage';
 import { SoundToggle } from '@/components/settings/SoundToggle';
@@ -70,6 +72,7 @@ function WorkspaceShell() {
   // instead of the empty default-workspace chat.
   const onDefaultWorkspace = useWorkspace((s) => s.workspaceId) === DEFAULT_WORKSPACE_ID;
   const settingsOpen = useSettings((s) => s.settingsOpen);
+  const analyticsOpen = useSettings((s) => s.analyticsOpen);
 
   return (
     <SidebarProvider className="h-screen">
@@ -85,19 +88,22 @@ function WorkspaceShell() {
               )}
             </div>
             {/* Centered Workspace/Terminals toggle, independent of the side content widths. */}
-            {!onDefaultWorkspace && !settingsOpen && (
+            {!onDefaultWorkspace && !settingsOpen && !analyticsOpen && (
               <div className="absolute left-1/2 -translate-x-1/2">
                 <ViewModeTabs />
               </div>
             )}
             <div className="flex items-center gap-4 text-xs text-muted-foreground">
+              <AnalyticsButton />
               <SpotifyButton />
               {!onDefaultWorkspace && <GitHeaderButton />}
               <SoundToggle />
             </div>
           </header>
 
-          {settingsOpen ? (
+          {analyticsOpen ? (
+            <AnalyticsPage />
+          ) : settingsOpen ? (
             <SettingsPage />
           ) : onDefaultWorkspace ? (
             <ProjectSelector />

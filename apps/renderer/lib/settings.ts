@@ -22,6 +22,9 @@ type SettingsState = {
   archiveRetention: ArchiveRetention;
   /** Whether the full-screen Settings surface is open (UI-only, not persisted). */
   settingsOpen: boolean;
+  /** Whether the full-screen Analytics surface is open (UI-only, not persisted).
+   * Mutually exclusive with `settingsOpen` — only one full-body overlay shows. */
+  analyticsOpen: boolean;
   /** Width (px) of the chat view's Skills & Actions panel. */
   skillsPanelWidth: number;
   /** Whether the Skills & Actions panel is expanded. */
@@ -41,6 +44,7 @@ const INITIAL: SettingsState = {
   fontSize: FontSize.Default,
   archiveRetention: ArchiveRetention.OneDay,
   settingsOpen: false,
+  analyticsOpen: false,
   skillsPanelWidth: 360,
   skillsPanelOpen: true,
   terminalPanelFraction: 0.5,
@@ -139,9 +143,14 @@ export function setArchiveRetention(retention: ArchiveRetention): void {
   void trpc().settings.setArchiveRetention.mutate({ retention });
 }
 
-/** Open or close the Settings surface. */
+/** Open or close the Settings surface; opening it closes Analytics. */
 export function setSettingsOpen(open: boolean): void {
-  useSettings.setState({ settingsOpen: open });
+  useSettings.setState({ settingsOpen: open, ...(open ? { analyticsOpen: false } : {}) });
+}
+
+/** Open or close the Analytics surface; opening it closes Settings. */
+export function setAnalyticsOpen(open: boolean): void {
+  useSettings.setState({ analyticsOpen: open, ...(open ? { settingsOpen: false } : {}) });
 }
 
 /** Clamp range for the right-hand panel width (mirrors the main store). */

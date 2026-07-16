@@ -18,7 +18,9 @@
 import { EventEmitter } from 'node:events';
 import { homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
+import { ActivityType } from '@flowstate/shared';
 import * as pty from 'node-pty';
+import { getTerminalTab, getWorkspace, recordActivityEvent } from '../store';
 
 ///////////
 // Types //
@@ -39,6 +41,10 @@ type Session = {
   markerSource: string | null;
   /** Trailing bytes withheld from the last chunk in case a sentinel is split across chunks. */
   filterCarry: string;
+  /** The tracked command currently running (for the activity ledger), or null. */
+  trackedCommand: string | null;
+  /** `Date.now()` when the tracked command started, for its recorded duration. */
+  trackedStartedAt: number | null;
 };
 
 /** Options shared by `spawn`/`runScript` when a pty needs creating. */
@@ -173,6 +179,8 @@ export class TerminalService {
     const track = (opts.trackCompletion ?? false) && process.platform !== 'win32';
     session.marker = track ? sentinelRegex(id) : null;
     session.markerSource = track ? sentinelSource(id) : null;
+    session.trackedCommand = track ? command : null;
+    session.trackedStartedAt = track ? Date.now() : null;
     session.filterCarry = '';
     this.completions.delete(id);
     const write = track ? `${command.trimEnd()}${session.markerSource}\r` : `${command}\r`;
@@ -203,6 +211,8 @@ export class TerminalService {
       marker: null,
       markerSource: null,
       filterCarry: '',
+      trackedCommand: null,
+      trackedStartedAt: null,
     };
     child.onData((chunk) => this.handleData(id, session, chunk));
     child.onExit(({ exitCode }) => {
@@ -223,6 +233,8 @@ export class TerminalService {
     if (track) {
       session.marker = sentinelRegex(id);
       session.markerSource = sentinelSource(id);
+      session.trackedCommand = command;
+      session.trackedStartedAt = Date.now();
       this.completions.delete(id); // clear any stale exit code while it re-runs
       // Trim trailing whitespace so the appended `; printf …` chains onto the
       // command rather than landing on a fresh (syntax-error) `;`-led line.
@@ -260,6 +272,7 @@ export class TerminalService {
       const exitCode = Number(code);
       this.completions.set(id, exitCode);
       this.completionBus.emit(id, exitCode);
+      this.recordRun(id, session, exitCode);
       return '';
     });
     // Echoed `; printf …` source on the typed command line → drop it too.
@@ -273,6 +286,39 @@ export class TerminalService {
       s = s.slice(0, lead);
     }
     return s;
+  }
+
+  /**
+   * Record a finished tracked Setup/Run script to the activity ledger (for the
+   * analytics page). Best-effort and fired once per completion: clears the
+   * tracked command so a stray sentinel match can't double-log. Only workspace
+   * terminals (which have a `terminal_tabs` row) are logged; the ephemeral
+   * onboarding shell never tracks completion, so it's skipped here anyway.
+   */
+  private recordRun(id: string, session: Session, exitCode: number): void {
+    const command = session.trackedCommand;
+    if (!command) return;
+    const startedAt = session.trackedStartedAt;
+    session.trackedCommand = null;
+    session.trackedStartedAt = null;
+    try {
+      const tab = getTerminalTab(id);
+      if (!tab) return;
+      recordActivityEvent({
+        workspaceId: tab.workspaceId,
+        projectId: getWorkspace(tab.workspaceId)?.projectId ?? null,
+        createdAt: new Date().toISOString(),
+        data: {
+          type: ActivityType.TerminalRun,
+          command,
+          kind: tab.kind,
+          exitCode,
+          durationMs: startedAt ? Date.now() - startedAt : 0,
+        },
+      });
+    } catch {
+      // ignore ledger write failures — never let logging break the terminal
+    }
   }
 
   /** Subscribe to a session's output. Returns an unsubscribe function. */
