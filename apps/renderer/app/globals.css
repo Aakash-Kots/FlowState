@@ -347,7 +347,9 @@ body {
 }
 
 body {
-  @apply bg-background text-neutral-200 antialiased;
+  /* Transparent so the macOS vibrancy layer shows through wherever the DOM is
+     transparent (the sidebar). Every screen paints its own `bg-background`. */
+  @apply bg-transparent text-neutral-200 antialiased;
   font-family:
     ui-sans-serif,
     system-ui,

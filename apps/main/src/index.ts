@@ -178,7 +178,15 @@ function createWindow(): void {
     y: saved?.y,
     minWidth: 940,
     minHeight: 600,
-    backgroundColor: '#0b0d10',
+    // Transparent window bg + macOS vibrancy: the OS paints a live, blurred
+    // NSVisualEffectView behind the web contents, so wherever the DOM is
+    // transparent (the sidebar strip) the desktop shows through as frosted
+    // glass. Every full-page screen still paints its own opaque `bg-background`,
+    // so only the sidebar is see-through. `visualEffectState: 'active'` keeps
+    // the glass lit even when the window is unfocused.
+    backgroundColor: '#00000000',
+    vibrancy: 'sidebar',
+    visualEffectState: 'active',
     show: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),

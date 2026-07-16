@@ -291,7 +291,7 @@ export function AppSidebar() {
       : null;
 
   return (
-    <Sidebar collapsible="icon">
+    <Sidebar collapsible="icon" className="border-r-white/10 shadow-xl shadow-black/20">
       <SidebarHeader>
         <div className="flex items-center gap-2 px-1 py-1 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
           {/* The real app icon (apps/main/build/icon.png), downscaled into
