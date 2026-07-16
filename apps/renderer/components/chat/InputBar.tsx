@@ -256,6 +256,13 @@ export function InputBar({ disabled }: { disabled: boolean }) {
     } else if (e.key === 'Escape' && busy) {
       e.preventDefault();
       interruptSession(tabId);
+    } else if (e.key === 'c' && e.ctrlKey && busy) {
+      // Ctrl+C stops a running turn, matching Claude Code's terminal muscle
+      // memory. Safe to claim here: on macOS copy is Cmd+C (metaKey), so this
+      // never clobbers copy, and scoping to the composer leaves the terminal
+      // panes' own Ctrl+C (SIGINT) untouched.
+      e.preventDefault();
+      interruptSession(tabId);
     }
   };
 
