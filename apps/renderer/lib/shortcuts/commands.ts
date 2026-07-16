@@ -77,7 +77,7 @@ export const COMMANDS: Record<ShortcutCommand, CommandDef> = {
   },
   [ShortcutCommand.OpenFileFinder]: {
     command: ShortcutCommand.OpenFileFinder,
-    label: 'Find file…',
+    label: 'Search files and issues…',
     category: ShortcutCategory.Navigation,
     scope: ShortcutScope.Global,
     run: () => setFileFinderOpen(true),

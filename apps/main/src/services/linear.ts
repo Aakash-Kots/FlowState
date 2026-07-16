@@ -282,7 +282,17 @@ export class LinearService {
     if (input.teamId) filter.team = { id: { eq: input.teamId } };
     if (!input.includeCompleted) Object.assign(filter, ACTIVE_STATE_FILTER);
     const q = input.query?.trim();
-    if (q) filter.title = { containsIgnoreCase: q };
+    if (q) {
+      // Match title or description; identifier has no filter field (it's team key +
+      // number), so a trailing number ("ENG-142", "142") is matched via `number`.
+      const or: Record<string, unknown>[] = [
+        { title: { containsIgnoreCase: q } },
+        { description: { containsIgnoreCase: q } },
+      ];
+      const num = q.match(/(\d+)\s*$/);
+      if (num) or.push({ number: { eq: Number(num[1]) } });
+      filter.or = or;
+    }
     if (input.assigneeId) filter.assignee = { id: { eq: input.assigneeId } };
     if (input.stateIds?.length) filter.state = { id: { in: input.stateIds } };
     if (input.priorities?.length) filter.priority = { in: input.priorities };

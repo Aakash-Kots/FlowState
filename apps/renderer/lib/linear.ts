@@ -14,9 +14,10 @@ import {
   type LinearWorkflowState,
   type LinkedWorktree,
 } from '@flowstate/shared';
+import { WorkspaceView } from './enums/view';
 import { useOnboarding } from './onboarding';
 import { trpc } from './trpc';
-import { useWorkspace } from './workspace';
+import { setViewMode, useWorkspace } from './workspace';
 
 ///////////
 // Types //
@@ -244,6 +245,20 @@ export function selectIssue(issueId: string | null): void {
   if (!issueId) return;
   const issue = findIssue(issueId);
   if (issue?.teamId) void ensureWorkflowStates(issue.teamId);
+}
+
+/**
+ * Open a searched issue in the Linear tab: inject it into the browser list (so
+ * `IssueDetail` can resolve it — it only reads `issues`/`myWorkIssues`), select it
+ * (which preloads its team's workflow states), and switch to the Linear view.
+ * Used by the ⌘P search palette, where the ticket may not be in any loaded list.
+ */
+export function openIssueInLinearTab(issue: LinearIssue): void {
+  useLinear.setState((s) =>
+    s.issues.some((i) => i.id === issue.id) ? {} : { issues: [issue, ...s.issues] },
+  );
+  selectIssue(issue.id);
+  setViewMode(WorkspaceView.Linear);
 }
 
 /** Look up an issue across the browser list and the top-sections list. */
