@@ -5,7 +5,7 @@ import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { ChevronDown, GitBranch, Tag, X } from 'lucide-react';
 import { PermissionMode } from '@flowstate/shared';
 import type { LinearIssueRef } from '@flowstate/shared';
-import { refreshIssues, useLinear } from '@/lib/linear';
+import { refreshAssignedIssues, useLinear } from '@/lib/linear';
 import { useOnboarding } from '@/lib/onboarding';
 import { createWorktree, setCreateOpen, useProjects } from '@/lib/projects';
 import { trpc } from '@/lib/trpc';
@@ -33,9 +33,10 @@ export function CreateWorktreeModal() {
   const branches = useProjects((s) => s.branches);
   const branchesLoading = useProjects((s) => s.branchesLoading);
   const project = useProjects((s) => s.projects.find((p) => p.id === s.createProjectId) ?? null);
+  const linearSeed = useProjects((s) => s.createLinearSeed);
   const linearConnected = useOnboarding((s) => s.linearConnected);
-  const issues = useLinear((s) => s.issues);
-  const issuesLoading = useLinear((s) => s.loading);
+  const issues = useLinear((s) => s.assignedIssues);
+  const issuesLoading = useLinear((s) => s.assignedLoading);
 
   const [baseRef, setBaseRef] = useState('');
   const [prompt, setPrompt] = useState('');
@@ -45,24 +46,25 @@ export function CreateWorktreeModal() {
   const editorRef = useRef<ComposerEditorHandle>(null);
 
   // Reset the form each time the modal opens, defaulting to the project's branch,
-  // and pull the latest assigned Linear issues if the account is linked.
+  // honoring a pre-linked Linear issue (from the Linear tab), and pulling the
+  // latest assigned issues if the account is linked.
   useEffect(() => {
     if (!open) return;
     setBaseRef(project?.defaultBranch ?? '');
     setPrompt('');
     setPlanMode(false);
-    setLinearIssue(null);
-    setBranch('');
+    setLinearIssue(linearSeed);
+    setBranch(linearSeed?.branchName ?? '');
     editorRef.current?.clear();
     editorRef.current?.focus();
-    if (linearConnected) void refreshIssues();
-  }, [open, projectId, project?.defaultBranch, linearConnected]);
+    if (linearConnected) void refreshAssignedIssues();
+  }, [open, projectId, project?.defaultBranch, linearConnected, linearSeed]);
 
   // Tickets are created constantly, so re-fetch when the window regains focus
   // while the modal is open (e.g. after creating a ticket in Linear).
   useEffect(() => {
     if (!open || !linearConnected) return;
-    const onFocus = () => void refreshIssues();
+    const onFocus = () => void refreshAssignedIssues();
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
   }, [open, linearConnected]);
@@ -117,7 +119,7 @@ export function CreateWorktreeModal() {
                 <Combobox
                   align="end"
                   placement="bottom"
-                  onOpen={() => void refreshIssues()}
+                  onOpen={() => void refreshAssignedIssues()}
                   triggerClassName="gap-1.5 rounded-full border border-border px-2.5 py-1 text-muted-foreground hover:bg-muted hover:text-neutral-100"
                   trigger={
                     <>
