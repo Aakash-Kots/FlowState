@@ -12,7 +12,7 @@ import { trpc } from './trpc';
 type SettingsState = {
   /** True once preferences have loaded from the main process. */
   hydrated: boolean;
-  /** Play a sound when a background agent finishes a turn. */
+  /** Play a sound when an agent finishes a turn in a tab you're not watching. */
   soundEnabled: boolean;
   /** The syntax-highlighting palette for code surfaces (diffs, chat blocks). */
   codeTheme: CodeTheme;

@@ -66,11 +66,6 @@ export enum ChatEventKind {
   // when the turn advances or finalizes (mirrors TextDelta / BlockStart).
   ToolProgress = 'tool_progress',
   ApiRetry = 'api_retry',
-  // Background agents running out of the current turn's view. `BackgroundTasks`
-  // is the level set (full membership, REPLACE semantics); `BackgroundTaskProgress`
-  // enriches an individual task by id (live tokens/tool/summary).
-  BackgroundTasks = 'background_tasks',
-  BackgroundTaskProgress = 'background_task_progress',
   Error = 'error',
 }
 

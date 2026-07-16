@@ -12,7 +12,4 @@ export enum SdkSystemSubtype {
   CommandsChanged = 'commands_changed',
   SessionStateChanged = 'session_state_changed',
   ApiRetry = 'api_retry',
-  BackgroundTasksChanged = 'background_tasks_changed',
-  TaskStarted = 'task_started',
-  TaskProgress = 'task_progress',
 }
