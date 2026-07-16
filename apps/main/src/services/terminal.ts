@@ -61,6 +61,18 @@ const STARTUP_DELAY_MS = 300;
 /** Distinctive lead-in of the completion sentinel; used to detect chunk-split markers. */
 const MARKER_LEAD = '__FS_EXIT_';
 
+/**
+ * Escape sequences that make the terminal *reply*: OSC color queries
+ * (`ESC]11;?`), cursor-position / device-status reports (`ESC[6n`), and
+ * device-attributes requests (`ESC[c`). They sit in scrollback verbatim, but
+ * replaying them into a freshly-mounted xterm makes it generate answerback
+ * responses that get forwarded to the idle shell and echoed as visible garbage
+ * (e.g. `11;rgb:1c1c/1a1a/1717;1R`). Stripped from the replay snapshot only —
+ * the live stream keeps them so programs that query mid-session still get
+ * their answers.
+ */
+const DEVICE_QUERY_RE = /\x1b\][0-9;]*\?(?:\x07|\x1b\\)|\x1b\[[0-9?;=>]*[nc]/g;
+
 /////////////
 // Helpers //
 /////////////
@@ -326,7 +338,8 @@ export class TerminalService {
    * replay before it subscribes to live data. Empty if the session isn't live.
    */
   snapshot(id: string): string {
-    return this.sessions.get(id)?.scrollback ?? '';
+    const scrollback = this.sessions.get(id)?.scrollback ?? '';
+    return scrollback.replace(DEVICE_QUERY_RE, '');
   }
 
   /** Kill every live pty — called on app quit. */
