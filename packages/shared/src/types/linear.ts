@@ -147,6 +147,11 @@ export type CreateLinearIssueInput = {
   projectId?: string;
 };
 
+/** Input to fetch a single issue by id (the hover card + worktree seed context). */
+export type GetLinearIssueInput = {
+  id: string;
+};
+
 /** Input to fetch a team's workflow states (for the status dropdown). */
 export type WorkflowStatesInput = {
   teamId: string;

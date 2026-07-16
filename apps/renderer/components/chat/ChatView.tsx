@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef } from 'react';
-import { ChatBlockType, ClaudeSessionState } from '@flowstate/shared';
+import { ChatBlockType, ChatMessageRole, ClaudeSessionState } from '@flowstate/shared';
 import { ActivityIndicator, ChatItemKind } from '@/lib/enums/chat';
 import type { ToolResultBlock } from '@/lib/types/chat';
 import { groupChatItems } from '@/lib/chatItems';
@@ -9,7 +9,9 @@ import { useChat } from '@/lib/chat';
 import { verbForTool } from '@/lib/constants/tools';
 import { formatDuration } from '@/lib/format';
 import { useElapsed } from '@/lib/hooks/useElapsed';
+import { clearInitialising, useWorkspace } from '@/lib/workspace';
 import { EmptyChat } from './EmptyChat';
+import { InitialisingMessage } from './InitialisingMessage';
 import { Markdown } from './Markdown';
 import { MessageBubble } from './MessageBubble';
 import { PlanMessage } from './PlanMessage';
@@ -36,6 +38,18 @@ export function ChatView() {
   const sessionState = useChat((s) => s.sessionState);
   const runStartedAt = useChat((s) => s.runStartedAt);
   const elapsed = useElapsed(runStartedAt);
+
+  // A freshly-created ticket-linked worktree shows "Initialising worktree with
+  // ticket …" until its first assistant response (streamed text or a persisted
+  // assistant/tool message) lands, at which point we retire the marker.
+  const workspaceId = useWorkspace((s) => s.workspaceId);
+  const initialisingIssue = useWorkspace((s) => s.initialisingIssue[workspaceId]);
+  const hasResponse =
+    Boolean(streamingText) ||
+    messages.some(({ message }) => message.role !== ChatMessageRole.User);
+  useEffect(() => {
+    if (initialisingIssue && hasResponse) clearInitialising(workspaceId);
+  }, [initialisingIssue, hasResponse, workspaceId]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinnedToBottom = useRef(true);
@@ -104,7 +118,9 @@ export function ChatView() {
         // instead of scrolling under it. Falls back before the bar first measures.
         style={{ paddingBottom: 'calc(var(--input-h, 9rem) + 0.75rem)' }}
       >
-        {messages.length === 0 && !streamingText && <EmptyChat />}
+        {initialisingIssue && <InitialisingMessage issue={initialisingIssue} />}
+
+        {messages.length === 0 && !streamingText && !initialisingIssue && <EmptyChat />}
 
         {items.map((item) => {
           switch (item.kind) {

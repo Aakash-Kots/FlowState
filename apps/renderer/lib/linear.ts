@@ -57,6 +57,8 @@ type LinearStoreState = {
   labels: LinearLabel[];
   /** Local worktrees linked to an issue (grouped by issueId in the UI). */
   linkedWorktrees: LinkedWorktree[];
+  /** Full issue details fetched on demand (the ticket hover card), cached by id. */
+  issueDetailsById: Record<string, LinearIssue>;
 
   //// Command-center top sections — assigned-scoped issues (Active Work / Open PRs). ////
   myWorkIssues: LinearIssue[];
@@ -93,6 +95,7 @@ const INITIAL: LinearStoreState = {
   projects: [],
   labels: [],
   linkedWorktrees: [],
+  issueDetailsById: {},
   myWorkIssues: [],
   createTicketOpen: false,
   creating: false,
@@ -329,6 +332,22 @@ export async function refreshLinkedWorktrees(): Promise<void> {
     useLinear.setState({ linkedWorktrees });
   } catch {
     // Non-fatal.
+  }
+}
+
+/**
+ * Fetch a single issue's full details on demand (the ticket hover card) and cache
+ * it by id. A no-op once cached; non-fatal on error (the chip falls back to its
+ * ref fields).
+ */
+export async function ensureIssueDetail(id: string): Promise<void> {
+  if (useLinear.getState().issueDetailsById[id]) return;
+  try {
+    const issue = await trpc().linear.issue.query({ id });
+    if (!issue) return;
+    useLinear.setState((s) => ({ issueDetailsById: { ...s.issueDetailsById, [id]: issue } }));
+  } catch {
+    // Non-fatal — the hover card shows just the ref fields.
   }
 }
 
