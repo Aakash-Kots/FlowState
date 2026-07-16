@@ -313,4 +313,16 @@ export class GitService {
     const res = await git.commit(message);
     return { hash: res.commit };
   }
+
+  /**
+   * Commit only the given paths — stages exactly them (`git add <paths>`) and
+   * commits just those, leaving every other working-tree change untouched.
+   * Unlike `commit`, this never sweeps in unrelated edits.
+   */
+  async commitPaths(paths: string[], summary: string): Promise<{ hash: string }> {
+    const git = this.git;
+    await git.add(paths);
+    const res = await git.commit(summary, paths);
+    return { hash: res.commit };
+  }
 }

@@ -18,3 +18,10 @@ export enum BuiltinActionKind {
   Prefill = 'prefill',
   ClearChat = 'clear-chat',
 }
+
+/** Where an importable skill was discovered — a FlowState project, the user's global config, or a plugin marketplace. */
+export enum SkillImportOrigin {
+  Project = 'project',
+  Global = 'global',
+  Plugin = 'plugin',
+}

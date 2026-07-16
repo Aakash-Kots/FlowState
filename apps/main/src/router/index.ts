@@ -9,6 +9,7 @@ import { pinsRouter } from './pins';
 import { projectsRouter } from './projects';
 import { settingsRouter } from './settings';
 import { shortcutsRouter } from './shortcuts';
+import { skillsRouter } from './skills';
 import { tabsRouter } from './tabs';
 import { terminalRouter } from './terminal';
 import { usageRouter } from './usage';
@@ -24,6 +25,7 @@ export const appRouter = router({
   onboarding: onboardingRouter,
   projects: projectsRouter,
   pins: pinsRouter,
+  skills: skillsRouter,
   claude: claudeRouter,
   linear: linearRouter,
   shortcuts: shortcutsRouter,

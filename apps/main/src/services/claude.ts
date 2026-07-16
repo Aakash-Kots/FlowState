@@ -730,6 +730,18 @@ export class ClaudeService {
     }
   }
 
+  /**
+   * Force a re-fetch of a tab's skills from the SDK and broadcast them — used
+   * after a skill file is imported into the worktree so a newly-added skill can
+   * surface without waiting for the next `commands_changed` push. Best-effort
+   * and a no-op when the tab has no live session (the skill is then discovered
+   * on the next session boot regardless).
+   */
+  async refreshSkillsForTab(tabId: string): Promise<void> {
+    const session = this.sessions.get(tabId);
+    if (session) await this.refreshSkills(session);
+  }
+
   /** Set a tab's model. Persists it and applies it live if a session exists. */
   async setModel(tabId: string, model: string): Promise<void> {
     const tab = getTab(tabId);
