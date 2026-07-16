@@ -1,6 +1,7 @@
 'use client';
 
-import { memo } from 'react';
+import { memo, useState } from 'react';
+import { Check, Copy } from 'lucide-react';
 import {
   ChatBlockType,
   ChatMessageRole,
@@ -18,6 +19,7 @@ import { TurnSummary } from './TurnSummary';
  * roles that stay message-scoped.
  */
 export const MessageBubble = memo(function MessageBubble({ message }: { message: ChatMessage }) {
+  const [copied, setCopied] = useState(false);
   if (message.role === ChatMessageRole.User) {
     const text = message.blocks
       .map((b) => (b.type === ChatBlockType.Text ? b.text : ''))
@@ -27,8 +29,14 @@ export const MessageBubble = memo(function MessageBubble({ message }: { message:
       (b): b is Extract<ChatBlock, { type: ChatBlockType.Image }> => b.type === ChatBlockType.Image,
     );
     if (!text && imageBlocks.length === 0) return null;
+    const copy = () => {
+      void navigator.clipboard.writeText(text).then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      });
+    };
     return (
-      <div className="flex justify-end">
+      <div className="group flex flex-col items-end gap-1">
         <div className="flex max-w-[85%] flex-col gap-2 rounded-lg border border-border bg-muted px-3.5 py-2.5 text-sm leading-relaxed text-neutral-100">
           {imageBlocks.length > 0 && (
             <div className="flex flex-wrap justify-end gap-1.5">
@@ -44,6 +52,16 @@ export const MessageBubble = memo(function MessageBubble({ message }: { message:
           )}
           {text && <div className="whitespace-pre-wrap">{text}</div>}
         </div>
+        {text && (
+          <button
+            type="button"
+            onClick={copy}
+            title="Copy message"
+            className="inline-flex size-6 items-center justify-center rounded-md border border-border text-muted-foreground opacity-0 transition-all hover:bg-muted hover:text-neutral-200 focus-visible:opacity-100 group-hover:opacity-100"
+          >
+            {copied ? <Check className="size-3 text-success" /> : <Copy className="size-3" />}
+          </button>
+        )}
       </div>
     );
   }
