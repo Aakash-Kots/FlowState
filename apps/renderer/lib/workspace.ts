@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { create } from 'zustand';
 import {
+  ClaudeSessionState,
   DEFAULT_WORKSPACE_ID,
   MAX_TABS_PER_WORKSPACE,
   TabKind,
@@ -11,7 +12,7 @@ import {
 } from '@flowstate/shared';
 import { WorkspaceView } from './enums/view';
 import { clearFileTabState } from './fileTabs';
-import { markTabRead, registerTab, unregisterTab } from './tabStates';
+import { markTabRead, registerTab, unregisterTab, useTabStates } from './tabStates';
 import { trpc } from './trpc';
 
 ///////////
@@ -34,6 +35,11 @@ type WorkspaceState = {
    * first assistant response arrives.
    */
   initialisingIssue: Record<string, LinearIssueRef>;
+  /**
+   * The chat tab awaiting a "close while its agent is busy" confirmation, or null
+   * when no prompt is open. Drives the `CloseTabConfirmDialog` modal.
+   */
+  confirmCloseTabId: string | null;
 };
 
 ///////////////
@@ -48,6 +54,7 @@ const INITIAL: WorkspaceState = {
   activeTabId: null,
   viewMode: WorkspaceView.Workspace,
   initialisingIssue: {},
+  confirmCloseTabId: null,
 };
 
 /** Top-level views in cycle order (drives `cycleViewMode`). */
@@ -230,13 +237,27 @@ export async function openFileTab(filePath: string): Promise<void> {
 
 /**
  * Close a tab, focusing a neighbor if it was active. File tabs always close;
- * a chat tab won't close if it's the workspace's last chat tab.
+ * a chat tab won't close if it's the workspace's last chat tab. A chat tab whose
+ * agent is still working (`Running`) or waiting on input (`Waiting`) opens a
+ * confirmation modal instead of closing outright — the confirm path runs
+ * `performCloseTab` via `confirmCloseTab`.
  */
 export async function closeTab(tabId: string): Promise<void> {
-  const { tabs, activeTabId } = useWorkspace.getState();
+  const { tabs } = useWorkspace.getState();
   const tab = tabs.find((t) => t.id === tabId);
   if (!tab) return;
   if (tab.kind === TabKind.Chat && tabs.filter((t) => t.kind === TabKind.Chat).length <= 1) return;
+  const state = useTabStates.getState().states[tabId] ?? ClaudeSessionState.Idle;
+  if (state === ClaudeSessionState.Running || state === ClaudeSessionState.Waiting) {
+    useWorkspace.setState({ confirmCloseTabId: tabId });
+    return;
+  }
+  await performCloseTab(tabId);
+}
+
+/** The actual close mechanics, run once any busy-agent confirmation has passed. */
+async function performCloseTab(tabId: string): Promise<void> {
+  const { tabs, activeTabId } = useWorkspace.getState();
   await trpc().tabs.close.mutate({ tabId });
   unregisterTab(tabId);
   clearFileTabState(tabId);
@@ -244,6 +265,19 @@ export async function closeTab(tabId: string): Promise<void> {
   const nextActive =
     activeTabId === tabId ? (remaining[remaining.length - 1]?.id ?? null) : activeTabId;
   useWorkspace.setState({ tabs: remaining, activeTabId: nextActive });
+}
+
+/** Dismiss the close-confirmation modal, leaving the tab open. */
+export function cancelCloseTab(): void {
+  useWorkspace.setState({ confirmCloseTabId: null });
+}
+
+/** Confirm closing the tab that was awaiting confirmation, then close it. */
+export function confirmCloseTab(): void {
+  const { confirmCloseTabId } = useWorkspace.getState();
+  if (!confirmCloseTabId) return;
+  useWorkspace.setState({ confirmCloseTabId: null });
+  void performCloseTab(confirmCloseTabId);
 }
 
 /** Rename a tab. */
