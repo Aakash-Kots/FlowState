@@ -23,6 +23,7 @@ import type { OnboardingStatus } from '../lib/types/onboarding';
 import { getSetting, setSetting } from '../store/settings';
 import { deleteSecret, getSecret, hasSecret, setSecret } from '../store/secrets';
 import { runLinearOAuth } from './linear-oauth';
+import { runSlackOAuth } from './slack-oauth';
 import { terminalService } from './terminal';
 
 ///////////////
@@ -98,6 +99,7 @@ export class AuthService extends EventEmitter {
   private claudePolling = false;
   private githubPolling = false;
   private linearLoginAbort: AbortController | null = null;
+  private slackLoginAbort: AbortController | null = null;
 
   async checkClaude(): Promise<boolean> {
     const { stdout } = await loginShell('claude auth status');
@@ -121,6 +123,7 @@ export class AuthService extends EventEmitter {
       claudeConnected: getSetting<boolean>(CLAUDE_CONNECTED_KEY) === true,
       githubConnected: hasSecret(SecretName.GithubToken),
       linearConnected: hasSecret(SecretName.LinearToken),
+      slackConnected: hasSecret(SecretName.SlackToken),
     };
   }
 
@@ -251,6 +254,39 @@ export class AuthService extends EventEmitter {
   /** Disconnect Linear and clear the stored token. */
   linearLogout(): OnboardingStatus {
     deleteSecret(SecretName.LinearToken);
+    return this.emitStatus();
+  }
+
+  /**
+   * Link a Slack account via OAuth. Like Linear there is no CLI, so we run a
+   * browser loopback flow (see `runSlackOAuth`) and store the resulting user
+   * token via safeStorage; any failure/cancel/timeout leaves the status
+   * unchanged so the pill simply stays "Connect".
+   */
+  async beginSlackLogin(): Promise<OnboardingStatus> {
+    if (this.slackLoginAbort) return this.status(); // a flow is already running
+    this.slackLoginAbort = new AbortController();
+    try {
+      const { accessToken } = await runSlackOAuth({ signal: this.slackLoginAbort.signal });
+      setSecret(SecretName.SlackToken, accessToken);
+      return this.emitStatus();
+    } catch (err) {
+      console.warn('[auth] Slack login failed/cancelled:', (err as Error).message);
+      return this.status();
+    } finally {
+      this.slackLoginAbort = null;
+    }
+  }
+
+  /** Cancel an in-flight Slack OAuth flow (tears down the loopback listener). */
+  cancelSlackLogin(): OnboardingStatus {
+    this.slackLoginAbort?.abort();
+    return this.status();
+  }
+
+  /** Disconnect Slack and clear the stored token. */
+  slackLogout(): OnboardingStatus {
+    deleteSecret(SecretName.SlackToken);
     return this.emitStatus();
   }
 

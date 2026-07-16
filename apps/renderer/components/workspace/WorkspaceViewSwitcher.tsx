@@ -4,6 +4,7 @@ import { WorkspaceView } from '@/lib/enums/view';
 import { useWorkspace } from '@/lib/workspace';
 import { GitView } from '../git/GitView';
 import { LinearView } from '../linear/LinearView';
+import { SlackView } from '../slack/SlackView';
 import { WorkspaceTabs } from './WorkspaceTabs';
 
 /**
@@ -18,6 +19,8 @@ export function WorkspaceViewSwitcher() {
       return <GitView />;
     case WorkspaceView.Linear:
       return <LinearView />;
+    case WorkspaceView.Slack:
+      return <SlackView />;
     default:
       return <WorkspaceTabs />;
   }

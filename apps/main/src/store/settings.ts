@@ -37,6 +37,8 @@ const SKILLS_PANEL_WIDTH_KEY = 'skillsPanel.width';
 const SKILLS_PANEL_OPEN_KEY = 'skillsPanel.open';
 const TERMINAL_PANEL_FRACTION_KEY = 'terminalPanel.fraction';
 const WORKSPACE_RECENT_KEY = 'workspace.recent';
+const SLACK_CHANNELS_KEY = 'slack.followedChannels';
+const SLACK_MENTIONS_SEEN_KEY = 'slack.mentionsSeenTs';
 
 /** How many recently-active worktrees to remember for reload restoration. */
 const MAX_RECENT_WORKSPACES = 10;
@@ -164,6 +166,25 @@ export function getSkillsPanelOpen(): boolean {
 
 export function setSkillsPanelOpen(open: boolean): void {
   setSetting(SKILLS_PANEL_OPEN_KEY, open);
+}
+
+/** The channel ids the user follows in the Slack tab (defaults to none). */
+export function getSlackChannels(): string[] {
+  const stored = getSetting<string[]>(SLACK_CHANNELS_KEY);
+  return Array.isArray(stored) ? stored.filter((id) => typeof id === 'string') : [];
+}
+
+export function setSlackChannels(channelIds: string[]): void {
+  setSetting(SLACK_CHANNELS_KEY, channelIds);
+}
+
+/** The ts of the newest mention the user has seen — powers the unread badge. */
+export function getSlackMentionsSeenTs(): string {
+  return getSetting<string>(SLACK_MENTIONS_SEEN_KEY) ?? '';
+}
+
+export function setSlackMentionsSeenTs(ts: string): void {
+  setSetting(SLACK_MENTIONS_SEEN_KEY, ts);
 }
 
 /**

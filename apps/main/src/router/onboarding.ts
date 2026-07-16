@@ -61,4 +61,13 @@ export const onboardingRouter = router({
 
   /** Disconnect Linear and clear the stored token. */
   linearLogout: publicProcedure.mutation(() => authService.linearLogout()),
+
+  /** Start the Slack OAuth browser flow (no terminal — opens the system browser). */
+  slackBeginLogin: publicProcedure.mutation(() => authService.beginSlackLogin()),
+
+  /** Cancel an in-flight Slack OAuth flow. */
+  slackCancelLogin: publicProcedure.mutation(() => authService.cancelSlackLogin()),
+
+  /** Disconnect Slack and clear the stored token. */
+  slackLogout: publicProcedure.mutation(() => authService.slackLogout()),
 });

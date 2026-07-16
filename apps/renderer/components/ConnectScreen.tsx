@@ -9,12 +9,13 @@ import { Card, CardHeader } from './ui/Card';
 import { StatusPill } from './ui/StatusPill';
 import { TerminalView } from './TerminalView';
 
-type Busy = null | 'claude' | 'github' | 'linear' | 'refresh' | 'pat';
+type Busy = null | 'claude' | 'github' | 'linear' | 'slack' | 'refresh' | 'pat';
 
 export function ConnectScreen({ onClose }: { onClose?: () => void }) {
   const claudeConnected = useOnboarding((s) => s.claudeConnected);
   const githubConnected = useOnboarding((s) => s.githubConnected);
   const linearConnected = useOnboarding((s) => s.linearConnected);
+  const slackConnected = useOnboarding((s) => s.slackConnected);
 
   const [terminalId, setTerminalId] = useState<string | null>(null);
   const [hasGh, setHasGh] = useState<boolean | null>(null);
@@ -112,6 +113,29 @@ export function ConnectScreen({ onClose }: { onClose?: () => void }) {
     }
   };
 
+  const slackLogin = async () => {
+    setBusy('slack');
+    try {
+      // Resolves when the browser OAuth round-trip finishes (or is cancelled).
+      await trpc().onboarding.slackBeginLogin.mutate();
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const slackCancel = async () => {
+    await trpc().onboarding.slackCancelLogin.mutate();
+  };
+
+  const slackLogout = async () => {
+    setBusy('slack');
+    try {
+      await trpc().onboarding.slackLogout.mutate();
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const recheck = async () => {
     setBusy('refresh');
     try {
@@ -134,6 +158,11 @@ export function ConnectScreen({ onClose }: { onClose?: () => void }) {
   const linearStatus: ConnStatus = linearConnected
     ? ConnStatus.Connected
     : busy === 'linear'
+      ? ConnStatus.Pending
+      : ConnStatus.Idle;
+  const slackStatus: ConnStatus = slackConnected
+    ? ConnStatus.Connected
+    : busy === 'slack'
       ? ConnStatus.Pending
       : ConnStatus.Idle;
 
@@ -299,6 +328,42 @@ export function ConnectScreen({ onClose }: { onClose?: () => void }) {
               <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
                 Opens your browser to authorize FlowState. The token is encrypted with your OS
                 keychain — only ciphertext is written to disk.
+              </p>
+            </div>
+          </Card>
+
+          <Card>
+            <CardHeader
+              title="Slack"
+              subtitle="Link Slack so your @-mentions surface here and you can read + reply in a few chosen channels."
+              right={<StatusPill status={slackStatus} />}
+            />
+            <div className="px-4 py-4">
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  onClick={slackLogin}
+                  disabled={busy === 'slack'}
+                  variant={slackConnected ? 'secondary' : 'primary'}
+                >
+                  {busy === 'slack'
+                    ? 'Waiting for browser…'
+                    : slackConnected
+                      ? 'Sign in to a different account'
+                      : 'Sign in to Slack'}
+                </Button>
+                {busy === 'slack' ? (
+                  <Button variant="ghost" onClick={slackCancel}>
+                    Cancel
+                  </Button>
+                ) : slackConnected ? (
+                  <Button variant="ghost" onClick={slackLogout}>
+                    Log out
+                  </Button>
+                ) : null}
+              </div>
+              <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+                Opens your browser to authorize FlowState as you. The token is encrypted with your
+                OS keychain — only ciphertext is written to disk.
               </p>
             </div>
           </Card>

@@ -7,6 +7,7 @@
 /** Well-known secret names FlowState persists. */
 export enum SecretName {
   LinearToken = 'linear.token',
+  SlackToken = 'slack.token',
   GithubToken = 'github.token',
   AnthropicApiKey = 'anthropic.apiKey',
   /** A copy of the Claude Code OAuth credential captured after `claude auth login`. */

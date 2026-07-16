@@ -10,4 +10,5 @@ export enum WorkspaceView {
   Workspace = 'workspace',
   Git = 'git',
   Linear = 'linear',
+  Slack = 'slack',
 }

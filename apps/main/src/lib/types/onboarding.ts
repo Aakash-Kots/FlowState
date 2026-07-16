@@ -9,4 +9,6 @@ export type OnboardingStatus = {
   githubConnected: boolean;
   /** Linear is optional — connecting it never gates the first-run flow. */
   linearConnected: boolean;
+  /** Slack is optional — connecting it never gates the first-run flow. */
+  slackConnected: boolean;
 };
