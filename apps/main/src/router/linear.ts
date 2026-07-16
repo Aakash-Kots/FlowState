@@ -1,18 +1,24 @@
 /**
- * Linear control plane — a thin door over `linearService`. Powers the Linear tab:
- * browse team issues, read a team's workflow states + org users, write back an
- * issue's state / assignee, and join issues to the local worktrees linked to
- * them. Auth lives on the onboarding router / AuthService.
+ * Linear control plane — a thin door over `linearService`. Powers the Linear
+ * command center: browse/filter issues, read a team's workflow states, org users,
+ * projects, and labels, write back an issue's state / assignee, create issues,
+ * and join issues to the local worktrees linked to them. Auth lives on the
+ * onboarding router / AuthService.
  */
 import {
   type LinearIssue,
   type LinearIssueRef,
+  type LinearLabel,
+  type LinearProject,
   type LinearTeam,
   type LinearUser,
   type LinearWorkflowState,
   type LinkedWorktree,
+  createLinearIssueInputSchema,
   linearIssueRefSchema,
   linearIssueSchema,
+  linearLabelSchema,
+  linearProjectSchema,
   linearTeamSchema,
   linearUserSchema,
   linearWorkflowStateSchema,
@@ -33,7 +39,12 @@ const issuesSchema = z.array(linearIssueSchema);
 const teamsSchema = z.array(linearTeamSchema);
 const workflowStatesSchema = z.array(linearWorkflowStateSchema);
 const usersSchema = z.array(linearUserSchema);
+const projectsSchema = z.array(linearProjectSchema);
+const labelsSchema = z.array(linearLabelSchema);
 const linkedWorktreesSchema = z.array(linkedWorktreeSchema);
+
+/** Optional team scope shared by the projects + labels procedures. */
+const teamScopeSchema = z.object({ teamId: z.string().optional() });
 
 /** Wrap a Linear call, surfacing its message as an INTERNAL_SERVER_ERROR. */
 async function guard<T>(fn: () => Promise<T>, fallback: string): Promise<T> {
@@ -103,6 +114,30 @@ export const linearRouter = router({
         async () => linearIssueSchema.parse(await linearService.setIssueAssignee(input)),
         'Failed to reassign the issue.',
       ),
+    ),
+
+  /** Create a new issue and return it. */
+  createIssue: publicProcedure
+    .input(createLinearIssueInputSchema)
+    .mutation(({ input }): Promise<LinearIssue> =>
+      guard(
+        async () => linearIssueSchema.parse(await linearService.createIssue(input)),
+        'Failed to create the issue.',
+      ),
+    ),
+
+  /** Projects, optionally scoped to a team — the browser filter + create picker. */
+  projects: publicProcedure
+    .input(teamScopeSchema)
+    .query(({ input }): Promise<LinearProject[]> =>
+      guard(async () => projectsSchema.parse(await linearService.projects(input.teamId)), 'Failed to load projects.'),
+    ),
+
+  /** Issue labels, optionally scoped to a team — the create-ticket label picker. */
+  labels: publicProcedure
+    .input(teamScopeSchema)
+    .query(({ input }): Promise<LinearLabel[]> =>
+      guard(async () => labelsSchema.parse(await linearService.labels(input.teamId)), 'Failed to load labels.'),
     ),
 
   /**

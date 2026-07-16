@@ -1,40 +1,38 @@
 'use client';
 
-import { ChevronDown, RefreshCw, Search } from 'lucide-react';
+import { Plus, RefreshCw } from 'lucide-react';
+import { useOnboarding } from '@/lib/onboarding';
 import {
   refreshIssues,
   refreshLinkedWorktrees,
-  setSearchQuery,
-  setSelectedTeam,
+  refreshMyWork,
+  setCreateTicketOpen,
   useLinear,
   useLinearSync,
 } from '@/lib/linear';
-import { useOnboarding } from '@/lib/onboarding';
-import { Combobox } from '../ui/combobox';
 import { cn } from '../ui/cn';
+import { ActiveWorkSection } from './ActiveWorkSection';
+import { FilterBar } from './FilterBar';
 import { IssueDetail } from './IssueDetail';
 import { IssueList } from './IssueList';
+import { OpenPrSection } from './OpenPrSection';
 
 /**
- * The worktree-scoped Linear browser: a team/search header strip over a two-column
- * body (issue list ▸ issue detail). Mirrors `GitView`'s shell. Live sync (teams,
- * issues, linked worktrees, users, viewer) is owned by `useLinearSync`, mounted
- * here; the columns just read the store.
+ * The Linear command center: a header (＋ New ticket, refresh) over a filter bar,
+ * an "Active work" card row, an "Open PRs" list, and the full issue browser
+ * (list ⇄ detail). Live sync is owned by `useLinearSync`, mounted here; the
+ * sections just read the store. Gated on Linear being connected.
  */
 export function LinearView() {
   useLinearSync();
 
   const linearConnected = useOnboarding((s) => s.linearConnected);
-  const teams = useLinear((s) => s.teams);
-  const selectedTeamId = useLinear((s) => s.selectedTeamId);
-  const searchQuery = useLinear((s) => s.searchQuery);
   const loading = useLinear((s) => s.issuesLoading);
   const error = useLinear((s) => s.issuesError);
 
-  const selectedTeam = teams.find((t) => t.id === selectedTeamId) ?? null;
-
   const refresh = () => {
     void refreshIssues();
+    void refreshMyWork();
     void refreshLinkedWorktrees();
   };
 
@@ -48,60 +46,36 @@ export function LinearView() {
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
-      {/* Team filter + search header strip */}
-      <div className="flex items-center gap-3 border-b border-border bg-secondary px-3 py-1.5 text-xs">
-        <Combobox
-          items={teams}
-          getKey={(t) => t.id}
-          getFilterText={(t) => `${t.key} ${t.name}`}
-          isSelected={(t) => t.id === selectedTeamId}
-          onSelect={(t) => setSelectedTeam(t.id)}
-          placeholder="Search teams…"
-          emptyText="No teams"
-          clear={{
-            label: 'All teams',
-            active: !selectedTeamId,
-            onClear: () => setSelectedTeam(null),
-          }}
-          triggerClassName="gap-1.5 rounded-md border border-border px-2 py-1 text-muted-foreground hover:bg-muted hover:text-neutral-100"
-          trigger={
-            <>
-              <span className="max-w-[12rem] truncate font-medium text-neutral-200">
-                {selectedTeam ? `${selectedTeam.key} · ${selectedTeam.name}` : 'All teams'}
-              </span>
-              <ChevronDown className="size-3 opacity-70" />
-            </>
-          }
-          renderItem={(t) => (
-            <>
-              <span className="shrink-0 font-mono text-[11px] text-muted-foreground">{t.key}</span>
-              <span className="min-w-0 flex-1 truncate text-neutral-200">{t.name}</span>
-            </>
-          )}
-        />
-
-        <div className="relative flex-1">
-          <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <input
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search issues…"
-            spellCheck={false}
-            className="h-7 w-full rounded-md border border-border bg-background pl-7 pr-2 text-xs text-neutral-100 placeholder:text-muted-foreground focus:border-primary/50 focus:outline-none"
-          />
+      {/* Header */}
+      <div className="flex items-center gap-2 border-b border-border bg-secondary px-3 py-1.5">
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+          Linear
+        </span>
+        <div className="ml-auto flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setCreateTicketOpen(true)}
+            className="inline-flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+          >
+            <Plus className="size-3.5" />
+            New ticket
+          </button>
+          <button
+            type="button"
+            onClick={refresh}
+            title="Refresh"
+            className="inline-flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <RefreshCw className={cn('size-3.5', loading && 'animate-spin')} />
+          </button>
         </div>
-
-        <button
-          type="button"
-          onClick={refresh}
-          title="Refresh"
-          className="inline-flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        >
-          <RefreshCw className={cn('size-3.5', loading && 'animate-spin')} />
-        </button>
       </div>
 
-      {/* Body: issue list ▸ detail */}
+      <FilterBar />
+      <ActiveWorkSection />
+      <OpenPrSection />
+
+      {/* Browser: issue list ▸ detail */}
       {error ? (
         <div className="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-sm text-danger">
           {error}

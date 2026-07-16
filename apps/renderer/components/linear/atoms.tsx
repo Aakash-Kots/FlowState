@@ -1,11 +1,26 @@
 'use client';
 
+import { ClaudeSessionState } from '@flowstate/shared';
 import { cn } from '../ui/cn';
 
 /**
- * Small presentational atoms shared by the Linear issue list and detail: a
- * workflow-state colour dot and a user avatar (image, or initial fallback).
+ * Small presentational atoms shared across the Linear tab: a workflow-state colour
+ * dot, a user avatar (image or initial fallback), and a linked worktree's
+ * Claude-session status dot.
  */
+
+/** Colour accent per Claude session state (for a linked worktree's status dot). */
+const CLAUDE_STATE_DOT: Record<ClaudeSessionState, string> = {
+  [ClaudeSessionState.Idle]: 'bg-muted-foreground',
+  [ClaudeSessionState.Running]: 'bg-success',
+  [ClaudeSessionState.Waiting]: 'bg-warn',
+  [ClaudeSessionState.Error]: 'bg-danger',
+};
+
+/** A dot coloured by a linked worktree's Claude session state. */
+export function ClaudeStateDot({ state, className }: { state: ClaudeSessionState; className?: string }) {
+  return <span className={cn('size-2 shrink-0 rounded-full', CLAUDE_STATE_DOT[state], className)} />;
+}
 
 /** A filled dot in the state's Linear-assigned hex colour. */
 export function StateDot({

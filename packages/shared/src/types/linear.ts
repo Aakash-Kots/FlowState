@@ -2,7 +2,7 @@
  * Linear integration types. Validation lives in `../schemas/linear`.
  */
 import type { ClaudeSessionState } from '../enums/claude';
-import type { LinearStateType } from '../enums/linear';
+import type { LinearPrStatus, LinearStateType } from '../enums/linear';
 
 /**
  * A Linear issue reference linked to a workspace. Kept intentionally small —
@@ -39,6 +39,30 @@ export type LinearUser = {
   avatarUrl?: string;
 };
 
+/** A Linear project — the browser's project filter + create-ticket picker. */
+export type LinearProject = {
+  id: string;
+  name: string;
+};
+
+/** An issue label — the create-ticket label picker. */
+export type LinearLabel = {
+  id: string;
+  name: string;
+  /** Hex colour Linear assigns the label, e.g. "#5e6ad2". */
+  color: string;
+};
+
+/**
+ * The GitHub pull request linked to an issue, read from its Linear attachments.
+ * `status` is parsed from the attachment's untyped `metadata` (see LinearPrStatus).
+ */
+export type LinearPrRef = {
+  url: string;
+  number: number;
+  status: LinearPrStatus;
+};
+
 /**
  * A richer issue row for the browser/detail views — more than the small
  * `LinearIssueRef` we persist on a workspace. The full body lives in Linear.
@@ -69,6 +93,8 @@ export type LinearIssue = {
     name: string;
     avatarUrl?: string;
   } | null;
+  /** The open/merged/closed GitHub PR linked to this issue, or null if none. */
+  pr: LinearPrRef | null;
 };
 
 /** A Linear team — the browser's top-level filter. */
@@ -92,12 +118,33 @@ export type LinkedWorktree = {
   claudeState: ClaudeSessionState;
 };
 
-/** Input to browse issues: optionally scoped to a team and/or a text query. */
+/** Input to browse issues: optional team/text plus the command-center filters. */
 export type ListLinearIssuesInput = {
   teamId?: string;
   query?: string;
   /** Include completed/canceled issues (excluded by default). */
   includeCompleted?: boolean;
+  assigneeId?: string;
+  stateIds?: string[];
+  priorities?: number[];
+  labelIds?: string[];
+  projectId?: string;
+};
+
+/**
+ * Input to create an issue. `teamId` is required (Linear's only required field);
+ * everything else is optional. `priority` uses Linear's scale
+ * (0 none, 1 urgent, 2 high, 3 medium, 4 low).
+ */
+export type CreateLinearIssueInput = {
+  teamId: string;
+  title: string;
+  description?: string;
+  assigneeId?: string;
+  stateId?: string;
+  priority?: number;
+  labelIds?: string[];
+  projectId?: string;
 };
 
 /** Input to fetch a team's workflow states (for the status dropdown). */

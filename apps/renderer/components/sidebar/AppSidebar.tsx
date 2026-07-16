@@ -20,6 +20,7 @@ import { projectName } from '@/lib/paths';
 import { setSettingsOpen, useSettings } from '@/lib/settings';
 import { useWorktreeState, useWorktreeUnread } from '@/lib/tabStates';
 import { pickWorkingFolder, useWorkspace } from '@/lib/workspace';
+import { CreateTicketModal } from '../linear/CreateTicketModal';
 import { AddProjectModal } from '../projects/AddProjectModal';
 import { CreateWorktreeModal } from '../projects/CreateWorktreeModal';
 import { ProjectAvatar } from '../projects/ProjectAvatar';
@@ -360,6 +361,7 @@ export function AppSidebar() {
       <SidebarRail />
       <AddProjectModal />
       <CreateWorktreeModal />
+      <CreateTicketModal />
     </Sidebar>
   );
 }

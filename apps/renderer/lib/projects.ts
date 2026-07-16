@@ -347,6 +347,22 @@ export function selectWorktree(workspace: Workspace): void {
 }
 
 /**
+ * The project id of the worktree currently open (null on the default workspace or
+ * if it can't be resolved) — where a new worktree created from the Linear tab
+ * lands. Scans the cached worktree tree for the active workspace.
+ */
+export function useCurrentProjectId(): string | null {
+  const workspaceId = useWorkspace((s) => s.workspaceId);
+  return useProjects((s) => {
+    for (const list of Object.values(s.worktrees)) {
+      const match = list.find((w) => w.id === workspaceId);
+      if (match) return match.projectId;
+    }
+    return null;
+  });
+}
+
+/**
  * Rename a worktree: sets its display name and renames its branch to a slug of
  * that name. The sidebar tree is patched by the app-wide `worktree.onChange`
  * subscription (`useWorktreeSync`), so no optimistic update here; errors toast.

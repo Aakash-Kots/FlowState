@@ -18,3 +18,16 @@ export enum LinearStateType {
   Completed = 'completed',
   Canceled = 'canceled',
 }
+
+/**
+ * State of the GitHub pull request linked to an issue (via a Linear attachment).
+ * Not a Linear schema field — derived by parsing the attachment's untyped
+ * `metadata` JSON, so `Open` is the tolerant fallback when a PR url exists but
+ * its state can't be read.
+ */
+export enum LinearPrStatus {
+  Open = 'open',
+  Merged = 'merged',
+  Closed = 'closed',
+  Draft = 'draft',
+}

@@ -1,44 +1,22 @@
 'use client';
 
 import { ChevronDown, ExternalLink, GitBranch, Plus, UserPlus } from 'lucide-react';
-import { ClaudeSessionState, type LinearIssue, type LinearIssueRef } from '@flowstate/shared';
+import { type LinearIssue } from '@flowstate/shared';
 import {
   ensureWorkflowStates,
+  issueToRef,
   refreshUsers,
   setIssueAssignee,
   setIssueState,
   useLinear,
 } from '@/lib/linear';
-import { openCreateWorktreeForIssue, useProjects } from '@/lib/projects';
+import { openCreateWorktreeForIssue, useCurrentProjectId } from '@/lib/projects';
 import { trpc } from '@/lib/trpc';
-import { selectWorkspace, useWorkspace } from '@/lib/workspace';
+import { selectWorkspace } from '@/lib/workspace';
 import { Combobox } from '../ui/combobox';
-import { cn } from '../ui/cn';
-import { Avatar, StateDot } from './atoms';
-
-/////////////
-// Helpers //
-/////////////
-
-/** Down-convert a browser issue to the small ref a linked worktree persists. */
-function toRef(issue: LinearIssue): LinearIssueRef {
-  return {
-    id: issue.id,
-    identifier: issue.identifier,
-    title: issue.title,
-    url: issue.url,
-    branchName: issue.branchName,
-    stateName: issue.state.name,
-  };
-}
-
-/** Colour accent for a linked worktree's Claude session state. */
-const CLAUDE_STATE_DOT: Record<ClaudeSessionState, string> = {
-  [ClaudeSessionState.Idle]: 'bg-muted-foreground',
-  [ClaudeSessionState.Running]: 'bg-success',
-  [ClaudeSessionState.Waiting]: 'bg-warn',
-  [ClaudeSessionState.Error]: 'bg-danger',
-};
+import { Avatar, ClaudeStateDot, StateDot } from './atoms';
+import { PrBadge } from './PrBadge';
+import { PriorityIcon, priorityLabel } from './PriorityIcon';
 
 ///////////////////
 // Sub-components //
@@ -153,7 +131,7 @@ function LinkedWorktrees({ issueId }: { issueId: string }) {
           onClick={() => void selectWorkspace(w.workspaceId)}
           className="group flex items-center gap-2 rounded-md border border-border px-2 py-1.5 text-left text-xs transition-colors hover:bg-muted"
         >
-          <span className={cn('size-2 shrink-0 rounded-full', CLAUDE_STATE_DOT[w.claudeState])} />
+          <ClaudeStateDot state={w.claudeState} />
           <span className="min-w-0 flex-1 truncate text-neutral-200">{w.name}</span>
           <span className="flex shrink-0 items-center gap-1 font-mono text-[11px] text-muted-foreground">
             <GitBranch className="size-3" />
@@ -175,17 +153,15 @@ function LinkedWorktrees({ issueId }: { issueId: string }) {
  * the New-Worktree modal pre-linked to this issue (under the current project).
  */
 export function IssueDetail() {
-  const issue = useLinear((s) => s.issues.find((i) => i.id === s.selectedIssueId) ?? null);
+  const issue = useLinear(
+    (s) =>
+      s.issues.find((i) => i.id === s.selectedIssueId) ??
+      s.myWorkIssues.find((i) => i.id === s.selectedIssueId) ??
+      null,
+  );
 
   // The project of the worktree we're viewing — where a new linked worktree lands.
-  const workspaceId = useWorkspace((s) => s.workspaceId);
-  const projectId = useProjects((s) => {
-    for (const list of Object.values(s.worktrees)) {
-      const match = list.find((w) => w.id === workspaceId);
-      if (match) return match.projectId;
-    }
-    return null;
-  });
+  const projectId = useCurrentProjectId();
 
   if (!issue) {
     return (
@@ -208,6 +184,13 @@ export function IssueDetail() {
         >
           <ExternalLink className="size-3.5" />
         </button>
+        <span className="ml-auto flex items-center gap-2">
+          <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+            <PriorityIcon priority={issue.priority} />
+            {priorityLabel(issue.priority)}
+          </span>
+          {issue.pr && <PrBadge pr={issue.pr} />}
+        </span>
       </div>
       <h2 className="mb-3 text-base font-semibold text-neutral-100">{issue.title}</h2>
 
@@ -235,7 +218,7 @@ export function IssueDetail() {
       <button
         type="button"
         disabled={!projectId}
-        onClick={() => projectId && openCreateWorktreeForIssue(projectId, toRef(issue))}
+        onClick={() => projectId && openCreateWorktreeForIssue(projectId, issueToRef(issue))}
         className="inline-flex w-fit items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-neutral-200 transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
         title={projectId ? 'Create a worktree linked to this issue' : 'Open a project to create a worktree'}
       >

@@ -1,15 +1,21 @@
 /**
  * LinearService — talks to Linear via @linear/sdk using the OAuth token captured
  * on the Connect screen (encrypted with Electron safeStorage). Powers the Linear
- * tab: browse team issues, read a team's workflow states + org users, and write
- * back an issue's state / assignee. Also lists the issues assigned to the linked
- * user so a worktree can be linked + named from a ticket. The auth flow itself
- * lives in `linear-oauth.ts` / `AuthService`.
+ * command center: browse/filter issues (with their linked GitHub PR read from
+ * attachments), read a team's workflow states, org users, projects, and labels,
+ * write back an issue's state / assignee, and create new issues. Also lists the
+ * issues assigned to the linked user so a worktree can be linked + named from a
+ * ticket. The auth flow itself lives in `linear-oauth.ts` / `AuthService`.
  */
 import { LinearClient } from '@linear/sdk';
+import { LinearPrStatus } from '@flowstate/shared';
 import type {
+  CreateLinearIssueInput,
   LinearIssue,
   LinearIssueRef,
+  LinearLabel,
+  LinearPrRef,
+  LinearProject,
   LinearStateType,
   LinearTeam,
   LinearUser,
@@ -49,6 +55,7 @@ const ISSUE_FIELDS = `
   team { id }
   state { id name type color }
   assignee { id name avatarUrl }
+  attachments(first: 20) { nodes { url title sourceType metadata } }
 `;
 
 const TEAMS_QUERY = `
@@ -98,6 +105,48 @@ const ISSUE_UPDATE_MUTATION = `
   }
 `;
 
+const ISSUE_CREATE_MUTATION = `
+  mutation IssueCreate($input: IssueCreateInput!) {
+    issueCreate(input: $input) {
+      success
+      issue { ${ISSUE_FIELDS} }
+    }
+  }
+`;
+
+const PROJECTS_QUERY = `
+  query Projects($first: Int!) {
+    projects(first: $first) {
+      nodes { id name }
+    }
+  }
+`;
+
+const TEAM_PROJECTS_QUERY = `
+  query TeamProjects($teamId: String!, $first: Int!) {
+    team(id: $teamId) {
+      projects(first: $first) { nodes { id name } }
+    }
+  }
+`;
+
+const LABELS_QUERY = `
+  query IssueLabels($first: Int!, $filter: IssueLabelFilter) {
+    issueLabels(first: $first, filter: $filter) {
+      nodes { id name color }
+    }
+  }
+`;
+
+/** The raw GraphQL shape of an attachment node (source of the PR link). */
+type AttachmentNode = {
+  url: string;
+  title: string | null;
+  sourceType: string | null;
+  /** Untyped JSON — shape varies by source; PR state lives in here for GitHub. */
+  metadata: Record<string, unknown> | null;
+};
+
 /** The raw GraphQL shape of an issue node (before mapping to `LinearIssue`). */
 type IssueNode = {
   id: string;
@@ -111,6 +160,7 @@ type IssueNode = {
   team: { id: string } | null;
   state: { id: string; name: string; type: string; color: string } | null;
   assignee: { id: string; name: string; avatarUrl: string | null } | null;
+  attachments: { nodes: AttachmentNode[] } | null;
 };
 
 type AssignedIssuesData = {
@@ -130,6 +180,36 @@ type AssignedIssuesData = {
 
 /** IssueFilter fragment excluding done/cancelled issues from the browser. */
 const ACTIVE_STATE_FILTER = { state: { type: { nin: ['completed', 'canceled'] } } };
+
+/** Matches a GitHub pull-request URL and captures its number. */
+const GITHUB_PR_URL = /github\.com\/[^/]+\/[^/]+\/pull\/(\d+)/i;
+
+/** Map a raw Linear-attachment status string to our PR-status enum. */
+function toPrStatus(raw: unknown): LinearPrStatus {
+  const s = typeof raw === 'string' ? raw.toLowerCase() : '';
+  if (s.includes('merge')) return LinearPrStatus.Merged;
+  if (s.includes('close')) return LinearPrStatus.Closed;
+  if (s.includes('draft')) return LinearPrStatus.Draft;
+  return LinearPrStatus.Open; // open, or unknown-but-present
+}
+
+/**
+ * Pick the GitHub pull-request attachment (if any) and read its state. PR status
+ * is NOT a Linear schema field — it lives in the attachment's untyped `metadata`
+ * JSON, whose shape varies by version — so this reads defensively and defaults to
+ * `Open` whenever a PR url exists but its state can't be determined.
+ */
+function toPrRef(attachments: AttachmentNode[]): LinearPrRef | null {
+  for (const a of attachments) {
+    const match = a.url?.match(GITHUB_PR_URL);
+    if (!match) continue;
+    if (a.sourceType && !a.sourceType.toLowerCase().includes('github')) continue;
+    const meta = a.metadata ?? {};
+    const status = meta.draft === true ? LinearPrStatus.Draft : toPrStatus(meta.status ?? meta.state);
+    return { url: a.url, number: Number(match[1]), status };
+  }
+  return null;
+}
 
 /** Map a raw GraphQL issue node to the shared `LinearIssue` shape. */
 function toLinearIssue(n: IssueNode): LinearIssue {
@@ -152,6 +232,7 @@ function toLinearIssue(n: IssueNode): LinearIssue {
     assignee: n.assignee
       ? { id: n.assignee.id, name: n.assignee.name, avatarUrl: n.assignee.avatarUrl ?? undefined }
       : null,
+    pr: toPrRef(n.attachments?.nodes ?? []),
   };
 }
 
@@ -195,13 +276,18 @@ export class LinearService {
     return data?.teams.nodes ?? [];
   }
 
-  /** Browse issues, optionally scoped to a team and/or a title text query. */
+  /** Browse issues with the command-center filters (team, text, assignee, …). */
   async issues(input: ListLinearIssuesInput): Promise<LinearIssue[]> {
     const filter: Record<string, unknown> = {};
     if (input.teamId) filter.team = { id: { eq: input.teamId } };
     if (!input.includeCompleted) Object.assign(filter, ACTIVE_STATE_FILTER);
     const q = input.query?.trim();
     if (q) filter.title = { containsIgnoreCase: q };
+    if (input.assigneeId) filter.assignee = { id: { eq: input.assigneeId } };
+    if (input.stateIds?.length) filter.state = { id: { in: input.stateIds } };
+    if (input.priorities?.length) filter.priority = { in: input.priorities };
+    if (input.labelIds?.length) filter.labels = { some: { id: { in: input.labelIds } } };
+    if (input.projectId) filter.project = { id: { eq: input.projectId } };
 
     const { data } = await this.client().client.rawRequest<
       { issues: { nodes: IssueNode[] } },
@@ -266,6 +352,47 @@ export class LinearService {
       throw new Error('Linear rejected the issue update.');
     }
     return toLinearIssue(data.issueUpdate.issue);
+  }
+
+  /** Create an issue and return it (drops undefined fields from the input). */
+  async createIssue(input: CreateLinearIssueInput): Promise<LinearIssue> {
+    const payload = Object.fromEntries(
+      Object.entries(input).filter(([, v]) => v !== undefined),
+    );
+    const { data } = await this.client().client.rawRequest<
+      { issueCreate: { success: boolean; issue: IssueNode | null } },
+      { input: Record<string, unknown> }
+    >(ISSUE_CREATE_MUTATION, { input: payload });
+    if (!data?.issueCreate.success || !data.issueCreate.issue) {
+      throw new Error('Linear rejected the new issue.');
+    }
+    return toLinearIssue(data.issueCreate.issue);
+  }
+
+  /** Projects, optionally scoped to a team — the browser filter + create picker. */
+  async projects(teamId?: string): Promise<LinearProject[]> {
+    if (teamId) {
+      const { data } = await this.client().client.rawRequest<
+        { team: { projects: { nodes: LinearProject[] } } | null },
+        { teamId: string; first: number }
+      >(TEAM_PROJECTS_QUERY, { teamId, first: 250 });
+      return data?.team?.projects.nodes ?? [];
+    }
+    const { data } = await this.client().client.rawRequest<
+      { projects: { nodes: LinearProject[] } },
+      { first: number }
+    >(PROJECTS_QUERY, { first: 250 });
+    return data?.projects.nodes ?? [];
+  }
+
+  /** Issue labels, optionally scoped to a team — the create-ticket label picker. */
+  async labels(teamId?: string): Promise<LinearLabel[]> {
+    const filter = teamId ? { team: { id: { eq: teamId } } } : undefined;
+    const { data } = await this.client().client.rawRequest<
+      { issueLabels: { nodes: LinearLabel[] } },
+      { first: number; filter?: Record<string, unknown> }
+    >(LABELS_QUERY, { first: 250, filter });
+    return data?.issueLabels.nodes ?? [];
   }
 }
 

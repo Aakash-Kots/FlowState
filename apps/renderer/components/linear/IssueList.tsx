@@ -8,8 +8,10 @@ import { useProjects } from '@/lib/projects';
 import { useWorkspace } from '@/lib/workspace';
 import { cn } from '../ui/cn';
 import { Avatar, StateDot } from './atoms';
+import { PrBadge } from './PrBadge';
+import { PriorityIcon } from './PriorityIcon';
 
-/** One issue row: state dot, identifier, title, linked-worktree badge, assignee. */
+/** One issue row: priority, state dot, identifier, title, PR/worktree, assignee. */
 function IssueRow({ issue, isCurrent }: { issue: LinearIssue; isCurrent: boolean }) {
   const isSelected = useLinear((s) => s.selectedIssueId === issue.id);
   const linkedCount = useLinear(
@@ -21,17 +23,17 @@ function IssueRow({ issue, isCurrent }: { issue: LinearIssue; isCurrent: boolean
       type="button"
       onClick={() => selectIssue(issue.id)}
       className={cn(
-        'group flex w-full items-center gap-2 rounded border-l-2 px-2 py-1.5 text-left text-xs transition-colors',
+        'group flex w-full items-center gap-2 rounded border-l-2 px-2 py-1.5 text-left text-[13px] transition-colors',
         isCurrent ? 'border-primary' : 'border-transparent',
         isSelected ? 'bg-accent text-neutral-100' : 'hover:bg-muted',
       )}
       title={isCurrent ? 'Linked to the worktree you have open' : undefined}
     >
+      <PriorityIcon priority={issue.priority} />
       <StateDot color={issue.state.color} title={issue.state.name} />
-      <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
-        {issue.identifier}
-      </span>
+      <span className="shrink-0 font-mono text-xs text-muted-foreground">{issue.identifier}</span>
       <span className="min-w-0 flex-1 truncate text-neutral-200">{issue.title}</span>
+      {issue.pr && <PrBadge pr={issue.pr} />}
       {linkedCount > 0 && (
         <span
           className="flex shrink-0 items-center gap-0.5 text-[11px] text-primary"
