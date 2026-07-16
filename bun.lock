@@ -13,7 +13,7 @@
     },
     "apps/main": {
       "name": "@flowstate/main",
-      "version": "0.1.18",
+      "version": "0.2.1",
       "dependencies": {
         "@anthropic-ai/claude-agent-sdk": "^0.3.207",
         "@flowstate/shared": "workspace:*",
@@ -26,6 +26,7 @@
         "electron-updater": "^6.8.9",
         "node-pty": "^1.1.0",
         "simple-git": "^3.36.0",
+        "systeminformation": "^5.31.17",
         "zod": "^3.23.8",
       },
       "devDependencies": {
@@ -2026,6 +2027,8 @@
     "supports-color": ["supports-color@8.1.1", "", { "dependencies": { "has-flag": "^4.0.0" } }, "sha512-MpUEN2OodtUzxvKQl72cUF7RQ5EiHsGvSsVG0ia9c5RbWGL2CI4C7EpPS8UTBIplnlzZiNuV56w+FuNxy3ty2Q=="],
 
     "supports-preserve-symlinks-flag": ["supports-preserve-symlinks-flag@1.0.0", "", {}, "sha512-ot0WnXS9fgdkgIcePe6RHNk1WA8+muPa6cSjeR3V8K27q9BB1rTE3R1p7Hv0z1ZyAc8s6Vvv8DIyWf681MAt0w=="],
+
+    "systeminformation": ["systeminformation@5.31.17", "", { "os": "!aix", "bin": { "systeminformation": "lib/cli.js" } }, "sha512-TvFA9iwDWlMjqZVlKIJ0Cy+Zgm9ttlMx0SMRwJDMNKyhlEKWBMb3+WRwDi/3dvHdWbexpos4Osp4U49p5WjB5g=="],
 
     "tailwind-merge": ["tailwind-merge@3.6.0", "", {}, "sha512-uxL7qAVQriqRQPAyK3pj66VqskWqoZ37PW94jwOTwNfq/z9oyu1V+eqrZqtR2+fCiXdYOZe/Modt8GtvqNzu+w=="],
 

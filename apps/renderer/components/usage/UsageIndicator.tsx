@@ -11,6 +11,7 @@ import type {
 import { useUsage, useUsageSync } from '@/lib/usage';
 import { cn } from '../ui/cn';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '../ui/hover-card';
+import { Bar, severityFill } from '../ui/Meter';
 
 ///////////
 // Types //
@@ -29,24 +30,29 @@ type UsageVariant = 'panel' | 'header';
 /** Placeholder window used before filtering — never rendered (utilization null). */
 const EMPTY_WINDOW: UsageWindow = { utilization: null, resetsAt: null };
 
-/** Utilization thresholds where a meter bar shifts from calm grey → amber → red. */
-const USAGE_WARN_PCT = 65;
-const USAGE_DANGER_PCT = 85;
-
 /** The meter-row container per variant (same box for the loading and loaded states). */
 const CONTAINER_CLASS: Record<UsageVariant, string> = {
   panel: 'flex flex-row flex-wrap gap-x-4 gap-y-2 border-t border-border px-3 py-2.5',
-  header: 'flex flex-row items-center gap-3',
+  header: 'flex flex-row items-center gap-2',
 };
 
 /** A single meter cell per variant: fluid in the panel, fixed-width in the header. */
 const METER_CLASS: Record<UsageVariant, string> = {
   panel: 'flex min-w-0 flex-1 basis-14 flex-col gap-1',
-  header: 'flex w-20 shrink-0 flex-col gap-0.5',
+  header: 'flex w-12 shrink-0 flex-col gap-0.5',
 };
 
-/** Labels shown as the loading skeleton before the first snapshot arrives. */
-const LOADING_LABELS = ['Session', 'Weekly', 'Fable'];
+/** Progress-bar height per variant — slimmer in the space-tight header. */
+const BAR_CLASS: Record<UsageVariant, string> = {
+  panel: '',
+  header: 'h-0.5',
+};
+
+/** Loading-skeleton labels per variant (the header abbreviates to single letters). */
+const LOADING_LABELS: Record<UsageVariant, string[]> = {
+  panel: ['Session', 'Weekly', 'Fable'],
+  header: ['S', 'W', 'F'],
+};
 
 /** Friendly names for the SDK's raw behavior keys. */
 const BEHAVIOR_LABELS: Record<string, string> = {
@@ -101,36 +107,9 @@ function topBehaviorRows(items: UsageBehavior[], n = 4): { label: string; pct: n
     .map((b) => ({ label: BEHAVIOR_LABELS[b.key] ?? b.key, pct: Math.round(b.pct) }));
 }
 
-/** Bar fill class by headroom: calm grey when low, amber mid, red high. */
-function severityFill(pct: number): string {
-  if (pct >= USAGE_DANGER_PCT) return 'bg-danger';
-  if (pct >= USAGE_WARN_PCT) return 'bg-warn';
-  return 'bg-muted-foreground';
-}
-
 ///////////////////
 // Sub-components //
 ///////////////////
-
-/** A subtle progress bar (shared by the footer meters and behavior rows). */
-function Bar({
-  pct,
-  className,
-  fill = 'bg-muted-foreground',
-}: {
-  pct: number;
-  className?: string;
-  fill?: string;
-}) {
-  return (
-    <div className={cn('h-1 overflow-hidden rounded-full bg-white/10', className)}>
-      <div
-        className={cn('h-full rounded-full', fill)}
-        style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
-      />
-    </div>
-  );
-}
 
 /** One "Label items" line in the hover breakdown; renders nothing when empty. */
 function DetailLine({ label, value }: { label: string; value: string }) {
@@ -223,10 +202,10 @@ export function UsageIndicator({ variant = 'panel' }: { variant?: UsageVariant }
   if (!limits) {
     return (
       <div className={CONTAINER_CLASS[variant]}>
-        {LOADING_LABELS.map((label) => (
+        {LOADING_LABELS[variant].map((label) => (
           <div key={label} className={METER_CLASS[variant]}>
             <span className="truncate text-[11px] text-muted-foreground/50">{label}</span>
-            <div className="h-1 animate-pulse rounded-full bg-white/10" />
+            <div className={cn('animate-pulse rounded-full bg-white/10', BAR_CLASS[variant] || 'h-1')} />
           </div>
         ))}
       </div>
@@ -257,11 +236,11 @@ export function UsageIndicator({ variant = 'panel' }: { variant?: UsageVariant }
             title={reset ? `${r.label} · resets ${reset}` : r.label}
           >
             <div className="flex items-baseline gap-1 text-[11px] text-muted-foreground">
-              <span className="truncate">{r.label}</span>
+              <span className="truncate">{variant === 'header' ? r.label[0] : r.label}</span>
               <span className="text-muted-foreground/50">·</span>
               <span className="shrink-0 tabular-nums">{pct}%</span>
             </div>
-            <Bar pct={pct} fill={severityFill(pct)} />
+            <Bar pct={pct} fill={severityFill(pct)} className={BAR_CLASS[variant]} />
           </div>
         );
       })}

@@ -18,9 +18,11 @@ import { GitHeaderButton } from '@/components/git/GitHeaderButton';
 import { SpotifyButton } from '@/components/spotify/SpotifyButton';
 import { ShortcutProvider } from '@/components/shortcuts/ShortcutProvider';
 import { UsageIndicator } from '@/components/usage/UsageIndicator';
+import { SystemMetricsIndicator } from '@/components/system/SystemMetricsIndicator';
 import { ViewModeTabs } from '@/components/workspace/ViewModeTabs';
 import { WorkspaceViewSwitcher } from '@/components/workspace/WorkspaceViewSwitcher';
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
+import { Separator } from '@/components/ui/separator';
 import { Toaster } from '@/components/ui/sonner';
 
 export default function Page() {
@@ -83,6 +85,8 @@ function WorkspaceShell() {
             <div className="flex items-center gap-3">
               <SidebarTrigger />
               <UsageIndicator variant="header" />
+              <Separator orientation="vertical" className="h-6" />
+              <SystemMetricsIndicator variant="header" />
               {onDefaultWorkspace && (
                 <span className="text-xs text-muted-foreground">claude code workspace</span>
               )}
