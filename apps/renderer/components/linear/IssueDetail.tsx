@@ -13,6 +13,7 @@ import {
 import { openCreateWorktreeForIssue, useCurrentProjectId } from '@/lib/projects';
 import { trpc } from '@/lib/trpc';
 import { selectWorkspace } from '@/lib/workspace';
+import { Markdown } from '../chat/Markdown';
 import { Combobox } from '../ui/combobox';
 import { Avatar, ClaudeStateDot, StateDot } from './atoms';
 import { PrBadge } from './PrBadge';
@@ -106,9 +107,9 @@ function AssigneeControl({ issue }: { issue: LinearIssue }) {
           type="button"
           onClick={() => void setIssueAssignee(issue.id, viewer.id)}
           title="Assign to me"
-          className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-neutral-100"
+          className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-neutral-100"
         >
-          <UserPlus className="size-3" />
+          <UserPlus className="size-3.5" />
           Me
         </button>
       )}
@@ -120,7 +121,7 @@ function AssigneeControl({ issue }: { issue: LinearIssue }) {
 function LinkedWorktrees({ issueId }: { issueId: string }) {
   const linked = useLinear((s) => s.linkedWorktrees.filter((w) => w.issueId === issueId));
   if (linked.length === 0) {
-    return <p className="text-xs text-muted-foreground">No linked worktrees yet.</p>;
+    return <p className="text-sm text-muted-foreground">No linked worktrees yet.</p>;
   }
   return (
     <div className="flex flex-col gap-1">
@@ -129,11 +130,11 @@ function LinkedWorktrees({ issueId }: { issueId: string }) {
           key={w.workspaceId}
           type="button"
           onClick={() => void selectWorkspace(w.workspaceId)}
-          className="group flex items-center gap-2 rounded-md border border-border px-2 py-1.5 text-left text-xs transition-colors hover:bg-muted"
+          className="group flex items-center gap-2 rounded-md border border-border px-2 py-1.5 text-left text-sm transition-colors hover:bg-muted"
         >
           <ClaudeStateDot state={w.claudeState} />
           <span className="min-w-0 flex-1 truncate text-neutral-200">{w.name}</span>
-          <span className="flex shrink-0 items-center gap-1 font-mono text-[11px] text-muted-foreground">
+          <span className="flex shrink-0 items-center gap-1 font-mono text-xs text-muted-foreground">
             <GitBranch className="size-3" />
             <span className="max-w-[12rem] truncate">{w.branch}</span>
           </span>
@@ -172,44 +173,44 @@ export function IssueDetail() {
   }
 
   return (
-    <div className="flex min-w-0 flex-1 flex-col overflow-y-auto p-4">
+    <div className="flex min-w-0 flex-1 flex-col overflow-y-auto p-5">
       {/* Header */}
-      <div className="mb-1 flex items-center gap-2">
-        <span className="font-mono text-xs text-muted-foreground">{issue.identifier}</span>
+      <div className="mb-2 flex items-center gap-2">
+        <span className="font-mono text-sm text-muted-foreground">{issue.identifier}</span>
         <button
           type="button"
           onClick={() => void trpc().app.openExternal.mutate({ url: issue.url })}
           title="Open in Linear"
-          className="inline-flex size-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className="inline-flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
-          <ExternalLink className="size-3.5" />
+          <ExternalLink className="size-4" />
         </button>
         <span className="ml-auto flex items-center gap-2">
-          <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+          <span className="flex items-center gap-1 text-xs text-muted-foreground">
             <PriorityIcon priority={issue.priority} />
             {priorityLabel(issue.priority)}
           </span>
           {issue.pr && <PrBadge pr={issue.pr} />}
         </span>
       </div>
-      <h2 className="mb-3 text-base font-semibold text-neutral-100">{issue.title}</h2>
+      <h2 className="mb-3 text-xl font-semibold text-neutral-100">{issue.title}</h2>
 
-      {/* Description (Linear markdown, shown as-is for v1) */}
+      {/* Description (rendered as Linear markdown) */}
       {issue.description?.trim() && (
-        <p className="mb-4 whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">
-          {issue.description.trim()}
-        </p>
+        <div className="mb-5">
+          <Markdown>{issue.description.trim()}</Markdown>
+        </div>
       )}
 
       {/* Actions */}
-      <div className="mb-5 flex flex-wrap items-center gap-2 text-xs">
+      <div className="mb-6 flex flex-wrap items-center gap-2 text-sm">
         <StateControl issue={issue} />
         <AssigneeControl issue={issue} />
       </div>
 
       {/* Linked worktrees */}
       <div className="mb-4">
-        <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Linked worktrees
         </h3>
         <LinkedWorktrees issueId={issue.id} />
@@ -219,10 +220,10 @@ export function IssueDetail() {
         type="button"
         disabled={!projectId}
         onClick={() => projectId && openCreateWorktreeForIssue(projectId, issueToRef(issue))}
-        className="inline-flex w-fit items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-neutral-200 transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+        className="inline-flex w-fit items-center gap-1.5 rounded-md border border-border px-3 py-2 text-sm font-medium text-neutral-200 transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
         title={projectId ? 'Create a worktree linked to this issue' : 'Open a project to create a worktree'}
       >
-        <Plus className="size-3.5" />
+        <Plus className="size-4" />
         Create worktree
       </button>
     </div>

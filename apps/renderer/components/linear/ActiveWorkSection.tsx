@@ -28,14 +28,14 @@ function WorkCard({ issue, worktrees }: { issue: LinearIssue; worktrees: LinkedW
     >
       <div className="flex items-center gap-2">
         <StateDot color={issue.state.color} title={issue.state.name} />
-        <span className="font-mono text-[11px] text-muted-foreground">{issue.identifier}</span>
+        <span className="font-mono text-xs text-muted-foreground">{issue.identifier}</span>
         <PriorityIcon priority={issue.priority} className="ml-auto" />
         {issue.assignee && (
-          <Avatar name={issue.assignee.name} avatarUrl={issue.assignee.avatarUrl} className="size-4" />
+          <Avatar name={issue.assignee.name} avatarUrl={issue.assignee.avatarUrl} className="size-5" />
         )}
       </div>
 
-      <span className="line-clamp-2 text-[15px] font-medium leading-snug text-neutral-100">
+      <span className="line-clamp-2 text-base font-medium leading-snug text-neutral-100">
         {issue.title}
       </span>
 
@@ -50,7 +50,7 @@ function WorkCard({ issue, worktrees }: { issue: LinearIssue; worktrees: LinkedW
               e.stopPropagation();
               void selectWorkspace(w.workspaceId);
             }}
-            className="inline-flex max-w-[10rem] items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[11px] text-neutral-200 transition-colors hover:bg-accent"
+            className="inline-flex max-w-[10rem] items-center gap-1 rounded-full border border-border px-2 py-0.5 text-xs text-neutral-200 transition-colors hover:bg-accent"
           >
             <ClaudeStateDot state={w.claudeState} />
             <GitBranch className="size-3 shrink-0 text-muted-foreground" />
@@ -87,7 +87,7 @@ export function ActiveWorkSection() {
 
   return (
     <div className="border-b border-border px-3 py-2">
-      <h3 className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+      <h3 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         <span className="size-1.5 rounded-full bg-success" />
         Active work
       </h3>

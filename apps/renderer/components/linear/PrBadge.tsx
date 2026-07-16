@@ -38,7 +38,7 @@ export function PrBadge({ pr, className }: { pr: LinearPrRef | null; className?:
         void trpc().app.openExternal.mutate({ url: pr.url });
       }}
       className={cn(
-        'inline-flex shrink-0 items-center gap-1 rounded border px-1.5 py-0.5 text-[11px] font-medium transition-colors hover:bg-muted',
+        'inline-flex shrink-0 items-center gap-1 rounded border px-1.5 py-0.5 text-xs font-medium transition-colors hover:bg-muted',
         meta.className,
         className,
       )}

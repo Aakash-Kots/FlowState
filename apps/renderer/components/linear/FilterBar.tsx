@@ -50,16 +50,16 @@ export function FilterBar() {
   const selectedPriority = filterPriorities.length ? filterPriorities[0] : null;
 
   return (
-    <div className="flex flex-wrap items-center gap-2 border-b border-border bg-secondary px-3 py-1.5 text-xs">
+    <div className="flex flex-wrap items-center gap-2 border-b border-border bg-secondary px-3 py-2 text-sm">
       {/* Search */}
       <div className="relative min-w-[12rem] flex-1">
-        <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+        <Search className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
         <input
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search issues…"
           spellCheck={false}
-          className="h-7 w-full rounded-md border border-border bg-background pl-7 pr-2 text-[13px] text-neutral-100 placeholder:text-muted-foreground focus:border-primary/50 focus:outline-none"
+          className="h-8 w-full rounded-md border border-border bg-background pl-8 pr-2 text-sm text-neutral-100 placeholder:text-muted-foreground focus:border-primary/50 focus:outline-none"
         />
       </div>
 

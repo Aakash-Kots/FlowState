@@ -20,12 +20,12 @@ function PrRow({ issue }: { issue: LinearIssue }) {
       type="button"
       onClick={() => selectIssue(issue.id)}
       className={cn(
-        'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[13px] transition-colors',
+        'flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm transition-colors',
         isSelected ? 'bg-accent text-neutral-100' : 'hover:bg-muted',
       )}
     >
       <StateDot color={issue.state.color} title={issue.state.name} />
-      <span className="shrink-0 font-mono text-xs text-muted-foreground">{issue.identifier}</span>
+      <span className="shrink-0 font-mono text-[13px] text-muted-foreground">{issue.identifier}</span>
       <span className="min-w-0 flex-1 truncate text-neutral-200">{issue.title}</span>
       <PrBadge pr={issue.pr} />
     </button>
@@ -52,7 +52,7 @@ export function OpenPrSection() {
 
   return (
     <div className="border-b border-border px-3 py-2">
-      <h3 className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+      <h3 className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         <GitPullRequest className="size-3.5 text-success" />
         Open PRs
       </h3>

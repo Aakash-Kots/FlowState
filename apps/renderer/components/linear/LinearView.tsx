@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect } from 'react';
 import { Plus, RefreshCw } from 'lucide-react';
 import { useOnboarding } from '@/lib/onboarding';
 import {
@@ -11,6 +12,7 @@ import {
   useLinearSync,
 } from '@/lib/linear';
 import { cn } from '../ui/cn';
+import { useSidebar } from '../ui/sidebar';
 import { ActiveWorkSection } from './ActiveWorkSection';
 import { FilterBar } from './FilterBar';
 import { IssueDetail } from './IssueDetail';
@@ -25,6 +27,14 @@ import { OpenPrSection } from './OpenPrSection';
  */
 export function LinearView() {
   useLinearSync();
+
+  // Collapse the left sidebar to give the command center room. Mount-only so the
+  // user re-opening the sidebar while on this tab isn't fought.
+  const { setOpen } = useSidebar();
+  useEffect(() => {
+    setOpen(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const linearConnected = useOnboarding((s) => s.linearConnected);
   const loading = useLinear((s) => s.issuesLoading);
@@ -48,16 +58,16 @@ export function LinearView() {
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
       {/* Header */}
       <div className="flex items-center gap-2 border-b border-border bg-secondary px-3 py-1.5">
-        <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+        <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Linear
         </span>
         <div className="ml-auto flex items-center gap-1.5">
           <button
             type="button"
             onClick={() => setCreateTicketOpen(true)}
-            className="inline-flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            className="inline-flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
           >
-            <Plus className="size-3.5" />
+            <Plus className="size-4" />
             New ticket
           </button>
           <button

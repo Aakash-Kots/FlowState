@@ -23,7 +23,7 @@ function IssueRow({ issue, isCurrent }: { issue: LinearIssue; isCurrent: boolean
       type="button"
       onClick={() => selectIssue(issue.id)}
       className={cn(
-        'group flex w-full items-center gap-2 rounded border-l-2 px-2 py-1.5 text-left text-[13px] transition-colors',
+        'group flex w-full items-center gap-2 rounded border-l-2 px-2 py-2 text-left text-sm transition-colors',
         isCurrent ? 'border-primary' : 'border-transparent',
         isSelected ? 'bg-accent text-neutral-100' : 'hover:bg-muted',
       )}
@@ -31,7 +31,7 @@ function IssueRow({ issue, isCurrent }: { issue: LinearIssue; isCurrent: boolean
     >
       <PriorityIcon priority={issue.priority} />
       <StateDot color={issue.state.color} title={issue.state.name} />
-      <span className="shrink-0 font-mono text-xs text-muted-foreground">{issue.identifier}</span>
+      <span className="shrink-0 font-mono text-[13px] text-muted-foreground">{issue.identifier}</span>
       <span className="min-w-0 flex-1 truncate text-neutral-200">{issue.title}</span>
       {issue.pr && <PrBadge pr={issue.pr} />}
       {linkedCount > 0 && (
@@ -76,18 +76,18 @@ export function IssueList() {
   const rows = useMemo(() => issues, [issues]);
 
   return (
-    <div className="flex w-80 shrink-0 flex-col overflow-y-auto border-r border-border">
+    <div className="flex w-96 shrink-0 flex-col overflow-y-auto border-r border-border">
       {rows.length === 0 ? (
-        <div className="flex flex-1 items-center justify-center px-4 text-center text-xs text-muted-foreground">
+        <div className="flex flex-1 items-center justify-center px-4 text-center text-sm text-muted-foreground">
           {loading ? 'Loading issues…' : 'No issues'}
         </div>
       ) : (
         <div className="flex flex-col py-1">
           <div className="flex items-center gap-2 px-2 py-1">
-            <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Issues
             </span>
-            <span className="text-[11px] text-muted-foreground">{rows.length}</span>
+            <span className="text-xs text-muted-foreground">{rows.length}</span>
           </div>
           <div className="flex flex-col px-1">
             {rows.map((issue) => (
