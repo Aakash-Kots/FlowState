@@ -45,6 +45,7 @@ export const linearIssueSchema: z.ZodType<LinearIssue> = z.object({
   id: z.string(),
   identifier: z.string(),
   title: z.string(),
+  description: z.string().nullable(),
   url: z.string().url(),
   branchName: z.string(),
   priority: z.number(),

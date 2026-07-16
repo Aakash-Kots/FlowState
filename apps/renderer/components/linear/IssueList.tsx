@@ -4,11 +4,13 @@ import { useMemo } from 'react';
 import { GitBranch } from 'lucide-react';
 import { type LinearIssue } from '@flowstate/shared';
 import { selectIssue, useLinear } from '@/lib/linear';
+import { useProjects } from '@/lib/projects';
+import { useWorkspace } from '@/lib/workspace';
 import { cn } from '../ui/cn';
 import { Avatar, StateDot } from './atoms';
 
 /** One issue row: state dot, identifier, title, linked-worktree badge, assignee. */
-function IssueRow({ issue }: { issue: LinearIssue }) {
+function IssueRow({ issue, isCurrent }: { issue: LinearIssue; isCurrent: boolean }) {
   const isSelected = useLinear((s) => s.selectedIssueId === issue.id);
   const linkedCount = useLinear(
     (s) => s.linkedWorktrees.filter((w) => w.issueId === issue.id).length,
@@ -19,9 +21,11 @@ function IssueRow({ issue }: { issue: LinearIssue }) {
       type="button"
       onClick={() => selectIssue(issue.id)}
       className={cn(
-        'group flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors',
+        'group flex w-full items-center gap-2 rounded border-l-2 px-2 py-1.5 text-left text-xs transition-colors',
+        isCurrent ? 'border-primary' : 'border-transparent',
         isSelected ? 'bg-accent text-neutral-100' : 'hover:bg-muted',
       )}
+      title={isCurrent ? 'Linked to the worktree you have open' : undefined}
     >
       <StateDot color={issue.state.color} title={issue.state.name} />
       <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
@@ -57,6 +61,16 @@ export function IssueList() {
   const issues = useLinear((s) => s.issues);
   const loading = useLinear((s) => s.issuesLoading);
 
+  // The issue linked to the worktree currently open — highlighted in the list.
+  const workspaceId = useWorkspace((s) => s.workspaceId);
+  const currentIssueId = useProjects((s) => {
+    for (const list of Object.values(s.worktrees)) {
+      const match = list.find((w) => w.id === workspaceId);
+      if (match) return match.linearIssue?.id ?? null;
+    }
+    return null;
+  });
+
   const rows = useMemo(() => issues, [issues]);
 
   return (
@@ -75,7 +89,7 @@ export function IssueList() {
           </div>
           <div className="flex flex-col px-1">
             {rows.map((issue) => (
-              <IssueRow key={issue.id} issue={issue} />
+              <IssueRow key={issue.id} issue={issue} isCurrent={issue.id === currentIssueId} />
             ))}
           </div>
         </div>

@@ -209,7 +209,14 @@ export function IssueDetail() {
           <ExternalLink className="size-3.5" />
         </button>
       </div>
-      <h2 className="mb-4 text-base font-semibold text-neutral-100">{issue.title}</h2>
+      <h2 className="mb-3 text-base font-semibold text-neutral-100">{issue.title}</h2>
+
+      {/* Description (Linear markdown, shown as-is for v1) */}
+      {issue.description?.trim() && (
+        <p className="mb-4 whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">
+          {issue.description.trim()}
+        </p>
+      )}
 
       {/* Actions */}
       <div className="mb-5 flex flex-wrap items-center gap-2 text-xs">

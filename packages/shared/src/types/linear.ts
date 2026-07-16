@@ -47,6 +47,8 @@ export type LinearIssue = {
   id: string;
   identifier: string; // e.g. "ENG-142"
   title: string;
+  /** The issue body (Linear markdown); null when empty. */
+  description: string | null;
   url: string;
   /** Linear's suggested git branch name (seeds a linked worktree's branch). */
   branchName: string;

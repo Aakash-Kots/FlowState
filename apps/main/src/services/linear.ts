@@ -41,6 +41,7 @@ const ISSUE_FIELDS = `
   id
   identifier
   title
+  description
   url
   branchName
   priority
@@ -102,6 +103,7 @@ type IssueNode = {
   id: string;
   identifier: string;
   title: string;
+  description: string | null;
   url: string;
   branchName: string;
   priority: number;
@@ -135,6 +137,7 @@ function toLinearIssue(n: IssueNode): LinearIssue {
     id: n.id,
     identifier: n.identifier,
     title: n.title,
+    description: n.description ?? null,
     url: n.url,
     branchName: n.branchName,
     priority: n.priority,
