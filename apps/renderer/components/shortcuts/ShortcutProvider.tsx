@@ -9,7 +9,7 @@ import { dispatch } from '@/lib/shortcuts/dispatch';
 import { hasModifier, isEditableTarget, matchesChord } from '@/lib/shortcuts/keys';
 import { hydrateShortcuts, setSidebarToggle, useShortcuts } from '@/lib/shortcuts/store';
 import { useSidebar } from '@/components/ui/sidebar';
-import { FileFinder } from '@/components/files/FileFinder';
+import { SearchPalette } from '@/components/search/SearchPalette';
 import { CommandPalette } from './CommandPalette';
 import { ShortcutsHelp } from './ShortcutsHelp';
 
@@ -65,7 +65,7 @@ export function ShortcutProvider({ children }: { children: ReactNode }) {
     <>
       {children}
       <CommandPalette />
-      <FileFinder />
+      <SearchPalette />
       <ShortcutsHelp />
     </>
   );

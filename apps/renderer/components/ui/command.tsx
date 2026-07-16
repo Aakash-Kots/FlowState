@@ -21,23 +21,43 @@ const Command = React.forwardRef<
 ));
 Command.displayName = CommandPrimitive.displayName;
 
-/** A command menu hosted in a centered modal dialog. */
+/**
+ * A command menu hosted in a centered modal dialog. `contentClassName` widens or
+ * restyles the dialog surface (default `max-w-lg`); `commandClassName` overrides
+ * the inner `Command` layout (e.g. `flex-row` for a two-pane palette). `value` /
+ * `onValueChange` control the highlighted item (e.g. to drive a preview pane).
+ */
 function CommandDialog({
   open,
   onOpenChange,
   children,
+  contentClassName,
+  commandClassName,
+  value,
+  onValueChange,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   children: React.ReactNode;
+  contentClassName?: string;
+  commandClassName?: string;
+  value?: string;
+  onValueChange?: (value: string) => void;
 }) {
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/70 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
-        <DialogPrimitive.Content className="fixed left-1/2 top-[20%] z-50 w-full max-w-lg -translate-x-1/2 overflow-hidden rounded-xl border border-border bg-background shadow-2xl shadow-black/40">
+        <DialogPrimitive.Content
+          className={cn(
+            'fixed left-1/2 top-[20%] z-50 w-full max-w-lg -translate-x-1/2 overflow-hidden rounded-xl border border-border bg-background shadow-2xl shadow-black/40',
+            contentClassName,
+          )}
+        >
           <DialogPrimitive.Title className="sr-only">Command palette</DialogPrimitive.Title>
-          <Command>{children}</Command>
+          <Command className={commandClassName} value={value} onValueChange={onValueChange}>
+            {children}
+          </Command>
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>
