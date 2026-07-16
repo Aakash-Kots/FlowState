@@ -43,17 +43,17 @@ export const PlanMessage = memo(function PlanMessage({ block }: { block: ToolUse
   };
 
   return (
-    <Collapsible open={open} onOpenChange={setUserOpen}>
-      <div className="flex items-center gap-2 font-mono text-xs text-amber-300">
+    <Collapsible open={open} onOpenChange={setUserOpen} className="-mx-2">
+      <div className="flex items-center gap-2 px-2 text-xs text-muted-foreground">
         <CollapsibleTrigger
           disabled={pending}
-          className="flex items-center gap-2 rounded-md py-0.5 transition-colors enabled:hover:text-amber-200"
+          className="group flex items-center gap-2 rounded-md px-2 py-1 transition-colors enabled:hover:bg-muted enabled:hover:text-neutral-300"
         >
           <ChevronRight
             className={cn('size-3.5 shrink-0 transition-transform', open && 'rotate-90')}
           />
           <ClipboardList className="size-3.5" />
-          <span className="font-medium">Propose plan</span>
+          <span className="font-medium text-neutral-200">Propose plan</span>
         </CollapsibleTrigger>
         <button
           type="button"
@@ -64,7 +64,7 @@ export const PlanMessage = memo(function PlanMessage({ block }: { block: ToolUse
           {copied ? <Check className="size-3 text-success" /> : <Copy className="size-3" />}
         </button>
       </div>
-      <CollapsibleContent className="mt-2">
+      <CollapsibleContent className="mt-2 px-2">
         <Markdown variant="plan">{plan}</Markdown>
       </CollapsibleContent>
     </Collapsible>

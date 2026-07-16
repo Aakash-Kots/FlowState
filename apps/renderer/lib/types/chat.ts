@@ -27,4 +27,5 @@ export type ChatItem =
   | { kind: ChatItemKind.Message; key: string; entry: ChatSnapshotEntry }
   | { kind: ChatItemKind.Block; key: string; block: TextBlock | ThinkingBlock | ToolResultBlock }
   | { kind: ChatItemKind.Tool; key: string; block: ToolUseBlock }
-  | { kind: ChatItemKind.Plan; key: string; block: ToolUseBlock };
+  | { kind: ChatItemKind.Plan; key: string; block: ToolUseBlock }
+  | { kind: ChatItemKind.PlanReport; key: string; block: TextBlock };

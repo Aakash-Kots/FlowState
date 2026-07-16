@@ -32,6 +32,12 @@ export function groupChatItems(entries: ChatSnapshotEntry[], toolUseIds: Set<str
       continue;
     }
     // assistant / tool messages: split blocks so each renders as its own item.
+    // A plan turn carries its pre-plan "report" prose as Text blocks in the same
+    // message as the `ExitPlanMode` call; collapse that prose behind a disclosure
+    // rather than dumping it inline.
+    const hasPlan = message.blocks.some(
+      (b) => b.type === ChatBlockType.ToolUse && b.name === EXIT_PLAN_MODE_TOOL,
+    );
     message.blocks.forEach((block, i) => {
       switch (block.type) {
         case ChatBlockType.ToolUse:
@@ -52,6 +58,12 @@ export function groupChatItems(entries: ChatSnapshotEntry[], toolUseIds: Set<str
           }
           break;
         case ChatBlockType.Text:
+          if (hasPlan) {
+            items.push({ kind: ChatItemKind.PlanReport, key: `${message.id}:${i}`, block });
+            break;
+          }
+          items.push({ kind: ChatItemKind.Block, key: `${message.id}:${i}`, block });
+          break;
         case ChatBlockType.Thinking:
           items.push({ kind: ChatItemKind.Block, key: `${message.id}:${i}`, block });
           break;
