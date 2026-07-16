@@ -13,6 +13,7 @@ import { SoundToggle } from '@/components/settings/SoundToggle';
 import { AppSidebar } from '@/components/sidebar/AppSidebar';
 import { ProjectSelector } from '@/components/projects/ProjectSelector';
 import { GitHeaderButton } from '@/components/git/GitHeaderButton';
+import { SpotifyButton } from '@/components/spotify/SpotifyButton';
 import { ShortcutProvider } from '@/components/shortcuts/ShortcutProvider';
 import { UsageIndicator } from '@/components/usage/UsageIndicator';
 import { ViewModeTabs } from '@/components/workspace/ViewModeTabs';
@@ -90,6 +91,7 @@ function WorkspaceShell() {
               </div>
             )}
             <div className="flex items-center gap-4 text-xs text-muted-foreground">
+              <SpotifyButton />
               {!onDefaultWorkspace && <GitHeaderButton />}
               <SoundToggle />
             </div>

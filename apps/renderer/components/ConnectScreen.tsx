@@ -9,12 +9,13 @@ import { Card, CardHeader } from './ui/Card';
 import { StatusPill } from './ui/StatusPill';
 import { TerminalView } from './TerminalView';
 
-type Busy = null | 'claude' | 'github' | 'linear' | 'refresh' | 'pat';
+type Busy = null | 'claude' | 'github' | 'linear' | 'spotify' | 'refresh' | 'pat';
 
 export function ConnectScreen({ onClose }: { onClose?: () => void }) {
   const claudeConnected = useOnboarding((s) => s.claudeConnected);
   const githubConnected = useOnboarding((s) => s.githubConnected);
   const linearConnected = useOnboarding((s) => s.linearConnected);
+  const spotifyConnected = useOnboarding((s) => s.spotifyConnected);
 
   const [terminalId, setTerminalId] = useState<string | null>(null);
   const [hasGh, setHasGh] = useState<boolean | null>(null);
@@ -112,6 +113,29 @@ export function ConnectScreen({ onClose }: { onClose?: () => void }) {
     }
   };
 
+  const spotifyLogin = async () => {
+    setBusy('spotify');
+    try {
+      // Resolves when the browser OAuth round-trip finishes (or is cancelled).
+      await trpc().onboarding.spotifyBeginLogin.mutate();
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const spotifyCancel = async () => {
+    await trpc().onboarding.spotifyCancelLogin.mutate();
+  };
+
+  const spotifyLogout = async () => {
+    setBusy('spotify');
+    try {
+      await trpc().onboarding.spotifyLogout.mutate();
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const recheck = async () => {
     setBusy('refresh');
     try {
@@ -134,6 +158,11 @@ export function ConnectScreen({ onClose }: { onClose?: () => void }) {
   const linearStatus: ConnStatus = linearConnected
     ? ConnStatus.Connected
     : busy === 'linear'
+      ? ConnStatus.Pending
+      : ConnStatus.Idle;
+  const spotifyStatus: ConnStatus = spotifyConnected
+    ? ConnStatus.Connected
+    : busy === 'spotify'
       ? ConnStatus.Pending
       : ConnStatus.Idle;
 
@@ -299,6 +328,43 @@ export function ConnectScreen({ onClose }: { onClose?: () => void }) {
               <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
                 Opens your browser to authorize FlowState. The token is encrypted with your OS
                 keychain — only ciphertext is written to disk.
+              </p>
+            </div>
+          </Card>
+
+          <Card>
+            <CardHeader
+              title="Spotify"
+              subtitle="Connect Spotify Premium to control playback from the header without leaving FlowState."
+              right={<StatusPill status={spotifyStatus} />}
+            />
+            <div className="px-4 py-4">
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  onClick={spotifyLogin}
+                  disabled={busy === 'spotify'}
+                  variant={spotifyConnected ? 'secondary' : 'primary'}
+                >
+                  {busy === 'spotify'
+                    ? 'Waiting for browser…'
+                    : spotifyConnected
+                      ? 'Sign in to a different account'
+                      : 'Connect Spotify'}
+                </Button>
+                {busy === 'spotify' ? (
+                  <Button variant="ghost" onClick={spotifyCancel}>
+                    Cancel
+                  </Button>
+                ) : spotifyConnected ? (
+                  <Button variant="ghost" onClick={spotifyLogout}>
+                    Log out
+                  </Button>
+                ) : null}
+              </div>
+              <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+                Opens your browser to authorize FlowState (PKCE — no client secret). Playback is
+                controlled on your active Spotify device; the tokens are encrypted with your OS
+                keychain.
               </p>
             </div>
           </Card>

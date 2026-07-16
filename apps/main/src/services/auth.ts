@@ -23,6 +23,8 @@ import type { OnboardingStatus } from '../lib/types/onboarding';
 import { getSetting, setSetting } from '../store/settings';
 import { deleteSecret, getSecret, hasSecret, setSecret } from '../store/secrets';
 import { runLinearOAuth } from './linear-oauth';
+import { runSpotifyOAuth } from './spotify-oauth';
+import { spotifyService } from './spotify';
 import { terminalService } from './terminal';
 
 ///////////////
@@ -98,6 +100,7 @@ export class AuthService extends EventEmitter {
   private claudePolling = false;
   private githubPolling = false;
   private linearLoginAbort: AbortController | null = null;
+  private spotifyLoginAbort: AbortController | null = null;
 
   async checkClaude(): Promise<boolean> {
     const { stdout } = await loginShell('claude auth status');
@@ -121,6 +124,7 @@ export class AuthService extends EventEmitter {
       claudeConnected: getSetting<boolean>(CLAUDE_CONNECTED_KEY) === true,
       githubConnected: hasSecret(SecretName.GithubToken),
       linearConnected: hasSecret(SecretName.LinearToken),
+      spotifyConnected: hasSecret(SecretName.SpotifyAccessToken),
     };
   }
 
@@ -251,6 +255,39 @@ export class AuthService extends EventEmitter {
   /** Disconnect Linear and clear the stored token. */
   linearLogout(): OnboardingStatus {
     deleteSecret(SecretName.LinearToken);
+    return this.emitStatus();
+  }
+
+  /**
+   * Link a Spotify account via OAuth (Authorization Code + PKCE — no CLI, no
+   * client secret). On success the access + refresh tokens are encrypted via
+   * safeStorage and a `status` event fires; any failure/cancel/timeout leaves
+   * the status unchanged so the pill simply stays "Connect".
+   */
+  async beginSpotifyLogin(): Promise<OnboardingStatus> {
+    if (this.spotifyLoginAbort) return this.status(); // a flow is already running
+    this.spotifyLoginAbort = new AbortController();
+    try {
+      const result = await runSpotifyOAuth({ signal: this.spotifyLoginAbort.signal });
+      spotifyService.persistTokens(result);
+      return this.emitStatus();
+    } catch (err) {
+      console.warn('[auth] Spotify login failed/cancelled:', (err as Error).message);
+      return this.status();
+    } finally {
+      this.spotifyLoginAbort = null;
+    }
+  }
+
+  /** Cancel an in-flight Spotify OAuth flow (tears down the loopback listener). */
+  cancelSpotifyLogin(): OnboardingStatus {
+    this.spotifyLoginAbort?.abort();
+    return this.status();
+  }
+
+  /** Disconnect Spotify and clear the stored tokens. */
+  spotifyLogout(): OnboardingStatus {
+    spotifyService.clearTokens();
     return this.emitStatus();
   }
 

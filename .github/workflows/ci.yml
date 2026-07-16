@@ -33,14 +33,17 @@ jobs:
 
       - name: Build (renderer export + main bundle)
         run: bun run build
-        # Linear OAuth credentials are inlined into the main bundle at build time
-        # (electron-vite `define`). Provided as repo secrets; empty on forked PRs,
-        # which just disables the Linear connect flow in that build.
+        # Linear + Spotify OAuth client credentials are inlined into the main
+        # bundle at build time (electron-vite `define`). Provided as repo secrets;
+        # empty on forked PRs, which just disables those connect flows in that
+        # build. Spotify uses PKCE, so only its client id is needed (no secret).
         env:
           LINEAR_CLIENT_ID: ${{ secrets.LINEAR_CLIENT_ID }}
           LINEAR_CLIENT_SECRET: ${{ secrets.LINEAR_CLIENT_SECRET }}
+          SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
 
   # Release workflow (sign, notarize, DMG, publish) is added once Developer ID
   # signing certificates are available in repo secrets. See docs/ARCHITECTURE.md §5.
   # NOTE: that release job's `bun run dist` step needs the same LINEAR_CLIENT_ID /
-  # LINEAR_CLIENT_SECRET `env:` block so the published app has the creds baked in.
+  # LINEAR_CLIENT_SECRET / SPOTIFY_CLIENT_ID `env:` block so the published app has
+  # the creds baked in.
