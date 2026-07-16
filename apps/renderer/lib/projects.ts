@@ -40,6 +40,8 @@ type ProjectsState = {
   /** Create-worktree modal state (which project, in-flight, last error). */
   createOpen: boolean;
   createProjectId: string | null;
+  /** A Linear issue to pre-link the new worktree to (from the Linear tab), or null. */
+  createLinearSeed: LinearIssueRef | null;
   creating: boolean;
   createError: string | null;
   /** The active project's local branches — base-ref choices in the modal. */
@@ -67,6 +69,7 @@ export const useProjects = create<ProjectsState>(() => ({
   addError: null,
   createOpen: false,
   createProjectId: null,
+  createLinearSeed: null,
   creating: false,
   createError: null,
   branches: [],
@@ -265,6 +268,23 @@ export function openCreateWorktree(projectId: string): void {
   useProjects.setState({
     createOpen: true,
     createProjectId: projectId,
+    createLinearSeed: null,
+    createError: null,
+    branches: [],
+  });
+  void loadBranches(projectId);
+}
+
+/**
+ * Open the create-worktree modal for a project, pre-linked to a Linear issue —
+ * the "Create worktree" action in the Linear tab. The modal seeds its branch from
+ * the issue's suggested branch name (as picking an issue in the modal does).
+ */
+export function openCreateWorktreeForIssue(projectId: string, issue: LinearIssueRef): void {
+  useProjects.setState({
+    createOpen: true,
+    createProjectId: projectId,
+    createLinearSeed: issue,
     createError: null,
     branches: [],
   });
@@ -324,6 +344,22 @@ export async function createWorktree(input: {
 /** Switch the active workspace to a worktree. */
 export function selectWorktree(workspace: Workspace): void {
   void selectWorkspace(workspace.id);
+}
+
+/**
+ * The project id of the worktree currently open (null on the default workspace or
+ * if it can't be resolved) — where a new worktree created from the Linear tab
+ * lands. Scans the cached worktree tree for the active workspace.
+ */
+export function useCurrentProjectId(): string | null {
+  const workspaceId = useWorkspace((s) => s.workspaceId);
+  return useProjects((s) => {
+    for (const list of Object.values(s.worktrees)) {
+      const match = list.find((w) => w.id === workspaceId);
+      if (match) return match.projectId;
+    }
+    return null;
+  });
 }
 
 /**
