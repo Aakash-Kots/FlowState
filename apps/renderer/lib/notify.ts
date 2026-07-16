@@ -25,7 +25,7 @@ function note(ac: AudioContext, freq: number, at: number, duration: number): voi
   const start = ac.currentTime + at;
   // Quick attack then exponential decay — a soft, non-jarring blip.
   gain.gain.setValueAtTime(0.0001, start);
-  gain.gain.exponentialRampToValueAtTime(0.2, start + 0.015);
+  gain.gain.exponentialRampToValueAtTime(0.5, start + 0.015);
   gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
 
   osc.connect(gain).connect(ac.destination);

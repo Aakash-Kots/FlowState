@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { TabProvider, useChat, useChatSync, useTabId } from '@/lib/chat';
 import { pickWorkingFolder } from '@/lib/workspace';
 import { Button } from '../ui/Button';
-import { BackgroundAgentsOverlay } from './BackgroundAgentsOverlay';
 import { ChatView } from './ChatView';
 import { InputBar } from './InputBar';
 
@@ -22,9 +21,6 @@ function ChatSession() {
   useChatSync(tabId);
   const hydrated = useChat((s) => s.hydrated);
   const cwd = useChat((s) => s.cwd);
-  const hasBackgroundAgents = useChat(
-    (s) => s.backgroundTasks.length > 0 && !s.backgroundTasksDismissed,
-  );
   const [picking, setPicking] = useState(false);
 
   const pickFolder = async () => {
@@ -62,10 +58,6 @@ function ChatSession() {
           </div>
         </div>
       )}
-
-      {/* Cover the transcript with the live background-agents panel while any are
-          running; it unmounts automatically when the level set empties. */}
-      {hasBackgroundAgents ? <BackgroundAgentsOverlay /> : null}
 
       <InputBar disabled={!cwd} />
     </div>

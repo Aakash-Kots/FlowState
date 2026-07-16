@@ -215,7 +215,7 @@ export function SettingsPage() {
           <Section title="Notifications">
             <SettingRow
               title="Completion sound"
-              description="Play a sound when a background agent finishes a turn."
+              description="Play a sound when an agent finishes a turn in a tab you're not watching."
               control={
                 <Toggle
                   checked={soundEnabled}

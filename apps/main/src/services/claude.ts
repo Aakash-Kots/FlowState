@@ -1135,39 +1135,6 @@ export class ClaudeService {
             attempt: message.attempt,
             maxRetries: message.max_retries,
           });
-        } else if (message.subtype === SdkSystemSubtype.BackgroundTasksChanged) {
-          // The level signal: full membership of currently-running background
-          // agents (REPLACE semantics). Drives the overlay; empty ⇒ none running.
-          this.emit(tabId, {
-            kind: ChatEventKind.BackgroundTasks,
-            tasks: message.tasks.map((t) => ({
-              id: t.task_id,
-              type: t.task_type,
-              description: t.description,
-            })),
-          });
-        } else if (message.subtype === SdkSystemSubtype.TaskStarted) {
-          // Enrich a card with launch detail; skip ambient/housekeeping tasks.
-          if (!message.skip_transcript) {
-            this.emit(tabId, {
-              kind: ChatEventKind.BackgroundTaskProgress,
-              taskId: message.task_id,
-              subagentType: message.subagent_type,
-              prompt: message.prompt,
-            });
-          }
-        } else if (message.subtype === SdkSystemSubtype.TaskProgress) {
-          // Live per-task progress (usage is required on this subtype).
-          this.emit(tabId, {
-            kind: ChatEventKind.BackgroundTaskProgress,
-            taskId: message.task_id,
-            subagentType: message.subagent_type,
-            lastToolName: message.last_tool_name,
-            totalTokens: message.usage.total_tokens,
-            toolUses: message.usage.tool_uses,
-            durationMs: message.usage.duration_ms,
-            summary: message.summary,
-          });
         }
         break;
       }

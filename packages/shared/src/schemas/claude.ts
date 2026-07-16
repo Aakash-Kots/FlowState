@@ -17,7 +17,6 @@ import {
 } from '../enums/claude';
 import { GitFileStatus } from '../enums/git';
 import type {
-  BackgroundTask,
   ChatBlock,
   ChatEvent,
   ChatImageInput,
@@ -129,12 +128,6 @@ export const permissionRequestSchema: z.ZodType<PermissionRequest> = z.object({
   description: z.string().optional(),
 });
 
-export const backgroundTaskSchema: z.ZodType<BackgroundTask> = z.object({
-  id: z.string(),
-  type: z.string(),
-  description: z.string(),
-});
-
 export const chatEventSchema: z.ZodType<ChatEvent> = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal(ChatEventKind.Init),
@@ -201,21 +194,6 @@ export const chatEventSchema: z.ZodType<ChatEvent> = z.discriminatedUnion('kind'
     kind: z.literal(ChatEventKind.ApiRetry),
     attempt: z.number(),
     maxRetries: z.number(),
-  }),
-  z.object({
-    kind: z.literal(ChatEventKind.BackgroundTasks),
-    tasks: z.array(backgroundTaskSchema),
-  }),
-  z.object({
-    kind: z.literal(ChatEventKind.BackgroundTaskProgress),
-    taskId: z.string(),
-    subagentType: z.string().optional(),
-    prompt: z.string().optional(),
-    lastToolName: z.string().optional(),
-    totalTokens: z.number().optional(),
-    toolUses: z.number().optional(),
-    durationMs: z.number().optional(),
-    summary: z.string().optional(),
   }),
   z.object({ kind: z.literal(ChatEventKind.Error), message: z.string() }),
 ]);

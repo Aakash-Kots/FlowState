@@ -85,7 +85,7 @@ export function setWindowBounds(bounds: WindowBounds): void {
   setSetting(WINDOW_BOUNDS_KEY, bounds);
 }
 
-/** Whether a sound plays when a background agent finishes a turn (default on). */
+/** Whether a sound plays when an agent finishes a turn in an unwatched tab (default on). */
 export function getSoundEnabled(): boolean {
   return getSetting<boolean>(SOUND_ENABLED_KEY) ?? true;
 }

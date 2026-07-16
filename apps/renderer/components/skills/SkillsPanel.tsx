@@ -1,7 +1,6 @@
 'use client';
 
 import { useMemo, useRef, useState } from 'react';
-import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { ChevronLeft, ChevronRight, Eraser, FolderTree, Play, Plus, Sparkles, X } from 'lucide-react';
 import {
   BUILTIN_ACTIONS,
@@ -13,7 +12,6 @@ import {
   type SkillOption,
 } from '@flowstate/shared';
 import { clearChat, loadSupportedSkills, prefillComposer, useChat, useTabId } from '@/lib/chat';
-import { Button } from '../ui/Button';
 import { importSkill, pinItem, unpinItem, usePins, usePinsSync } from '@/lib/pins';
 import { useProjects } from '@/lib/projects';
 import {
@@ -28,6 +26,7 @@ import { useWorkspace } from '@/lib/workspace';
 import { FileBrowser } from '../files/FileBrowser';
 import { TerminalTabs } from '../terminal/TerminalTabs';
 import { cn } from '../ui/cn';
+import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { SkillPicker } from './SkillPicker';
 
@@ -98,44 +97,6 @@ function ActionRow({ action, onClearChat }: { action: BuiltinAction; onClearChat
       <Icon className="size-3 shrink-0 text-muted-foreground" />
       <span className="truncate font-medium">{action.label}</span>
     </button>
-  );
-}
-
-/** Confirmation modal for the destructive "Clear chat" action. */
-function ConfirmClearDialog({
-  open,
-  onOpenChange,
-  onConfirm,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onConfirm: () => void;
-}) {
-  return (
-    <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
-      <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/70 data-[state=open]:animate-in data-[state=open]:fade-in-0" />
-        <DialogPrimitive.Content className="fixed left-1/2 top-1/2 z-50 flex w-full max-w-sm -translate-x-1/2 -translate-y-1/2 flex-col gap-4 rounded-xl border border-border bg-background p-5 shadow-2xl shadow-black/40 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95">
-          <div className="flex flex-col gap-1.5">
-            <DialogPrimitive.Title className="text-base font-semibold text-foreground">
-              Clear chat?
-            </DialogPrimitive.Title>
-            <DialogPrimitive.Description className="text-sm text-muted-foreground">
-              This permanently deletes this chat&apos;s messages and starts a fresh Claude
-              session. It can&apos;t be undone.
-            </DialogPrimitive.Description>
-          </div>
-          <div className="flex items-center justify-end gap-2">
-            <Button variant="ghost" onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
-            <Button className="text-danger" variant="secondary" onClick={onConfirm}>
-              Clear chat
-            </Button>
-          </div>
-        </DialogPrimitive.Content>
-      </DialogPrimitive.Portal>
-    </DialogPrimitive.Root>
   );
 }
 
@@ -388,9 +349,13 @@ export function SkillsPanel() {
         onImport={(sourcePath) => void importSkill({ workspaceId, tabId, sourcePath })}
       />
 
-      <ConfirmClearDialog
+      <ConfirmDialog
         open={confirmClearOpen}
         onOpenChange={setConfirmClearOpen}
+        title="Clear chat?"
+        description="This permanently deletes this chat's messages and starts a fresh Claude session. It can't be undone."
+        confirmLabel="Clear chat"
+        destructive
         onConfirm={() => {
           clearChat(tabId);
           setConfirmClearOpen(false);

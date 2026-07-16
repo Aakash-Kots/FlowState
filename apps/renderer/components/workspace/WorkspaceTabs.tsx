@@ -9,6 +9,7 @@ import { useFileTabDirty } from '@/lib/fileTabs';
 import { useTabState, useTabUnread } from '@/lib/tabStates';
 import { closeTab, openTab, selectTab, useWorkspace } from '@/lib/workspace';
 import { ChatWorkspace } from '../chat/ChatWorkspace';
+import { CloseTabConfirmDialog } from './CloseTabConfirmDialog';
 import { FileEditor } from './FileEditor';
 import { SkillsPanel } from '../skills/SkillsPanel';
 import { StateIndicator } from '../ui/StateIndicator';
@@ -185,6 +186,7 @@ export function WorkspaceTabs() {
       <TabProvider tabId={activeTabId}>
         <SkillsPanel />
       </TabProvider>
+      <CloseTabConfirmDialog />
     </div>
   );
 }
