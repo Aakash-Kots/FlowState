@@ -180,11 +180,11 @@ export function WorkspaceTabs() {
           )}
         </TabsContent>
       </Tabs>
-      {!isFileTab && (
-        <TabProvider tabId={activeTabId}>
-          <SkillsPanel />
-        </TabProvider>
-      )}
+      {/* Rendered for file tabs too, so the file browser persists while you open
+          files; the Skills tab gates its chat-only content internally. */}
+      <TabProvider tabId={activeTabId}>
+        <SkillsPanel />
+      </TabProvider>
     </div>
   );
 }

@@ -35,15 +35,24 @@ const FONT_SIZE_KEY = 'appearance.fontSize';
 const ARCHIVE_RETENTION_KEY = 'worktree.archiveRetention';
 const SKILLS_PANEL_WIDTH_KEY = 'skillsPanel.width';
 const SKILLS_PANEL_OPEN_KEY = 'skillsPanel.open';
+const TERMINAL_PANEL_FRACTION_KEY = 'terminalPanel.fraction';
 const WORKSPACE_RECENT_KEY = 'workspace.recent';
 
 /** How many recently-active worktrees to remember for reload restoration. */
 const MAX_RECENT_WORKSPACES = 10;
 
-/** Default width (px) of the Skills & Actions panel, and its clamp range. */
-const DEFAULT_SKILLS_PANEL_WIDTH = 280;
+/**
+ * Default width (px) of the right-hand panel, and its clamp range. Wider than a
+ * plain sidebar because the panel's bottom half hosts a live terminal.
+ */
+const DEFAULT_SKILLS_PANEL_WIDTH = 360;
 const MIN_SKILLS_PANEL_WIDTH = 200;
-const MAX_SKILLS_PANEL_WIDTH = 520;
+const MAX_SKILLS_PANEL_WIDTH = 640;
+
+/** Fraction (0–1) of the panel's height given to its bottom terminal section. */
+const DEFAULT_TERMINAL_PANEL_FRACTION = 0.5;
+const MIN_TERMINAL_PANEL_FRACTION = 0.15;
+const MAX_TERMINAL_PANEL_FRACTION = 0.85;
 
 /** The syntax-highlighting palette applied when the user hasn't picked one. */
 const DEFAULT_CODE_THEME = CodeTheme.GithubDark;
@@ -131,6 +140,20 @@ export function setSkillsPanelWidth(width: number): void {
   setSetting(
     SKILLS_PANEL_WIDTH_KEY,
     Math.min(MAX_SKILLS_PANEL_WIDTH, Math.max(MIN_SKILLS_PANEL_WIDTH, width)),
+  );
+}
+
+/** Persisted fraction (0–1) of the panel height given to the terminal section. */
+export function getTerminalPanelFraction(): number {
+  const stored = getSetting<number>(TERMINAL_PANEL_FRACTION_KEY);
+  if (typeof stored !== 'number' || Number.isNaN(stored)) return DEFAULT_TERMINAL_PANEL_FRACTION;
+  return Math.min(MAX_TERMINAL_PANEL_FRACTION, Math.max(MIN_TERMINAL_PANEL_FRACTION, stored));
+}
+
+export function setTerminalPanelFraction(fraction: number): void {
+  setSetting(
+    TERMINAL_PANEL_FRACTION_KEY,
+    Math.min(MAX_TERMINAL_PANEL_FRACTION, Math.max(MIN_TERMINAL_PANEL_FRACTION, fraction)),
   );
 }
 

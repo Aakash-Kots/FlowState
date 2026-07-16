@@ -7,12 +7,14 @@ import {
   getSkillsPanelOpen,
   getSkillsPanelWidth,
   getSoundEnabled,
+  getTerminalPanelFraction,
   setArchiveRetention,
   setCodeTheme,
   setFontSize,
   setSkillsPanelOpen,
   setSkillsPanelWidth,
   setSoundEnabled,
+  setTerminalPanelFraction,
 } from '../store/settings';
 import { publicProcedure, router } from '../trpc';
 
@@ -30,6 +32,7 @@ export const settingsRouter = router({
     archiveRetention: getArchiveRetention(),
     skillsPanelWidth: getSkillsPanelWidth(),
     skillsPanelOpen: getSkillsPanelOpen(),
+    terminalPanelFraction: getTerminalPanelFraction(),
   })),
 
   setSoundEnabled: publicProcedure
@@ -66,5 +69,11 @@ export const settingsRouter = router({
     .input(z.object({ open: z.boolean() }))
     .mutation(({ input }) => {
       setSkillsPanelOpen(input.open);
+    }),
+
+  setTerminalPanelFraction: publicProcedure
+    .input(z.object({ fraction: z.number() }))
+    .mutation(({ input }) => {
+      setTerminalPanelFraction(input.fraction);
     }),
 });

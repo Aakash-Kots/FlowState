@@ -2,39 +2,10 @@
 
 import { useMemo } from 'react';
 import { RotateCcw } from 'lucide-react';
-import { GitFileStatus, type GitChange } from '@flowstate/shared';
-import { discard, selectFile, useGit } from '@/lib/git';
+import { type GitChange } from '@flowstate/shared';
+import { GIT_STATUS_BADGE } from '@/lib/constants/git';
+import { discard, mergeChanges, selectFile, useGit } from '@/lib/git';
 import { cn } from '../ui/cn';
-
-///////////////
-// Constants //
-///////////////
-
-/** Single-letter badge + accent color per change status. */
-const STATUS_BADGE: Record<GitFileStatus, { letter: string; className: string; label: string }> = {
-  [GitFileStatus.Modified]: { letter: 'M', className: 'text-warn', label: 'Modified' },
-  [GitFileStatus.Added]: { letter: 'A', className: 'text-success', label: 'Added' },
-  [GitFileStatus.Deleted]: { letter: 'D', className: 'text-danger', label: 'Deleted' },
-  [GitFileStatus.Renamed]: { letter: 'R', className: 'text-warn', label: 'Renamed' },
-  [GitFileStatus.Untracked]: { letter: 'U', className: 'text-success', label: 'Untracked' },
-  [GitFileStatus.Conflicted]: { letter: '!', className: 'text-danger', label: 'Conflicted' },
-};
-
-/////////////
-// Helpers //
-/////////////
-
-/**
- * One row per changed path. Staging is automatic (commit stages everything), so
- * a file that happens to be partly staged is shown once — preferring its
- * working-tree side so the diff reflects what's on disk.
- */
-function mergeChanges(staged: GitChange[], unstaged: GitChange[]): GitChange[] {
-  const byPath = new Map<string, GitChange>();
-  for (const c of staged) byPath.set(c.path, c);
-  for (const c of unstaged) byPath.set(c.path, c); // working-tree side wins
-  return [...byPath.values()].sort((a, b) => a.path.localeCompare(b.path));
-}
 
 ///////////////////
 // Sub-components //
@@ -57,7 +28,7 @@ function PathLabel({ path }: { path: string }) {
 function ChangeRow({ change }: { change: GitChange }) {
   const selected = useGit((s) => s.selected);
   const isSelected = selected?.path === change.path;
-  const badge = STATUS_BADGE[change.status];
+  const badge = GIT_STATUS_BADGE[change.status];
 
   return (
     <button

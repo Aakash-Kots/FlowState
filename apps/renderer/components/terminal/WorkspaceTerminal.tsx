@@ -6,6 +6,31 @@ import '@xterm/xterm/css/xterm.css';
 import { XTERM_THEME } from '@/lib/constants/terminal';
 import { trpc } from '@/lib/trpc';
 
+/////////////
+// Helpers //
+/////////////
+
+/** `h s% l%` (a shadcn HSL token) → `#rrggbb`. */
+function hslToHex(h: number, s: number, l: number): string {
+  const a = (s / 100) * Math.min(l / 100, 1 - l / 100);
+  const channel = (n: number) => {
+    const k = (n + h / 30) % 12;
+    const color = l / 100 - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+    return Math.round(255 * color)
+      .toString(16)
+      .padStart(2, '0');
+  };
+  return `#${channel(0)}${channel(8)}${channel(4)}`;
+}
+
+/** Resolve a shadcn HSL CSS variable (e.g. `--secondary`) to a hex xterm accepts. */
+function resolveThemeColor(cssVar: string, fallback: string): string {
+  if (typeof document === 'undefined') return fallback;
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(cssVar).trim();
+  const m = raw.match(/^([\d.]+)\s+([\d.]+)%\s+([\d.]+)%$/);
+  return m ? hslToHex(Number(m[1]), Number(m[2]), Number(m[3])) : fallback;
+}
+
 /**
  * A persistent workspace terminal, backed by a main-process node-pty keyed by
  * the terminal tab id. Unlike the ephemeral onboarding `TerminalView`, the pty
@@ -50,8 +75,11 @@ export function WorkspaceTerminal({
       ]);
       if (disposed) return;
 
+      // Match the surrounding panel (`bg-secondary`) instead of the darker base,
+      // so the terminal reads as part of the panel rather than its own surface.
+      const panelBg = resolveThemeColor('--secondary', XTERM_THEME.background);
       const t = new Terminal({
-        theme: XTERM_THEME,
+        theme: { ...XTERM_THEME, background: panelBg, cursorAccent: panelBg },
         fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
         fontSize: 13,
         cursorBlink: true,
@@ -105,10 +133,10 @@ export function WorkspaceTerminal({
     };
   }, [terminalId]);
 
-  // Outer padded base-colored frame (like the code window); the inner element is
-  // the xterm host, so the inset never skews the fit addon's row/col sizing.
+  // Outer padded panel-colored frame (matches the surrounding panel); the inner
+  // element is the xterm host, so the inset never skews the fit addon's sizing.
   return (
-    <div className="h-full w-full bg-background p-2">
+    <div className="h-full w-full bg-secondary p-2">
       <div ref={containerRef} className="h-full w-full" />
     </div>
   );

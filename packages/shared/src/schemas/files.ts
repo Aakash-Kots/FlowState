@@ -10,6 +10,7 @@ import type {
   FileWriteInput,
   FilesListForProjectInput,
   FilesListInput,
+  FilesReadDirInput,
 } from '../types/files';
 
 /** List every file in a workspace's worktree. */
@@ -20,6 +21,12 @@ export const filesListInputSchema: z.ZodType<FilesListInput> = z.object({
 /** List every file in a project's local clone (create-worktree mention menu). */
 export const filesListForProjectInputSchema: z.ZodType<FilesListForProjectInput> = z.object({
   projectId: z.string(),
+});
+
+/** Read one directory level of a worktree (`dir` empty = root, so no `.min(1)`). */
+export const filesReadDirInputSchema: z.ZodType<FilesReadDirInput> = z.object({
+  workspaceId: z.string(),
+  dir: z.string(),
 });
 
 /** Read a single worktree-relative file. */

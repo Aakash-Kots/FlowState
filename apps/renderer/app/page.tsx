@@ -13,6 +13,7 @@ import { AppSidebar } from '@/components/sidebar/AppSidebar';
 import { ProjectSelector } from '@/components/projects/ProjectSelector';
 import { GitHeaderButton } from '@/components/git/GitHeaderButton';
 import { ShortcutProvider } from '@/components/shortcuts/ShortcutProvider';
+import { UsageIndicator } from '@/components/usage/UsageIndicator';
 import { ViewModeTabs } from '@/components/workspace/ViewModeTabs';
 import { WorkspaceViewSwitcher } from '@/components/workspace/WorkspaceViewSwitcher';
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
@@ -72,8 +73,9 @@ function WorkspaceShell() {
         <AppSidebar />
         <SidebarInset className="min-h-0 min-w-0">
           <header className="relative flex items-center justify-between border-b border-border bg-secondary px-4 py-2.5">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               <SidebarTrigger />
+              <UsageIndicator variant="header" />
               {onDefaultWorkspace && (
                 <span className="text-xs text-muted-foreground">claude code workspace</span>
               )}

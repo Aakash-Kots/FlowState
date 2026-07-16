@@ -5,6 +5,7 @@
  * access is confined to it by `FilesService`.
  */
 import {
+  type DirEntry,
   type FileContent,
   type Project,
   type Workspace,
@@ -12,6 +13,7 @@ import {
   fileWriteInputSchema,
   filesListForProjectInputSchema,
   filesListInputSchema,
+  filesReadDirInputSchema,
 } from '@flowstate/shared';
 import { TRPCError } from '@trpc/server';
 import { getProject, getWorkspace } from '../store';
@@ -42,6 +44,14 @@ export const filesRouter = router({
     const ws = requireWorkspace(input.workspaceId);
     return new FilesService(ws.worktreePath).list();
   }),
+
+  /** One directory level of the worktree — lazy file-tree expansion. */
+  readDir: publicProcedure
+    .input(filesReadDirInputSchema)
+    .query(({ input }): Promise<DirEntry[]> => {
+      const ws = requireWorkspace(input.workspaceId);
+      return new FilesService(ws.worktreePath).readDir(input.dir);
+    }),
 
   /**
    * Every file in a project's local clone — mention candidates for the

@@ -65,7 +65,7 @@ export const PlanMessage = memo(function PlanMessage({ block }: { block: ToolUse
         </button>
       </div>
       <CollapsibleContent className="mt-2">
-        <Markdown>{plan}</Markdown>
+        <Markdown variant="plan">{plan}</Markdown>
       </CollapsibleContent>
     </Collapsible>
   );

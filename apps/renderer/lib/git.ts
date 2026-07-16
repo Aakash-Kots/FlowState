@@ -69,6 +69,19 @@ function stillPresent(status: GitStatus, sel: Selection): boolean {
   return list.some((c) => c.path === sel.path);
 }
 
+/**
+ * Collapse the staged + unstaged change lists into one row per path. A file
+ * that's partly staged is shown once, preferring its working-tree side so the
+ * row reflects what's on disk. Sorted by path. Shared by the Git view's change
+ * list and the workspace panel's Changes tab.
+ */
+export function mergeChanges(staged: GitChange[], unstaged: GitChange[]): GitChange[] {
+  const byPath = new Map<string, GitChange>();
+  for (const c of staged) byPath.set(c.path, c);
+  for (const c of unstaged) byPath.set(c.path, c); // working-tree side wins
+  return [...byPath.values()].sort((a, b) => a.path.localeCompare(b.path));
+}
+
 /** A drafted commit summary for a single change, e.g. `Update Button.tsx`. */
 export function autoCommitSummary(change: GitChange): string {
   const name = change.path.split('/').pop() || change.path;

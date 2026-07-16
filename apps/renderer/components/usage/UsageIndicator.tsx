@@ -19,6 +19,9 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from '../ui/hover-card'
 type Row = { label: string; window: UsageWindow };
 type WindowKey = 'day' | 'week';
 
+/** Where the meters render: the panel footer (vertical) or the top header (compact). */
+type UsageVariant = 'panel' | 'header';
+
 ///////////////
 // Constants //
 ///////////////
@@ -26,9 +29,21 @@ type WindowKey = 'day' | 'week';
 /** Placeholder window used before filtering — never rendered (utilization null). */
 const EMPTY_WINDOW: UsageWindow = { utilization: null, resetsAt: null };
 
-/** Shared footer container — same box for the loading and loaded states. */
-const FOOTER_CLASS =
-  'flex flex-row flex-wrap gap-x-4 gap-y-2 border-t border-border px-3 py-2.5';
+/** Utilization thresholds where a meter bar shifts from calm grey → amber → red. */
+const USAGE_WARN_PCT = 65;
+const USAGE_DANGER_PCT = 85;
+
+/** The meter-row container per variant (same box for the loading and loaded states). */
+const CONTAINER_CLASS: Record<UsageVariant, string> = {
+  panel: 'flex flex-row flex-wrap gap-x-4 gap-y-2 border-t border-border px-3 py-2.5',
+  header: 'flex flex-row items-center gap-3',
+};
+
+/** A single meter cell per variant: fluid in the panel, fixed-width in the header. */
+const METER_CLASS: Record<UsageVariant, string> = {
+  panel: 'flex min-w-0 flex-1 basis-14 flex-col gap-1',
+  header: 'flex w-20 shrink-0 flex-col gap-0.5',
+};
 
 /** Labels shown as the loading skeleton before the first snapshot arrives. */
 const LOADING_LABELS = ['Session', 'Weekly', 'Fable'];
@@ -86,16 +101,31 @@ function topBehaviorRows(items: UsageBehavior[], n = 4): { label: string; pct: n
     .map((b) => ({ label: BEHAVIOR_LABELS[b.key] ?? b.key, pct: Math.round(b.pct) }));
 }
 
+/** Bar fill class by headroom: calm grey when low, amber mid, red high. */
+function severityFill(pct: number): string {
+  if (pct >= USAGE_DANGER_PCT) return 'bg-danger';
+  if (pct >= USAGE_WARN_PCT) return 'bg-warn';
+  return 'bg-muted-foreground';
+}
+
 ///////////////////
 // Sub-components //
 ///////////////////
 
-/** A subtle grey progress bar (shared by the footer meters and behavior rows). */
-function Bar({ pct, className }: { pct: number; className?: string }) {
+/** A subtle progress bar (shared by the footer meters and behavior rows). */
+function Bar({
+  pct,
+  className,
+  fill = 'bg-muted-foreground',
+}: {
+  pct: number;
+  className?: string;
+  fill?: string;
+}) {
   return (
     <div className={cn('h-1 overflow-hidden rounded-full bg-white/10', className)}>
       <div
-        className="h-full rounded-full bg-muted-foreground"
+        className={cn('h-full rounded-full', fill)}
         style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
       />
     </div>
@@ -175,14 +205,15 @@ function WindowDetail({ window: w }: { window: UsageWindowBreakdown }) {
 ////////////////
 
 /**
- * Claude subscription usage at the bottom of the Skills & Actions panel: a
- * horizontal row of small "label over a thin progress bar" cells (Session /
- * Weekly / Fable), all subtle plain text. Hovering opens a menu with the
- * contribution breakdown ("where usage is going") for a selectable 24h / 7d
- * window. Shows a loading skeleton until the first snapshot lands, and hides on
- * API-key / third-party sessions.
+ * Claude subscription usage as a horizontal row of small "label over a thin
+ * progress bar" cells (Session / Weekly / Fable), all subtle plain text.
+ * Hovering opens a menu with the contribution breakdown ("where usage is going")
+ * for a selectable 24h / 7d window. Shows a loading skeleton until the first
+ * snapshot lands, and hides on API-key / third-party sessions. The `header`
+ * variant renders compact for the top header; the default `panel` variant is the
+ * fuller footer used inside the Skills & Actions panel.
  */
-export function UsageIndicator() {
+export function UsageIndicator({ variant = 'panel' }: { variant?: UsageVariant } = {}) {
   useUsageSync();
   const limits = useUsage((s) => s.limits);
   const [windowKey, setWindowKey] = useState<WindowKey>('week');
@@ -191,9 +222,9 @@ export function UsageIndicator() {
   // than an empty footer while the first poll is in flight.
   if (!limits) {
     return (
-      <div className={FOOTER_CLASS}>
+      <div className={CONTAINER_CLASS[variant]}>
         {LOADING_LABELS.map((label) => (
-          <div key={label} className="flex min-w-0 flex-1 basis-14 flex-col gap-1">
+          <div key={label} className={METER_CLASS[variant]}>
             <span className="truncate text-[11px] text-muted-foreground/50">{label}</span>
             <div className="h-1 animate-pulse rounded-full bg-white/10" />
           </div>
@@ -215,21 +246,22 @@ export function UsageIndicator() {
   const { breakdown } = limits;
 
   const meters = (
-    <div className={cn(FOOTER_CLASS, breakdown && 'cursor-help')}>
+    <div className={cn(CONTAINER_CLASS[variant], breakdown && 'cursor-help')}>
       {rows.map((r) => {
         const pct = Math.round(r.window.utilization ?? 0);
         const reset = formatReset(r.window.resetsAt);
         return (
           <div
             key={r.label}
-            className="flex min-w-0 flex-1 basis-14 flex-col gap-1"
+            className={METER_CLASS[variant]}
             title={reset ? `${r.label} · resets ${reset}` : r.label}
           >
-            <div className="flex items-baseline justify-between gap-1.5 text-[11px] text-muted-foreground">
+            <div className="flex items-baseline gap-1 text-[11px] text-muted-foreground">
               <span className="truncate">{r.label}</span>
+              <span className="text-muted-foreground/50">·</span>
               <span className="shrink-0 tabular-nums">{pct}%</span>
             </div>
-            <Bar pct={pct} />
+            <Bar pct={pct} fill={severityFill(pct)} />
           </div>
         );
       })}
@@ -242,7 +274,11 @@ export function UsageIndicator() {
   return (
     <HoverCard openDelay={150} closeDelay={100}>
       <HoverCardTrigger asChild>{meters}</HoverCardTrigger>
-      <HoverCardContent side="top" align="end" className="w-72 p-3">
+      <HoverCardContent
+        side={variant === 'header' ? 'bottom' : 'top'}
+        align={variant === 'header' ? 'start' : 'end'}
+        className="w-72 p-3"
+      >
         <div className="flex flex-col gap-3">
           <div className="flex items-center justify-between gap-2">
             <p className="text-xs font-medium text-foreground">Where your usage is going</p>

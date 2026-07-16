@@ -4,12 +4,30 @@ import { memo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { highlightToHtml, langForFence } from '@/lib/highlight';
+import { cn } from '../ui/cn';
 
 /**
  * Assistant-message markdown styled onto the app's dark tokens. Pure
  * client-side rendering — safe for the static export.
+ *
+ * `variant="plan"` bumps heading sizes into a document-style type hierarchy
+ * (larger title + section headers) so a proposed plan reads like a document —
+ * the default keeps the compact heading sizes used everywhere else.
  */
-export const Markdown = memo(function Markdown({ children }: { children: string }) {
+export const Markdown = memo(function Markdown({
+  children,
+  variant = 'default',
+}: {
+  children: string;
+  variant?: 'default' | 'plan';
+}) {
+  const isPlan = variant === 'plan';
+  const h1Class = cn(
+    'pt-1 font-semibold text-neutral-100',
+    isPlan ? 'text-2xl font-bold leading-tight' : 'text-base',
+  );
+  const h2Class = cn('pt-1 font-semibold text-neutral-100', isPlan ? 'text-lg' : 'text-sm');
+  const h3Class = cn('pt-1 font-semibold text-neutral-100', isPlan ? 'text-base' : 'text-sm');
   return (
     <div className="space-y-2 text-sm leading-relaxed text-neutral-200">
       <ReactMarkdown
@@ -28,15 +46,9 @@ export const Markdown = memo(function Markdown({ children }: { children: string 
           ),
           ul: ({ children }) => <ul className="list-disc space-y-1 pl-5">{children}</ul>,
           ol: ({ children }) => <ol className="list-decimal space-y-1 pl-5">{children}</ol>,
-          h1: ({ children }) => (
-            <h1 className="pt-1 text-base font-semibold text-neutral-100">{children}</h1>
-          ),
-          h2: ({ children }) => (
-            <h2 className="pt-1 text-sm font-semibold text-neutral-100">{children}</h2>
-          ),
-          h3: ({ children }) => (
-            <h3 className="pt-1 text-sm font-semibold text-neutral-100">{children}</h3>
-          ),
+          h1: ({ children }) => <h1 className={h1Class}>{children}</h1>,
+          h2: ({ children }) => <h2 className={h2Class}>{children}</h2>,
+          h3: ({ children }) => <h3 className={h3Class}>{children}</h3>,
           blockquote: ({ children }) => (
             <blockquote className="border-l-2 border-border pl-3 text-muted-foreground">
               {children}

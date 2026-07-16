@@ -6,8 +6,9 @@
  * path to the worktree — the one place in the app that touches arbitrary files,
  * so path traversal out of the worktree is rejected here.
  */
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, readdir, writeFile } from 'node:fs/promises';
 import { resolve, sep } from 'node:path';
+import { type DirEntry } from '@flowstate/shared';
 import { TRPCError } from '@trpc/server';
 import { simpleGit } from 'simple-git';
 
@@ -36,6 +37,13 @@ const LIST_EXCLUDES = [
   '*.tsbuildinfo',
 ];
 
+/**
+ * Entries hidden from the on-disk file tree. Unlike the finder we show
+ * everything on disk (`node_modules`, `.next`, dotfiles) — laziness keeps it
+ * cheap — and only hide `.git`, whose VCS internals are never worth browsing.
+ */
+const TREE_HIDDEN = new Set(['.git']);
+
 ///////////
 // Service //
 ///////////
@@ -61,6 +69,23 @@ export class FilesService {
     ]);
     const seen = new Set(raw.split('\0').filter((p) => p.length > 0));
     return [...seen].sort((a, b) => a.localeCompare(b));
+  }
+
+  /**
+   * One directory level of the worktree, for lazy file-tree expansion. Folders
+   * first, then files, each alpha-sorted. `relDir` is worktree-relative (`''` =
+   * root); the path guard rejects anything escaping the worktree. Symlinked
+   * directories report `isDir: false` (`Dirent` doesn't follow) — acceptable.
+   */
+  async readDir(relDir: string): Promise<DirEntry[]> {
+    const abs = this.resolveInWorktree(relDir);
+    const dirents = await readdir(abs, { withFileTypes: true });
+    return dirents
+      .filter((d) => !TREE_HIDDEN.has(d.name))
+      .map((d) => ({ name: d.name, isDir: d.isDirectory() }))
+      .sort((a, b) =>
+        a.isDir === b.isDir ? a.name.localeCompare(b.name) : a.isDir ? -1 : 1,
+      );
   }
 
   /** Read a worktree-relative file as UTF-8 text. Rejects binaries and huge files. */
