@@ -18,4 +18,7 @@ export enum ChatItemKind {
   Tool = 'tool',
   /** A proposed plan (`ExitPlanMode`), rendered inline as a markdown message. */
   Plan = 'plan',
+  /** Assistant prose emitted alongside an `ExitPlanMode` plan — the pre-plan
+   *  "report", rendered behind an always-collapsed disclosure. */
+  PlanReport = 'plan-report',
 }

@@ -13,6 +13,7 @@ import { EmptyChat } from './EmptyChat';
 import { Markdown } from './Markdown';
 import { MessageBubble } from './MessageBubble';
 import { PlanMessage } from './PlanMessage';
+import { PlanReportMessage } from './PlanReportMessage';
 import { ThinkingBlock } from './ThinkingBlock';
 import { ToolUseRow } from './ToolUseRow';
 
@@ -119,6 +120,8 @@ export function ChatView() {
               );
             case ChatItemKind.Plan:
               return <PlanMessage key={item.key} block={item.block} />;
+            case ChatItemKind.PlanReport:
+              return <PlanReportMessage key={item.key} text={item.block.text} />;
             case ChatItemKind.Block:
               switch (item.block.type) {
                 case ChatBlockType.Text:
