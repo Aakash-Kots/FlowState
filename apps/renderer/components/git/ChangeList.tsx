@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { RotateCcw } from 'lucide-react';
 import { type GitChange } from '@flowstate/shared';
 import { GIT_STATUS_BADGE } from '@/lib/constants/git';
@@ -18,7 +18,7 @@ function PathLabel({ path }: { path: string }) {
   const name = slash >= 0 ? path.slice(slash + 1) : path;
   return (
     <span className="flex min-w-0 flex-1 items-baseline gap-1.5" title={path}>
-      <span className="shrink-0 truncate text-neutral-200">{name}</span>
+      <span className="shrink-0 truncate text-sm text-neutral-200">{name}</span>
       {dir && <span className="truncate text-[11px] text-muted-foreground">{dir}</span>}
     </span>
   );
@@ -86,6 +86,15 @@ export function ChangeList() {
     () => (status ? mergeChanges(status.staged, status.unstaged) : []),
     [status],
   );
+
+  // Auto-select the first file when nothing is selected yet, so opening the tab
+  // shows a diff immediately. Reading `selected` via `getState` keeps this from
+  // overriding a file the user picked (or one preserved across a tab reopen).
+  useEffect(() => {
+    if (!useGit.getState().selected && changes.length > 0) {
+      void selectFile(changes[0].path, changes[0].staged);
+    }
+  }, [changes]);
 
   return (
     <div className="flex w-72 shrink-0 flex-col overflow-y-auto border-r border-border">
