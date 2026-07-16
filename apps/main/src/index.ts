@@ -6,6 +6,7 @@ import { DEFAULT_KEYBINDINGS, ShortcutCommand } from '@flowstate/shared';
 import { appRouter } from './router';
 import { archiveReaperService } from './services/archive';
 import { claudeService } from './services/claude';
+import { fullScreenService } from './services/fullscreen';
 import { shortcutsService } from './services/shortcuts';
 import { terminalService } from './services/terminal';
 import { updateService } from './services/update';
@@ -200,6 +201,12 @@ function createWindow(): void {
   createIPCHandler({ router: appRouter, windows: [win] });
 
   win.once('ready-to-show', () => win.show());
+
+  // Track full-screen so the renderer can make the vibrancy sidebar near-opaque
+  // (the wallpaper otherwise bleeds through and tints it in full-screen).
+  win.on('enter-full-screen', () => fullScreenService.set(true));
+  win.on('leave-full-screen', () => fullScreenService.set(false));
+  fullScreenService.set(win.isFullScreen());
 
   // Persist size/position so the window reopens where the user left it.
   win.on('close', () => {

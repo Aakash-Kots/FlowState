@@ -1,6 +1,7 @@
 'use client';
 
 import { DEFAULT_WORKSPACE_ID } from '@flowstate/shared';
+import { useFullScreenSync } from '@/lib/fullscreen';
 import { useIsOnboarded, useOnboarding, useOnboardingSync } from '@/lib/onboarding';
 import { useWorktreeSync } from '@/lib/projects';
 import { useSettings, useSettingsSync } from '@/lib/settings';
@@ -22,6 +23,8 @@ import { Toaster } from '@/components/ui/sonner';
 export default function Page() {
   // Keep onboarding status live for the whole app and drive the first-run gate.
   useOnboardingSync();
+  // Track full-screen so the vibrancy sidebar goes near-opaque (no wallpaper tint).
+  useFullScreenSync();
   const hydrated = useOnboarding((s) => s.hydrated);
   const onboarded = useIsOnboarded();
 

@@ -361,6 +361,13 @@ body {
     sans-serif;
 }
 
+/* Full-screen: make the vibrancy sidebar near-opaque so the OS layer can't pick
+   up the desktop wallpaper's tint (windowed mode keeps `bg-sidebar/40`'s frosted
+   glass). The compound attribute selector outranks the single-class utility. */
+html[data-fullscreen='true'] [data-sidebar='sidebar'] {
+  background-color: hsl(var(--sidebar-background) / 0.9);
+}
+
 /* Thin, unobtrusive scrollbars to match the dark surfaces. */
 * {
   scrollbar-width: thin;
