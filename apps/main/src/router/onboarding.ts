@@ -61,4 +61,13 @@ export const onboardingRouter = router({
 
   /** Disconnect Linear and clear the stored token. */
   linearLogout: publicProcedure.mutation(() => authService.linearLogout()),
+
+  /** Start the Spotify OAuth browser flow (PKCE — opens the system browser). */
+  spotifyBeginLogin: publicProcedure.mutation(() => authService.beginSpotifyLogin()),
+
+  /** Cancel an in-flight Spotify OAuth flow. */
+  spotifyCancelLogin: publicProcedure.mutation(() => authService.cancelSpotifyLogin()),
+
+  /** Disconnect Spotify and clear the stored tokens. */
+  spotifyLogout: publicProcedure.mutation(() => authService.spotifyLogout()),
 });
