@@ -12,6 +12,7 @@ import { settingsRouter } from './settings';
 import { shortcutsRouter } from './shortcuts';
 import { skillsRouter } from './skills';
 import { spotifyRouter } from './spotify';
+import { systemRouter } from './system';
 import { tabsRouter } from './tabs';
 import { terminalRouter } from './terminal';
 import { usageRouter } from './usage';
@@ -31,6 +32,7 @@ export const appRouter = router({
   claude: claudeRouter,
   linear: linearRouter,
   spotify: spotifyRouter,
+  system: systemRouter,
   shortcuts: shortcutsRouter,
   settings: settingsRouter,
   usage: usageRouter,
