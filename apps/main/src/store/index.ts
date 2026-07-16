@@ -23,5 +23,7 @@ export * from './projects';
 export * from './pins';
 export * from './transcripts';
 export * from './usage';
+export * from './activity';
+export * from './analytics';
 export * from './secrets';
 export * from './settings';

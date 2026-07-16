@@ -305,13 +305,21 @@ export class GitService {
    * files are all staged first (`git add -A`), so the user never has to stage by
    * hand. `description` becomes the commit body.
    */
-  async commit(summary: string, description?: string): Promise<{ hash: string }> {
+  async commit(
+    summary: string,
+    description?: string,
+  ): Promise<{ hash: string; insertions: number; deletions: number; filesChanged: number }> {
     const git = this.git;
     await git.raw(['add', '-A']);
     const body = description?.trim();
     const message = body ? `${summary}\n\n${body}` : summary;
     const res = await git.commit(message);
-    return { hash: res.commit };
+    return {
+      hash: res.commit,
+      insertions: res.summary.insertions,
+      deletions: res.summary.deletions,
+      filesChanged: res.summary.changes,
+    };
   }
 
   /**

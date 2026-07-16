@@ -1,4 +1,6 @@
 // Barrel for @flowstate/shared — cross-app enums, types, zod schemas, constants.
+export * from './enums/activity';
+export * from './enums/analytics';
 export * from './enums/claude';
 export * from './enums/git';
 export * from './enums/linear';
@@ -9,6 +11,8 @@ export * from './enums/spotify';
 export * from './enums/tab';
 export * from './enums/terminal';
 export * from './enums/worktree';
+export * from './types/activity';
+export * from './types/analytics';
 export * from './types/app';
 export * from './types/claude';
 export * from './types/files';
@@ -22,6 +26,8 @@ export * from './types/terminal';
 export * from './types/shortcut';
 export * from './types/usage';
 export * from './types/workspace';
+export * from './schemas/activity';
+export * from './schemas/analytics';
 export * from './schemas/claude';
 export * from './schemas/files';
 export * from './schemas/git';

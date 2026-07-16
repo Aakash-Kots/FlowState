@@ -138,6 +138,29 @@ export const usageEvents = sqliteTable(
   ],
 );
 
+// An append-only ledger of user activity — one row per meaningful action (a
+// commit, a finished Setup/Run script, a Linear state change, a Spotify play).
+// The analytics page reads these back as time-series aggregates. `type` mirrors
+// the JSON payload's discriminant (kept as a column for cheap filtering/index);
+// `data` is the full payload as JSON. `workspace_id`/`project_id` are
+// denormalized text (no FK) on purpose, like `usage_events`: the ledger must
+// survive workspace/project deletion.
+export const activityEvents = sqliteTable(
+  'activity_events',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    type: text('type').notNull(), // ActivityType
+    workspaceId: text('workspace_id'),
+    projectId: text('project_id'),
+    data: text('data').notNull(), // JSON (activityDataSchema)
+    createdAt: text('created_at').notNull(),
+  },
+  (t) => [
+    index('idx_activity_events_type').on(t.type),
+    index('idx_activity_events_created').on(t.createdAt),
+  ],
+);
+
 // A project is a GitHub repository the user has cloned into FlowState. Rows are
 // created via the "Add Project" flow; the clone lives at `local_path`.
 export const projects = sqliteTable('projects', {
