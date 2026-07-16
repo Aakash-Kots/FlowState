@@ -49,34 +49,6 @@ import {
 // Sub-components //
 ///////////////////
 
-/** The FlowState logo mark — three flowing strokes suggesting motion/flow. */
-function FlowStateMark({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
-      <path
-        d="M5 8c3.5-3.2 10-3.2 14 0"
-        stroke="currentColor"
-        strokeWidth="2.4"
-        strokeLinecap="round"
-      />
-      <path
-        d="M5 12c3.5-3.2 10-3.2 14 0"
-        stroke="currentColor"
-        strokeWidth="2.4"
-        strokeLinecap="round"
-        opacity="0.7"
-      />
-      <path
-        d="M5 16c3.5-3.2 10-3.2 14 0"
-        stroke="currentColor"
-        strokeWidth="2.4"
-        strokeLinecap="round"
-        opacity="0.4"
-      />
-    </svg>
-  );
-}
-
 /** One worktree sub-tab: its branch, selectable, with a hover remove control. */
 /** Inline rename field for a worktree row: Enter/blur commits, Escape cancels. */
 function WorktreeNameInput({ workspace, onDone }: { workspace: Workspace; onDone: () => void }) {
@@ -321,9 +293,14 @@ export function AppSidebar() {
     <Sidebar collapsible="icon">
       <SidebarHeader>
         <div className="flex items-center gap-2 px-1 py-1 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
-          <div className="flex aspect-square size-7 shrink-0 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground">
-            <FlowStateMark className="size-4" />
-          </div>
+          {/* The real app icon (apps/main/build/icon.png), downscaled into
+              the renderer's public/ so the sidebar mark matches the bundle. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/icon.png"
+            alt="FlowState"
+            className="aspect-square size-7 shrink-0 rounded-md object-cover"
+          />
           <span className="truncate text-sm font-semibold tracking-wide text-sidebar-foreground group-data-[collapsible=icon]:hidden">
             FlowState
           </span>
