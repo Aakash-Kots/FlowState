@@ -67,6 +67,9 @@ export async function loadTerminals(workspaceId: string): Promise<void> {
       terminalTabs,
       activeTerminalTabId: activeId,
     });
+    // Kick off the Setup script (and, on success, Run) as soon as the panel
+    // mounts. Idempotent on the main side — a running script is a no-op.
+    void trpc().terminal.startScripts.mutate({ workspaceId });
   } catch {
     useTerminals.setState({ hydrated: true });
   }

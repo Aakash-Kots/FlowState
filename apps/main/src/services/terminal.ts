@@ -6,6 +6,12 @@
  * id, kept alive across view/worktree switches, replayed from a scrollback
  * buffer on reattach; torn down only on explicit close or app quit).
  *
+ * It also drives the Setup → Run sequence: `runScript` auto-types a project
+ * script into a (possibly pre-existing) pty exactly once, and — when asked to
+ * track completion — appends a hidden exit-code sentinel so `onComplete` fires
+ * with the script's status. That is how the orchestrator knows Setup finished
+ * (and whether it succeeded) before it starts Run.
+ *
  * node-pty is a native module rebuilt against Electron's ABI via
  * `electron-builder install-app-deps` (same as better-sqlite3).
  */
@@ -25,7 +31,18 @@ type Session = {
   events: EventEmitter;
   /** Tail of the pty's output, replayed to a (re)attaching renderer. */
   scrollback: string;
+  /** True once a startup/injected command has been auto-typed (once per pty). */
+  injected: boolean;
+  /** Regex matching this session's hidden completion sentinel, or null if untracked. */
+  marker: RegExp | null;
+  /** The echoed sentinel source to strip from visible output, or null if untracked. */
+  markerSource: string | null;
+  /** Trailing bytes withheld from the last chunk in case a sentinel is split across chunks. */
+  filterCarry: string;
 };
+
+/** Options shared by `spawn`/`runScript` when a pty needs creating. */
+type SpawnOpts = { id?: string; cwd?: string; cols?: number; rows?: number };
 
 ///////////////
 // Constants //
@@ -38,6 +55,12 @@ type Session = {
  */
 const SCROLLBACK_LIMIT = 256 * 1024;
 
+/** Let the login shell source its rc files and print a prompt before auto-typing. */
+const STARTUP_DELAY_MS = 300;
+
+/** Distinctive lead-in of the completion sentinel; used to detect chunk-split markers. */
+const MARKER_LEAD = '__FS_EXIT_';
+
 /////////////
 // Helpers //
 /////////////
@@ -47,8 +70,31 @@ function defaultShell(): string {
   return process.env.SHELL ?? '/bin/zsh';
 }
 
+/**
+ * The source appended to a tracked command. `printf` emits
+ * `\n__FS_EXIT_<id>_<code>_FS__\n`, where `<code>` is `$?` — the wrapped
+ * command's exit status. Posix-only (macOS is the target); win32 never tracks.
+ */
+function sentinelSource(id: string): string {
+  return `; printf '\\n${MARKER_LEAD}${id}_%d_FS__\\n' "$?"`;
+}
+
+/** Matches the *executed* sentinel line (a real digit), never the echoed `%d` source. */
+function sentinelRegex(id: string): RegExp {
+  return new RegExp(`${MARKER_LEAD}${id}_(\\d+)_FS__`);
+}
+
 export class TerminalService {
   private readonly sessions = new Map<string, Session>();
+  /** Last observed exit code per terminal id, retained across (re)subscription and respawn. */
+  private readonly completions = new Map<string, number>();
+  /** Fires `(id, exitCode)` when a tracked command completes — decoupled from session lifetime. */
+  private readonly completionBus = new EventEmitter();
+
+  constructor() {
+    // One listener per open Setup banner / orchestrator wiring — no leak warning.
+    this.completionBus.setMaxListeners(0);
+  }
 
   /**
    * Spawn a login+interactive shell so the user's PATH (nvm, homebrew, the
@@ -61,19 +107,71 @@ export class TerminalService {
    * session is created (the onboarding path).
    *
    * `startupCommand` is auto-typed into the shell once it's up (this is how the
-   * Claude Code tab lands the user straight in a running `claude` session — they
-   * just start typing instead of typing `claude` first, the way Conductor does).
-   * It runs *inside* the interactive shell, so if the program exits the user
-   * drops back to a normal prompt.
+   * onboarding shell lands the user straight in a running session). It runs
+   * *inside* the interactive shell, so if the program exits the user drops back
+   * to a normal prompt.
    */
   spawn(
-    opts: { id?: string; cwd?: string; cols?: number; rows?: number; startupCommand?: string } = {},
+    opts: SpawnOpts & { startupCommand?: string } = {},
   ): { id: string } {
     const id = opts.id ?? randomUUID();
     // A persistent terminal that's already running just reattaches — never
     // double-spawn a pty (which would rerun its startup command) for one tab.
     if (this.sessions.has(id)) return { id };
 
+    this.createSession(id, opts);
+    if (opts.startupCommand) this.inject(id, opts.startupCommand, { trackCompletion: false });
+    return { id };
+  }
+
+  /**
+   * Ensure a pty exists for `id`, then auto-type `command` exactly once for that
+   * pty (the Setup/Run script). Unlike `spawn`, this injects into a session the
+   * UI may have already opened as a plain shell — so the orchestrator, not the
+   * tab-open, owns when the script runs. `trackCompletion` appends the hidden
+   * sentinel so `onComplete` reports the command's exit code.
+   */
+  runScript(
+    id: string,
+    command: string,
+    opts: SpawnOpts & { trackCompletion?: boolean } = {},
+  ): { id: string } {
+    if (!this.sessions.has(id)) this.createSession(id, { ...opts, id });
+    this.inject(id, command, { trackCompletion: opts.trackCompletion ?? false });
+    return { id };
+  }
+
+  /**
+   * Re-run `command` in an existing (idle, at-prompt) pty — the "Re-run setup
+   * script" action. Resets completion tracking and types the command again;
+   * `onComplete` fires afresh when it finishes. Falls back to a fresh
+   * spawn-and-inject if the pty is gone (e.g. after an app restart).
+   */
+  rerunScript(
+    id: string,
+    command: string,
+    opts: SpawnOpts & { trackCompletion?: boolean } = {},
+  ): { id: string } {
+    const session = this.sessions.get(id);
+    if (!session) {
+      // No live shell to type into — start one from scratch (its `injected`
+      // guard is fresh, so the command runs).
+      return this.runScript(id, command, opts);
+    }
+    const track = (opts.trackCompletion ?? false) && process.platform !== 'win32';
+    session.marker = track ? sentinelRegex(id) : null;
+    session.markerSource = track ? sentinelSource(id) : null;
+    session.filterCarry = '';
+    this.completions.delete(id);
+    const write = track ? `${command.trimEnd()}${session.markerSource}\r` : `${command}\r`;
+    // The shell is already at a prompt (the previous run finished), so no
+    // startup delay is needed — type it straight in.
+    session.pty.write(write);
+    return { id };
+  }
+
+  /** Spawn the pty + wire its data/exit plumbing. Caller guarantees `id` is not live. */
+  private createSession(id: string, opts: SpawnOpts): void {
     const shell = defaultShell();
     const args = process.platform === 'win32' ? [] : ['-l', '-i'];
     const child = pty.spawn(shell, args, {
@@ -85,29 +183,84 @@ export class TerminalService {
     });
 
     const events = new EventEmitter();
-    const session: Session = { pty: child, events, scrollback: '' };
-    child.onData((chunk) => {
-      session.scrollback = (session.scrollback + chunk).slice(-SCROLLBACK_LIMIT);
-      events.emit('data', chunk);
-    });
+    const session: Session = {
+      pty: child,
+      events,
+      scrollback: '',
+      injected: false,
+      marker: null,
+      markerSource: null,
+      filterCarry: '',
+    };
+    child.onData((chunk) => this.handleData(id, session, chunk));
     child.onExit(({ exitCode }) => {
       events.emit('exit', exitCode);
       this.sessions.delete(id);
     });
-
     this.sessions.set(id, session);
+  }
 
-    if (opts.startupCommand) {
-      // Give the login shell a beat to source its rc files and print its first
-      // prompt, then type the command as if the user did. Guarded so a fast
-      // unmount that kills the pty before it's ready doesn't write to a dead fd.
-      const command = opts.startupCommand;
-      setTimeout(() => {
-        if (this.sessions.has(id)) child.write(`${command}\r`);
-      }, 300);
+  /** Auto-type `command` once, optionally wrapped with the completion sentinel. */
+  private inject(id: string, command: string, opts: { trackCompletion: boolean }): void {
+    const session = this.sessions.get(id);
+    if (!session || session.injected) return;
+    session.injected = true;
+
+    const track = opts.trackCompletion && process.platform !== 'win32';
+    let write = `${command}\r`;
+    if (track) {
+      session.marker = sentinelRegex(id);
+      session.markerSource = sentinelSource(id);
+      this.completions.delete(id); // clear any stale exit code while it re-runs
+      // Trim trailing whitespace so the appended `; printf …` chains onto the
+      // command rather than landing on a fresh (syntax-error) `;`-led line.
+      write = `${command.trimEnd()}${session.markerSource}\r`;
     }
 
-    return { id };
+    // Give the login shell a beat to source its rc files and print its first
+    // prompt, then type the command as if the user did. Guarded so a fast
+    // unmount that kills the pty before it's ready doesn't write to a dead fd.
+    setTimeout(() => {
+      if (this.sessions.has(id)) session.pty.write(write);
+    }, STARTUP_DELAY_MS);
+  }
+
+  /** Filter the completion sentinel out of a chunk, record completion, then fan out. */
+  private handleData(id: string, session: Session, chunk: string): void {
+    const visible = session.marker ? this.filterSentinel(id, session, chunk) : chunk;
+    if (!visible) return;
+    session.scrollback = (session.scrollback + visible).slice(-SCROLLBACK_LIMIT);
+    session.events.emit('data', visible);
+  }
+
+  /**
+   * Strip the hidden sentinel (both the executed result line and the echoed
+   * `printf` source) from visible output, recording the exit code when the
+   * result line appears. Carries a trailing partial sentinel across chunks so a
+   * split marker is never shown and then retroactively erased.
+   */
+  private filterSentinel(id: string, session: Session, chunk: string): string {
+    let s = session.filterCarry + chunk;
+    session.filterCarry = '';
+
+    // Executed result line → capture exit code, emit completion, drop the line.
+    s = s.replace(new RegExp(session.marker!.source, 'g'), (_m, code: string) => {
+      const exitCode = Number(code);
+      this.completions.set(id, exitCode);
+      this.completionBus.emit(id, exitCode);
+      return '';
+    });
+    // Echoed `; printf …` source on the typed command line → drop it too.
+    if (session.markerSource) s = s.split(session.markerSource).join('');
+
+    // Withhold a trailing partial sentinel (an unterminated `__FS_EXIT_…`) so
+    // the next chunk can complete and strip it rather than flashing it on screen.
+    const lead = s.lastIndexOf(MARKER_LEAD);
+    if (lead !== -1 && !s.slice(lead).includes('_FS__')) {
+      session.filterCarry = s.slice(lead);
+      s = s.slice(0, lead);
+    }
+    return s;
   }
 
   /** Subscribe to a session's output. Returns an unsubscribe function. */
@@ -129,6 +282,20 @@ export class TerminalService {
     return () => session.events.off('exit', cb);
   }
 
+  /**
+   * Notified when a tracked command completes: immediately with the last known
+   * exit code if one is already recorded, then on every subsequent completion
+   * (e.g. a re-run). Independent of session lifetime, so a subscriber that binds
+   * before the pty is spawned still receives the first completion.
+   */
+  onComplete(id: string, cb: (code: number) => void): () => void {
+    const known = this.completions.get(id);
+    if (known !== undefined) cb(known);
+    const handler = (code: number) => cb(code);
+    this.completionBus.on(id, handler);
+    return () => this.completionBus.off(id, handler);
+  }
+
   /** Feed user keystrokes to the pty. Returns false if the pty is not (yet) live. */
   write(id: string, data: string): boolean {
     const session = this.sessions.get(id);
@@ -147,6 +314,7 @@ export class TerminalService {
     if (!session) return;
     session.pty.kill();
     this.sessions.delete(id);
+    this.completions.delete(id);
   }
 
   has(id: string): boolean {
@@ -165,6 +333,7 @@ export class TerminalService {
   disposeAll(): void {
     for (const { pty: child } of this.sessions.values()) child.kill();
     this.sessions.clear();
+    this.completions.clear();
   }
 }
 

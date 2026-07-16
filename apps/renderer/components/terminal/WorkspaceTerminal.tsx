@@ -39,25 +39,25 @@ function resolveThemeColor(cssVar: string, fallback: string): string {
  * before streaming live output, and unmount only detaches — it never kills. The
  * pty is torn down explicitly when the tab is closed or the worktree removed.
  *
+ * This only attaches — it never types the Setup/Run script. That is owned by the
+ * main-process orchestrator (`startWorkspaceScripts`), so the Run script waits
+ * for Setup even if the user opens the Run tab first.
+ *
  * xterm is imported lazily inside the effect so it never runs during Next's
  * static prerender (it touches the DOM at module load).
  */
 export function WorkspaceTerminal({
   terminalId,
   cwd,
-  startupCommand,
 }: {
   terminalId: string;
   /** Working folder for the shell — the worktree path. */
   cwd?: string | null;
-  /** Auto-run once when the pty is first spawned (the Setup/Run script). */
-  startupCommand?: string | null;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   // Captured once: the pty is spawned a single time, so a later re-render can't
   // change what the already-running shell was launched with.
   const cwdRef = useRef(cwd);
-  const startupCommandRef = useRef(startupCommand);
 
   useEffect(() => {
     let disposed = false;
@@ -98,7 +98,6 @@ export function WorkspaceTerminal({
         cwd: cwdRef.current ?? undefined,
         cols: t.cols,
         rows: t.rows,
-        startupCommand: startupCommandRef.current ?? undefined,
       });
       if (disposed) return;
 

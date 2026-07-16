@@ -31,6 +31,7 @@ import {
   upsertTerminalTab,
 } from '../store';
 import { terminalService } from '../services/terminal';
+import { rerunSetupScript, startWorkspaceScripts } from '../services/workspaceScripts';
 import { publicProcedure, router } from '../trpc';
 
 export const terminalRouter = router({
@@ -69,6 +70,33 @@ export const terminalRouter = router({
   kill: publicProcedure.input(z.object({ id: z.string() })).mutation(({ input }) => {
     terminalService.kill(input.id);
   }),
+
+  /**
+   * Start the workspace's Setup script now and, on success, its Run script —
+   * called when the terminal panel mounts (and at worktree creation). Idempotent:
+   * a running script is a no-op reattach.
+   */
+  startScripts: publicProcedure
+    .input(z.object({ workspaceId: z.string() }))
+    .mutation(({ input }) => {
+      startWorkspaceScripts(input.workspaceId);
+    }),
+
+  /** Re-run the workspace's Setup script (the Setup tab's "Re-run" button). */
+  rerunSetup: publicProcedure
+    .input(z.object({ workspaceId: z.string() }))
+    .mutation(({ input }) => {
+      rerunSetupScript(input.workspaceId);
+    }),
+
+  /**
+   * Emits a terminal's script exit code each time its tracked command completes
+   * (immediately with the last known code if it already finished). Drives the
+   * Setup tab's "Setup script finished / failed" state.
+   */
+  onComplete: publicProcedure.input(z.object({ id: z.string() })).subscription(({ input }) =>
+    observable<number>((emit) => terminalService.onComplete(input.id, (code) => emit.next(code))),
+  ),
 
   // Replays the session's retained scrollback as the first emission, then streams
   // live output — so a renderer reattaching to a persistent terminal (after a

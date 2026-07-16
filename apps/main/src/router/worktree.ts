@@ -12,7 +12,6 @@ import { TRPCError } from '@trpc/server';
 import {
   ClaudeSessionState,
   DEFAULT_TAB_TITLE,
-  TerminalKind,
   UNTITLED_WORKSPACE_NAME,
   createWorktreeInputSchema,
   renameWorktreeInputSchema,
@@ -25,7 +24,6 @@ import { observable } from '@trpc/server/observable';
 import { z } from 'zod';
 import {
   archiveWorkspace,
-  ensureDefaults,
   getProject,
   getRecentWorkspaces,
   getTab,
@@ -45,6 +43,7 @@ import { GitService } from '../services/git';
 import { githubService } from '../services/github';
 import { fileLinkService } from '../services/links';
 import { terminalService } from '../services/terminal';
+import { startWorkspaceScripts } from '../services/workspaceScripts';
 import { worktreeService } from '../services/worktree';
 import { renameWorktree, worktreeEvents } from '../services/worktreeEvents';
 import { makeTab } from './tabs';
@@ -173,17 +172,10 @@ export const worktreeRouter = router({
           ...(input.permissionMode ? { permissionMode: input.permissionMode } : {}),
         });
 
-        // 4. Seed the Setup/Run terminals; auto-run the project's setup script
-        //    in the new worktree so dependencies install the moment it exists.
-        const terminals = ensureDefaults(workspace.id, project);
-        const setupTab = terminals.find((t) => t.kind === TerminalKind.Setup);
-        if (setupTab?.command) {
-          terminalService.spawn({
-            id: setupTab.id,
-            cwd: worktreePath,
-            startupCommand: setupTab.command,
-          });
-        }
+        // 4. Seed the Setup/Run terminals and run the project's Setup script in
+        //    the new worktree so dependencies install the moment it exists; the
+        //    Run script auto-starts once Setup finishes successfully.
+        startWorkspaceScripts(workspace.id);
 
         // 5. Optionally kick off the first session with the user's prompt.
         const prompt = input.initialPrompt?.trim();
