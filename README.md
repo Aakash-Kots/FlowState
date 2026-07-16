@@ -113,6 +113,16 @@ bun run dist
 
 This produces a `.dmg` (and an auto-update `.zip`) in `release/`. Code signing and notarization are wired for CI: set `CSC_LINK` / `CSC_KEY_PASSWORD` (Developer ID Application certificate) and the `APPLE_API_KEY*` notarization secrets, then uncomment the `mac.notarize` / signing options in [`apps/main/electron-builder.yml`](apps/main/electron-builder.yml).
 
+### Installing an unsigned build
+
+Until Developer ID signing and notarization are enabled, released DMGs are **not notarized**, so macOS Gatekeeper quarantines the app — you'll see _"FlowState is damaged and can't be opened"_ or _"can't be opened because Apple cannot check it for malicious software"_. After dragging **FlowState.app** into `/Applications`, clear the quarantine attribute:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/FlowState.app
+```
+
+Then open the app normally. This is only needed once per install.
+
 ## Roadmap
 
 1. **Scaffold** — monorepo, Electron + Next.js dev loop, typed IPC bridge. ✅
