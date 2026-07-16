@@ -15,6 +15,8 @@ import {
   UNTITLED_WORKSPACE_NAME,
   createWorktreeInputSchema,
   renameWorktreeInputSchema,
+  type LinearIssue,
+  type LinearIssueRef,
   type RecentWorkspaceEntry,
   type Tab,
   type Workspace,
@@ -41,6 +43,7 @@ import { archiveReaperService, teardownWorkspace } from '../services/archive';
 import { claudeService } from '../services/claude';
 import { GitService } from '../services/git';
 import { githubService } from '../services/github';
+import { linearService } from '../services/linear';
 import { fileLinkService } from '../services/links';
 import { terminalService } from '../services/terminal';
 import { startWorkspaceScripts } from '../services/workspaceScripts';
@@ -48,6 +51,56 @@ import { worktreeService } from '../services/worktree';
 import { renameWorktree, worktreeEvents } from '../services/worktreeEvents';
 import { makeTab } from './tabs';
 import { publicProcedure, router } from '../trpc';
+
+/////////////
+// Helpers //
+/////////////
+
+/** Linear's priority scale (0 none, 1 urgent, 2 high, 3 medium, 4 low). */
+const PRIORITY_LABELS: Record<number, string> = {
+  0: 'No priority',
+  1: 'Urgent',
+  2: 'High',
+  3: 'Medium',
+  4: 'Low',
+};
+
+/**
+ * A plain-text briefing on the linked Linear ticket for Claude's first turn.
+ * Prefers the full issue (status/assignee/priority/description) when the fetch
+ * succeeded, falling back to the small ref we always have.
+ */
+function buildTicketContext(ref: LinearIssueRef, full: LinearIssue | null): string {
+  const lines = [
+    `This worktree is linked to Linear ticket ${ref.identifier}: ${ref.title}`,
+    `URL: ${ref.url}`,
+  ];
+  const stateName = full?.state.name ?? ref.stateName;
+  if (stateName) lines.push(`Status: ${stateName}`);
+  if (full) {
+    lines.push(`Priority: ${PRIORITY_LABELS[full.priority] ?? PRIORITY_LABELS[0]}`);
+    if (full.assignee) lines.push(`Assignee: ${full.assignee.name}`);
+    if (full.description?.trim()) lines.push('', 'Description:', full.description.trim());
+  }
+  return lines.join('\n');
+}
+
+/**
+ * Compose the first message sent to a new worktree's Claude session. With a linked
+ * ticket we prepend its briefing; with a typed prompt too, the prompt follows the
+ * briefing. A ticket but no prompt seeds context only — Claude should read the
+ * ticket and wait for instructions rather than start changing code.
+ */
+async function composeSeed(
+  ref: LinearIssueRef | null | undefined,
+  prompt: string,
+): Promise<string> {
+  if (!ref) return prompt;
+  const full = await linearService.issue(ref.id).catch(() => null);
+  const context = buildTicketContext(ref, full);
+  if (prompt) return `${context}\n\n---\n\n${prompt}`;
+  return `${context}\n\nFamiliarise yourself with this ticket and wait for my instructions before making any changes.`;
+}
 
 export const worktreeRouter = router({
   /** The worktree-workspaces under a project, most-recent first. */
@@ -177,9 +230,10 @@ export const worktreeRouter = router({
         //    Run script auto-starts once Setup finishes successfully.
         startWorkspaceScripts(workspace.id);
 
-        // 5. Optionally kick off the first session with the user's prompt.
-        const prompt = input.initialPrompt?.trim();
-        if (prompt) claudeService.send(tab.id, prompt);
+        // 5. Kick off the first session, seeding the linked ticket's context (and
+        //    the user's prompt, if any) so Claude knows what it's working on.
+        const seed = await composeSeed(input.linearIssue, input.initialPrompt?.trim() ?? '');
+        if (seed) claudeService.send(tab.id, seed);
 
         return { workspace, tab };
       } catch (err) {

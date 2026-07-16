@@ -15,6 +15,7 @@ import {
   type LinearWorkflowState,
   type LinkedWorktree,
   createLinearIssueInputSchema,
+  getLinearIssueInputSchema,
   linearIssueRefSchema,
   linearIssueSchema,
   linearLabelSchema,
@@ -74,6 +75,13 @@ export const linearRouter = router({
     .input(listLinearIssuesInputSchema)
     .query(({ input }): Promise<LinearIssue[]> =>
       guard(async () => issuesSchema.parse(await linearService.issues(input)), 'Failed to load Linear issues.'),
+    ),
+
+  /** A single full issue by id — the ticket hover card's detail source. */
+  issue: publicProcedure
+    .input(getLinearIssueInputSchema)
+    .query(({ input }): Promise<LinearIssue | null> =>
+      guard(async () => linearIssueSchema.nullable().parse(await linearService.issue(input.id)), 'Failed to load the issue.'),
     ),
 
   /** A team's workflow states, ordered by position (for the status dropdown). */

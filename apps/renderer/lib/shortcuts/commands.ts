@@ -19,7 +19,9 @@ import {
   useWorkspace,
 } from '../workspace';
 import { isMarkdownPath, toggleFileTabPreview } from '../fileTabs';
+import { setCreateTicketOpen } from '../linear';
 import { setSettingsOpen } from '../settings';
+import { WorkspaceView } from '../enums/view';
 import { setFileFinderOpen, setHelpOpen, setPaletteOpen, useShortcuts } from './store';
 
 ///////////
@@ -234,6 +236,14 @@ export const COMMANDS: Record<ShortcutCommand, CommandDef> = {
       const id = activeTabId();
       if (id) cyclePermissionMode(id);
     },
+  },
+  [ShortcutCommand.NewTicket]: {
+    command: ShortcutCommand.NewTicket,
+    label: 'New Linear ticket',
+    category: ShortcutCategory.Linear,
+    scope: ShortcutScope.Global,
+    run: () => setCreateTicketOpen(true),
+    isEnabled: () => useWorkspace.getState().viewMode === WorkspaceView.Linear,
   },
 };
 

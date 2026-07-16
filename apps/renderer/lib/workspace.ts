@@ -2,7 +2,13 @@
 
 import { useEffect } from 'react';
 import { create } from 'zustand';
-import { DEFAULT_WORKSPACE_ID, MAX_TABS_PER_WORKSPACE, TabKind, type Tab } from '@flowstate/shared';
+import {
+  DEFAULT_WORKSPACE_ID,
+  MAX_TABS_PER_WORKSPACE,
+  TabKind,
+  type LinearIssueRef,
+  type Tab,
+} from '@flowstate/shared';
 import { WorkspaceView } from './enums/view';
 import { clearFileTabState } from './fileTabs';
 import { markTabRead, registerTab, unregisterTab } from './tabStates';
@@ -22,6 +28,12 @@ type WorkspaceState = {
   activeTabId: string | null;
   /** Which surface the worktree is showing — chat tabs or terminals. */
   viewMode: WorkspaceView;
+  /**
+   * Freshly-created ticket-linked worktrees still spinning up, keyed by workspace
+   * id — drives the "Initialising worktree with ticket …" chat message until the
+   * first assistant response arrives.
+   */
+  initialisingIssue: Record<string, LinearIssueRef>;
 };
 
 ///////////////
@@ -35,6 +47,7 @@ const INITIAL: WorkspaceState = {
   tabs: [],
   activeTabId: null,
   viewMode: WorkspaceView.Workspace,
+  initialisingIssue: {},
 };
 
 /** Top-level views in cycle order (drives `cycleViewMode`). */
@@ -47,6 +60,23 @@ export const useWorkspace = create<WorkspaceState>(() => INITIAL);
 /////////////
 
 let started = false;
+
+/** Mark a freshly-created ticket-linked worktree as initialising (shows the message). */
+export function setInitialising(workspaceId: string, issue: LinearIssueRef): void {
+  useWorkspace.setState((s) => ({
+    initialisingIssue: { ...s.initialisingIssue, [workspaceId]: issue },
+  }));
+}
+
+/** Drop a worktree's initialising marker once its first response has landed. */
+export function clearInitialising(workspaceId: string): void {
+  useWorkspace.setState((s) => {
+    if (!s.initialisingIssue[workspaceId]) return {};
+    const next = { ...s.initialisingIssue };
+    delete next[workspaceId];
+    return { initialisingIssue: next };
+  });
+}
 
 /**
  * Persist the worktree + chat tab now in view so the next reload can reopen it.

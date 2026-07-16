@@ -19,6 +19,7 @@ const CATEGORY_LABELS: [ShortcutCategory, string][] = [
   [ShortcutCategory.Tabs, 'Tabs'],
   [ShortcutCategory.Navigation, 'Navigation'],
   [ShortcutCategory.Session, 'Session'],
+  [ShortcutCategory.Linear, 'Linear'],
   [ShortcutCategory.App, 'App'],
 ];
 

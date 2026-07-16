@@ -15,7 +15,7 @@ import {
 import { toast } from '@/components/ui/sonner';
 import { refreshTerminals } from './terminals';
 import { trpc } from './trpc';
-import { selectWorkspace, useWorkspace } from './workspace';
+import { selectWorkspace, setInitialising, useWorkspace } from './workspace';
 
 ///////////
 // Types //
@@ -335,6 +335,9 @@ export async function createWorktree(input: {
       createOpen: false,
       worktrees: { ...s.worktrees, [projectId]: [workspace, ...(s.worktrees[projectId] ?? [])] },
     }));
+    // A ticket-linked worktree shows an "Initialising…" message until its first
+    // response lands (ChatView clears it).
+    if (workspace.linearIssue) setInitialising(workspace.id, workspace.linearIssue);
     await selectWorkspace(workspace.id);
   } catch (err) {
     useProjects.setState({ creating: false, createError: message(err) });

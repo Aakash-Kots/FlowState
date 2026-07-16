@@ -6,6 +6,7 @@ import { ClaudeSessionState } from '../enums/claude';
 import { LinearPrStatus, LinearStateType } from '../enums/linear';
 import type {
   CreateLinearIssueInput,
+  GetLinearIssueInput,
   LinearIssue,
   LinearIssueRef,
   LinearLabel,
@@ -123,6 +124,10 @@ export const createLinearIssueInputSchema: z.ZodType<CreateLinearIssueInput> = z
   priority: z.number().optional(),
   labelIds: z.array(z.string()).optional(),
   projectId: z.string().optional(),
+});
+
+export const getLinearIssueInputSchema: z.ZodType<GetLinearIssueInput> = z.object({
+  id: z.string(),
 });
 
 export const workflowStatesInputSchema: z.ZodType<WorkflowStatesInput> = z.object({

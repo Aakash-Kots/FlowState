@@ -74,6 +74,12 @@ const ISSUES_QUERY = `
   }
 `;
 
+const ISSUE_BY_ID_QUERY = `
+  query Issue($id: String!) {
+    issue(id: $id) { ${ISSUE_FIELDS} }
+  }
+`;
+
 const WORKFLOW_STATES_QUERY = `
   query WorkflowStates($teamId: ID!, $first: Int!) {
     workflowStates(first: $first, filter: { team: { id: { eq: $teamId } } }) {
@@ -304,6 +310,15 @@ export class LinearService {
       { first: number; filter: Record<string, unknown> }
     >(ISSUES_QUERY, { first: 100, filter });
     return (data?.issues.nodes ?? []).map(toLinearIssue);
+  }
+
+  /** A single full issue by id (the hover card + worktree seed context); null if gone. */
+  async issue(id: string): Promise<LinearIssue | null> {
+    const { data } = await this.client().client.rawRequest<
+      { issue: IssueNode | null },
+      { id: string }
+    >(ISSUE_BY_ID_QUERY, { id });
+    return data?.issue ? toLinearIssue(data.issue) : null;
   }
 
   /** A team's workflow states, ordered by workflow position (for the status menu). */

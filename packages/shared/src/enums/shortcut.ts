@@ -34,6 +34,7 @@ export enum ShortcutCommand {
   InterruptSession = 'interrupt-session',
   TogglePlanMode = 'toggle-plan-mode',
   PickWorkingFolder = 'pick-working-folder',
+  NewTicket = 'new-ticket',
 }
 
 /**
@@ -51,5 +52,6 @@ export enum ShortcutCategory {
   Tabs = 'tabs',
   Navigation = 'navigation',
   Session = 'session',
+  Linear = 'linear',
   App = 'app',
 }
