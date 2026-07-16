@@ -1,7 +1,9 @@
 'use client';
 
-import { useState } from 'react';
-import type { SkillOption } from '@flowstate/shared';
+import { useEffect, useState } from 'react';
+import { FileDown, FolderInput } from 'lucide-react';
+import type { ImportableSkill, SkillOption } from '@flowstate/shared';
+import { trpc } from '@/lib/trpc';
 import {
   CommandDialog,
   CommandEmpty,
@@ -19,24 +21,49 @@ import {
 type PinScope = 'worktree' | 'repo';
 
 /**
- * The "pin a skill" flow: a searchable modal of every discovered skill, then a
- * scope choice (this worktree vs. this repo). `canPinRepo` is false when the
- * active workspace has no parent project, hiding the repo option.
+ * The "pin a skill" flow: a searchable modal of every discovered skill (pinned
+ * in place with a scope choice) plus skills that can be *imported* from another
+ * project / the global config / an arbitrary file — imports always land in this
+ * worktree, so they skip the scope step. `canPinRepo` is false when the active
+ * workspace has no parent project, hiding the repo option.
  */
 export function SkillPicker({
   open,
   onOpenChange,
   skills,
   canPinRepo,
+  workspaceId,
   onPin,
+  onImport,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   skills: SkillOption[];
   canPinRepo: boolean;
+  workspaceId: string | null;
   onPin: (skill: SkillOption, scope: PinScope) => void;
+  onImport: (sourcePath: string) => void;
 }) {
   const [chosen, setChosen] = useState<SkillOption | null>(null);
+  const [importable, setImportable] = useState<ImportableSkill[]>([]);
+
+  // Fetch importable skills each time the picker opens, so freshly-cloned
+  // projects and newly-added global skills show up without a reload.
+  useEffect(() => {
+    if (!open || !workspaceId) return;
+    let cancelled = false;
+    trpc()
+      .skills.listImportable.query({ workspaceId })
+      .then((items) => {
+        if (!cancelled) setImportable(items);
+      })
+      .catch(() => {
+        if (!cancelled) setImportable([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, workspaceId]);
 
   const close = (next: boolean) => {
     onOpenChange(next);
@@ -46,6 +73,20 @@ export function SkillPicker({
   const pin = (scope: PinScope) => {
     if (chosen) onPin(chosen, scope);
     close(false);
+  };
+
+  // Import a discovered file or one picked from disk — always worktree-scoped.
+  const importFrom = (sourcePath: string) => {
+    onImport(sourcePath);
+    close(false);
+  };
+
+  const pickFile = () => {
+    void trpc()
+      .skills.pickFile.mutate()
+      .then((path) => {
+        if (path) importFrom(path);
+      });
   };
 
   return (
@@ -87,30 +128,54 @@ export function SkillPicker({
         </div>
       ) : (
         <>
-          <CommandInput placeholder="Search skills to pin…" />
+          <CommandInput placeholder="Search skills to pin or import…" />
           <CommandList>
             <CommandEmpty>
               {skills.length === 0
                 ? 'No skills available yet — send a message to start the session.'
                 : 'No matching skills.'}
             </CommandEmpty>
-            <CommandGroup heading="Skills">
-              {skills.map((skill) => (
+            {skills.length > 0 && (
+              <CommandGroup heading="Skills">
+                {skills.map((skill) => (
+                  <CommandItem
+                    key={skill.name}
+                    value={`${skill.name} ${skill.description}`}
+                    onSelect={() => setChosen(skill)}
+                  >
+                    <div className="flex min-w-0 flex-col">
+                      <span className="truncate font-medium">/{skill.name}</span>
+                      {skill.description && (
+                        <span className="truncate text-xs text-muted-foreground">
+                          {skill.description}
+                        </span>
+                      )}
+                    </div>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
+            <CommandGroup heading="Import into this worktree">
+              {importable.map((skill) => (
                 <CommandItem
-                  key={skill.name}
-                  value={`${skill.name} ${skill.description}`}
-                  onSelect={() => setChosen(skill)}
+                  key={skill.sourcePath}
+                  value={`${skill.name} ${skill.description ?? ''} ${skill.sourceLabel}`}
+                  onSelect={() => importFrom(skill.sourcePath)}
                 >
+                  <FileDown className="size-4 shrink-0 text-muted-foreground" />
                   <div className="flex min-w-0 flex-col">
                     <span className="truncate font-medium">/{skill.name}</span>
-                    {skill.description && (
-                      <span className="truncate text-xs text-muted-foreground">
-                        {skill.description}
-                      </span>
-                    )}
+                    <span className="truncate text-xs text-muted-foreground">
+                      {skill.description ? `${skill.description} · ` : ''}
+                      from {skill.sourceLabel}
+                    </span>
                   </div>
                 </CommandItem>
               ))}
+              <CommandItem value="choose a file from disk import" onSelect={pickFile}>
+                <FolderInput className="size-4 shrink-0 text-muted-foreground" />
+                <span className="font-medium">Choose a file…</span>
+              </CommandItem>
             </CommandGroup>
           </CommandList>
         </>

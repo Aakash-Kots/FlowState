@@ -4,8 +4,8 @@
  * hand back a malformed PinnedItem.
  */
 import { z } from 'zod';
-import { PinnedItemKind } from '../enums/skills';
-import type { PinnedItem } from '../types/skills';
+import { PinnedItemKind, SkillImportOrigin } from '../enums/skills';
+import type { ImportableSkill, PinnedItem } from '../types/skills';
 
 export const pinnedItemSchema: z.ZodType<PinnedItem> = z.object({
   id: z.string(),
@@ -16,4 +16,12 @@ export const pinnedItemSchema: z.ZodType<PinnedItem> = z.object({
   label: z.string(),
   position: z.number(),
   createdAt: z.string().datetime(),
+});
+
+export const importableSkillSchema: z.ZodType<ImportableSkill> = z.object({
+  name: z.string(),
+  description: z.string().nullable(),
+  sourcePath: z.string(),
+  origin: z.nativeEnum(SkillImportOrigin),
+  sourceLabel: z.string(),
 });

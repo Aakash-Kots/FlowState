@@ -12,9 +12,9 @@ import {
   type PinnedItem,
   type SkillOption,
 } from '@flowstate/shared';
-import { clearChat, prefillComposer, useChat, useTabId } from '@/lib/chat';
+import { clearChat, loadSupportedSkills, prefillComposer, useChat, useTabId } from '@/lib/chat';
 import { Button } from '../ui/Button';
-import { pinItem, unpinItem, usePins, usePinsSync } from '@/lib/pins';
+import { importSkill, pinItem, unpinItem, usePins, usePinsSync } from '@/lib/pins';
 import { useProjects } from '@/lib/projects';
 import {
   persistSkillsPanelWidth,
@@ -272,7 +272,13 @@ export function SkillsPanel() {
               {panelTab === 'skills' && isChatTab && (
                 <button
                   type="button"
-                  onClick={() => setPickerOpen(true)}
+                  onClick={() => {
+                    // Ensure the session's skills are loaded — otherwise the
+                    // picker's "Skills" group is empty until the composer's
+                    // `/` menu has been opened at least once.
+                    loadSupportedSkills(tabId);
+                    setPickerOpen(true);
+                  }}
                   title="Pin a skill"
                   className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 >
@@ -369,6 +375,7 @@ export function SkillsPanel() {
         onOpenChange={setPickerOpen}
         skills={skills}
         canPinRepo={projectId !== null}
+        workspaceId={workspaceId}
         onPin={(skill, scope) =>
           void pinItem({
             workspaceId: scope === 'worktree' ? workspaceId : null,
@@ -378,6 +385,7 @@ export function SkillsPanel() {
             label: skill.name,
           })
         }
+        onImport={(sourcePath) => void importSkill({ workspaceId, tabId, sourcePath })}
       />
 
       <ConfirmClearDialog

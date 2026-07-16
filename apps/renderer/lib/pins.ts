@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { create } from 'zustand';
 import { PinnedItemKind, type PinnedItem } from '@flowstate/shared';
+import { toast } from '@/components/ui/sonner';
 import { trpc } from './trpc';
 
 ///////////
@@ -73,6 +74,30 @@ export async function pinItem(input: {
   usePins.setState((s) =>
     item.workspaceId ? { worktree: [...s.worktree, item] } : { repo: [...s.repo, item] },
   );
+}
+
+/**
+ * Import a skill `.md` from elsewhere into the current worktree: the main
+ * process copies it into `.claude/skills/`, commits + pushes it, refreshes the
+ * session, and pins it. The returned pin is appended to the worktree list; a
+ * push failure is surfaced as a warning (the copy + pin still stand).
+ */
+export async function importSkill(input: {
+  workspaceId: string;
+  tabId: string;
+  sourcePath: string;
+}): Promise<void> {
+  try {
+    const { pin, pushError } = await trpc().skills.import.mutate(input);
+    usePins.setState((s) => ({ worktree: [...s.worktree, pin] }));
+    if (pushError) {
+      toast.warning(`Imported ${pin.label}, but couldn't push`, { description: pushError });
+    }
+  } catch (err) {
+    toast.error("Couldn't import skill", {
+      description: err instanceof Error ? err.message : 'Import failed.',
+    });
+  }
 }
 
 /** Remove a pin (optimistic: drop it from both lists, then persist). */
