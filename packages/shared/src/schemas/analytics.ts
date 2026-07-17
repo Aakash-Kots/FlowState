@@ -53,6 +53,8 @@ const usageModelStatSchema: z.ZodType<UsageModelStat> = z.object({
 const usageWorkspaceStatSchema: z.ZodType<UsageWorkspaceStat> = z.object({
   workspaceId: z.string(),
   name: z.string(),
+  branch: z.string().nullable(),
+  project: z.string().nullable(),
   costUsd: z.number(),
   turns: z.number(),
 });

@@ -119,6 +119,12 @@ export const usageEvents = sqliteTable(
     id: integer('id').primaryKey({ autoIncrement: true }),
     workspaceId: text('workspace_id').notNull(),
     tabId: text('tab_id'),
+    // Identity snapshot taken at write time so the ledger can still label spend
+    // after the workspace/project rows are hard-deleted (the join goes null).
+    workspaceName: text('workspace_name'),
+    branch: text('branch'),
+    projectId: text('project_id'),
+    projectName: text('project_name'),
     sessionId: text('session_id').notNull(),
     // The model the SDK actually ran, or null if the init message never reported one.
     model: text('model'),

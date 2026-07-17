@@ -150,6 +150,26 @@ export function ModelBarChart({ data }: { data: UsageModelStat[] }) {
   );
 }
 
+/** Tooltip for the workspace bars — worktree name, its branch + project, spend. */
+function WorkspaceTooltip({
+  active,
+  payload,
+}: {
+  active?: boolean;
+  payload?: { payload?: UsageWorkspaceStat }[];
+}) {
+  const stat = active ? payload?.[0]?.payload : undefined;
+  if (!stat) return null;
+  return (
+    <div className="rounded-md border border-border bg-popover px-2.5 py-2 text-xs shadow-md">
+      <div className="font-medium text-neutral-100">{stat.name}</div>
+      {stat.branch && <div className="text-muted-foreground">Branch: {stat.branch}</div>}
+      {stat.project && <div className="text-muted-foreground">Project: {stat.project}</div>}
+      <div className="mt-1 tabular-nums text-neutral-100">{formatUsd(stat.costUsd)}</div>
+    </div>
+  );
+}
+
 /** Horizontal spend-by-workspace bars, top spenders first. */
 export function WorkspaceBarChart({ data }: { data: UsageWorkspaceStat[] }) {
   const config: ChartConfig = { costUsd: { label: 'Spend' } };
@@ -158,7 +178,7 @@ export function WorkspaceBarChart({ data }: { data: UsageWorkspaceStat[] }) {
       <BarChart data={data} layout="vertical" margin={{ top: 4, right: 12, bottom: 0, left: 8 }}>
         <XAxis type="number" tickFormatter={(v: number) => formatUsd(v)} {...AXIS} />
         <YAxis type="category" dataKey="name" width={140} {...AXIS} />
-        <ChartTooltip content={<ChartTooltipContent valueFormatter={(v) => formatUsd(Number(v))} />} />
+        <ChartTooltip content={<WorkspaceTooltip />} />
         <Bar dataKey="costUsd" radius={[0, 3, 3, 0]}>
           {data.map((_, i) => (
             <Cell key={i} fill={BAR_COLORS[i % BAR_COLORS.length]} />

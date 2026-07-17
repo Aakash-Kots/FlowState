@@ -17,7 +17,9 @@ import {
 } from '@flowstate/shared';
 import { gte, sql } from 'drizzle-orm';
 import { getDb } from './db';
-import { usageEvents, workspaces } from './schema';
+import { getProject } from './projects';
+import { projects, usageEvents, workspaces } from './schema';
+import { getWorkspace } from './workspaces';
 
 /////////////
 // Helpers //
@@ -28,10 +30,23 @@ function sinceFilter(since: string | null) {
   return since ? gte(usageEvents.createdAt, since) : undefined;
 }
 
-/** Append one turn's usage to the ledger. */
+/** Append one turn's usage to the ledger, snapshotting the workspace identity. */
 export function recordUsageEvent(input: NewUsageEvent): void {
   const event = newUsageEventSchema.parse(input);
-  getDb().insert(usageEvents).values(event).run();
+  // Snapshot name/branch/project now — the ledger has no FK and must stay
+  // labelled after the workspace/project rows are hard-deleted.
+  const ws = getWorkspace(event.workspaceId);
+  const project = ws?.projectId ? getProject(ws.projectId) : null;
+  getDb()
+    .insert(usageEvents)
+    .values({
+      ...event,
+      workspaceName: ws?.name ?? null,
+      branch: ws?.branch ?? null,
+      projectId: ws?.projectId ?? null,
+      projectName: project?.name ?? null,
+    })
+    .run();
 }
 
 /** Total spend and turn count across the whole ledger. */
@@ -132,12 +147,16 @@ export function getUsageByWorkspace(since: string | null, limit = 12): UsageWork
   return getDb()
     .select({
       workspaceId: usageEvents.workspaceId,
-      name: sql<string>`coalesce(${workspaces.name}, 'Deleted workspace')`,
+      // Prefer the live row, fall back to the write-time snapshot, then a label.
+      name: sql<string>`coalesce(max(${workspaces.name}), max(${usageEvents.workspaceName}), 'Deleted workspace')`,
+      branch: sql<string | null>`coalesce(max(${workspaces.branch}), max(${usageEvents.branch}))`,
+      project: sql<string | null>`coalesce(max(${projects.name}), max(${usageEvents.projectName}))`,
       costUsd: sql<number>`coalesce(sum(${usageEvents.costUsd}), 0)`,
       turns: sql<number>`count(*)`,
     })
     .from(usageEvents)
     .leftJoin(workspaces, sql`${workspaces.id} = ${usageEvents.workspaceId}`)
+    .leftJoin(projects, sql`${projects.id} = ${usageEvents.projectId}`)
     .where(sinceFilter(since))
     .groupBy(usageEvents.workspaceId)
     .orderBy(sql`coalesce(sum(${usageEvents.costUsd}), 0) desc`)
