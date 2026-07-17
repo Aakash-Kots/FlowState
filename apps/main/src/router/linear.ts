@@ -84,6 +84,13 @@ export const linearRouter = router({
       guard(async () => linearIssueSchema.nullable().parse(await linearService.issue(input.id)), 'Failed to load the issue.'),
     ),
 
+  /** A parent issue's sub-issues (children) — the detail panel's sub-issue list. */
+  subIssues: publicProcedure
+    .input(getLinearIssueInputSchema)
+    .query(({ input }): Promise<LinearIssue[]> =>
+      guard(async () => issuesSchema.parse(await linearService.subIssues(input.id)), 'Failed to load sub-issues.'),
+    ),
+
   /** A team's workflow states, ordered by position (for the status dropdown). */
   workflowStates: publicProcedure
     .input(workflowStatesInputSchema)

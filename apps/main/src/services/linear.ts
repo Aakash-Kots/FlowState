@@ -80,6 +80,14 @@ const ISSUE_BY_ID_QUERY = `
   }
 `;
 
+const SUB_ISSUES_QUERY = `
+  query SubIssues($id: String!, $first: Int!) {
+    issue(id: $id) {
+      children(first: $first) { nodes { ${ISSUE_FIELDS} } }
+    }
+  }
+`;
+
 const WORKFLOW_STATES_QUERY = `
   query WorkflowStates($teamId: ID!, $first: Int!) {
     workflowStates(first: $first, filter: { team: { id: { eq: $teamId } } }) {
@@ -319,6 +327,15 @@ export class LinearService {
       { id: string }
     >(ISSUE_BY_ID_QUERY, { id });
     return data?.issue ? toLinearIssue(data.issue) : null;
+  }
+
+  /** A parent issue's sub-issues (children), mapped to full issues; [] if none. */
+  async subIssues(id: string): Promise<LinearIssue[]> {
+    const { data } = await this.client().client.rawRequest<
+      { issue: { children: { nodes: IssueNode[] } } | null },
+      { id: string; first: number }
+    >(SUB_ISSUES_QUERY, { id, first: 100 });
+    return (data?.issue?.children.nodes ?? []).map(toLinearIssue);
   }
 
   /** A team's workflow states, ordered by workflow position (for the status menu). */

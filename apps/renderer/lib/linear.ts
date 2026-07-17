@@ -59,6 +59,8 @@ type LinearStoreState = {
   linkedWorktrees: LinkedWorktree[];
   /** Full issue details fetched on demand (the ticket hover card), cached by id. */
   issueDetailsById: Record<string, LinearIssue>;
+  /** A parent issue's sub-issues, fetched on demand for the detail panel, cached by parent id. */
+  subIssuesByParentId: Record<string, LinearIssue[]>;
 
   //// Command-center top sections — assigned-scoped issues (Active Work / Open PRs). ////
   myWorkIssues: LinearIssue[];
@@ -96,6 +98,7 @@ const INITIAL: LinearStoreState = {
   labels: [],
   linkedWorktrees: [],
   issueDetailsById: {},
+  subIssuesByParentId: {},
   myWorkIssues: [],
   createTicketOpen: false,
   creating: false,
@@ -246,6 +249,7 @@ export function setIncludeCompleted(includeCompleted: boolean): void {
 export function selectIssue(issueId: string | null): void {
   useLinear.setState({ selectedIssueId: issueId });
   if (!issueId) return;
+  void ensureSubIssues(issueId);
   const issue = findIssue(issueId);
   if (issue?.teamId) void ensureWorkflowStates(issue.teamId);
 }
@@ -348,6 +352,21 @@ export async function ensureIssueDetail(id: string): Promise<void> {
     useLinear.setState((s) => ({ issueDetailsById: { ...s.issueDetailsById, [id]: issue } }));
   } catch {
     // Non-fatal — the hover card shows just the ref fields.
+  }
+}
+
+/**
+ * Fetch a parent issue's sub-issues on demand (the detail panel's sub-issue list)
+ * and cache them by parent id. A no-op once cached; non-fatal on error (the
+ * section simply stays hidden).
+ */
+export async function ensureSubIssues(id: string): Promise<void> {
+  if (useLinear.getState().subIssuesByParentId[id]) return;
+  try {
+    const subIssues = await trpc().linear.subIssues.query({ id });
+    useLinear.setState((s) => ({ subIssuesByParentId: { ...s.subIssuesByParentId, [id]: subIssues } }));
+  } catch {
+    // Non-fatal — the sub-issues section stays hidden.
   }
 }
 
