@@ -5,6 +5,7 @@ import { type LinearIssue } from '@flowstate/shared';
 import {
   ensureWorkflowStates,
   issueToRef,
+  openIssueInLinearTab,
   refreshUsers,
   setIssueAssignee,
   setIssueState,
@@ -144,6 +145,37 @@ function LinkedWorktrees({ issueId }: { issueId: string }) {
   );
 }
 
+/** The selected issue's sub-issues (children); clicking one opens it in the panel. */
+function SubIssues({ parentId }: { parentId: string }) {
+  const subIssues = useLinear((s) => s.subIssuesByParentId[parentId]);
+  if (!subIssues || subIssues.length === 0) return null;
+  return (
+    <div className="mb-4">
+      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        Sub-issues
+      </h3>
+      <div className="flex flex-col">
+        {subIssues.map((child) => (
+          <button
+            key={child.id}
+            type="button"
+            onClick={() => openIssueInLinearTab(child)}
+            className="group flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm transition-colors hover:bg-muted"
+          >
+            <PriorityIcon priority={child.priority} />
+            <StateDot color={child.state.color} title={child.state.name} />
+            <span className="shrink-0 font-mono text-[13px] text-muted-foreground">
+              {child.identifier}
+            </span>
+            <span className="min-w-0 flex-1 truncate text-neutral-200">{child.title}</span>
+            {child.pr && <PrBadge pr={child.pr} />}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 ////////////
 // Export //
 ////////////
@@ -207,6 +239,9 @@ export function IssueDetail() {
         <StateControl issue={issue} />
         <AssigneeControl issue={issue} />
       </div>
+
+      {/* Sub-issues */}
+      <SubIssues parentId={issue.id} />
 
       {/* Linked worktrees */}
       <div className="mb-4">
