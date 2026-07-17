@@ -5,9 +5,9 @@
  * (they need the linked account's token); this service is purely local.
  */
 import { randomUUID } from 'node:crypto';
-import { readFile, rm } from 'node:fs/promises';
+import { copyFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import {
   GitFileStatus,
   type GitChange,
@@ -17,10 +17,26 @@ import {
   type TurnFileChange,
 } from '@flowstate/shared';
 import { simpleGit, type SimpleGit } from 'simple-git';
+import type { CommitLogEntry } from '../lib/types/git';
+
+///////////////
+// Constants //
+///////////////
+
+/**
+ * How long a worktree's resolved `hasRemote` flag stays cached (ms). The remote
+ * set almost never changes within a session, yet `status()` is re-run on every
+ * file-watch tick during an active agent turn — so re-spawning `git remote` each
+ * time is pure waste. A short TTL keeps it fresh enough if the user adds a remote.
+ */
+const REMOTE_CACHE_TTL_MS = 60_000;
 
 /////////////
 // Helpers //
 /////////////
+
+/** Per-worktree cache of the derived `hasRemote` flag, with an expiry stamp. */
+const remoteCache = new Map<string, { hasRemote: boolean; expiresAt: number }>();
 
 /** Map a porcelain status code (index or working-dir column) to our enum. */
 function mapCode(code: string): GitFileStatus | null {
@@ -77,11 +93,11 @@ export class GitService {
   /** The worktree's uncommitted changes plus its branch/upstream sync position. */
   async status(): Promise<GitStatus> {
     const git = this.git;
-    const [status, unstagedCounts, stagedCounts, remotes] = await Promise.all([
+    const [status, unstagedCounts, stagedCounts, hasRemote] = await Promise.all([
       git.status(),
       diffCounts(git, []),
       diffCounts(git, ['--cached']),
-      git.getRemotes(true),
+      this.hasGithubRemote(),
     ]);
 
     const staged: GitChange[] = [];
@@ -126,9 +142,6 @@ export class GitService {
       }
     }
 
-    const origin = remotes.find((r) => r.name === 'origin');
-    const hasRemote = !!origin && /github\.com/i.test(origin.refs.fetch ?? origin.refs.push ?? '');
-
     return {
       branch: status.current ?? '',
       upstream: status.tracking ?? null,
@@ -138,6 +151,22 @@ export class GitService {
       staged,
       unstaged,
     };
+  }
+
+  /**
+   * Whether this worktree has a GitHub `origin`, cached per worktree with a short
+   * TTL (`REMOTE_CACHE_TTL_MS`). `status()` runs on every file-watch tick during
+   * an active turn; the remote set effectively never changes, so re-spawning
+   * `git remote` each time is wasted work.
+   */
+  private async hasGithubRemote(): Promise<boolean> {
+    const cached = remoteCache.get(this.worktreePath);
+    if (cached && cached.expiresAt > Date.now()) return cached.hasRemote;
+    const remotes = await this.git.getRemotes(true);
+    const origin = remotes.find((r) => r.name === 'origin');
+    const hasRemote = !!origin && /github\.com/i.test(origin.refs.fetch ?? origin.refs.push ?? '');
+    remoteCache.set(this.worktreePath, { hasRemote, expiresAt: Date.now() + REMOTE_CACHE_TTL_MS });
+    return hasRemote;
   }
 
   /**
@@ -187,12 +216,31 @@ export class GitService {
    */
   async snapshotTree(): Promise<string> {
     const indexFile = join(tmpdir(), `flowstate-index-${randomUUID()}`);
-    const git = simpleGit(this.worktreePath).env({ ...process.env, GIT_INDEX_FILE: indexFile });
     try {
+      // Seed the throwaway index from the repo's real index so `git add -A`
+      // reuses git's stat cache and only re-hashes files that actually changed.
+      // Starting from an empty index forces git to walk and hash the *entire*
+      // worktree every snapshot — seconds of work on a large repo, twice a turn.
+      // The resulting tree is byte-identical either way (verified).
+      await this.seedIndex(indexFile);
+      const git = simpleGit(this.worktreePath).env({ ...process.env, GIT_INDEX_FILE: indexFile });
       await git.raw(['add', '-A']);
       return (await git.raw(['write-tree'])).trim();
     } finally {
       await rm(indexFile, { force: true });
+    }
+  }
+
+  /** Copy the worktree's real git index to `dest` (best-effort — a fresh repo may have none). */
+  private async seedIndex(dest: string): Promise<void> {
+    try {
+      // `--git-path index` resolves the real index even for linked worktrees,
+      // where it lives under `.git/worktrees/<name>/` rather than `.git/`.
+      const rel = (await this.git.raw(['rev-parse', '--git-path', 'index'])).trim();
+      const abs = isAbsolute(rel) ? rel : join(this.worktreePath, rel);
+      await copyFile(abs, dest);
+    } catch {
+      // No index yet (or copy failed) — fall back to an empty throwaway index.
     }
   }
 
@@ -332,5 +380,60 @@ export class GitService {
     await git.add(paths);
     const res = await git.commit(summary, paths);
     return { hash: res.commit };
+  }
+
+  /** The repo's configured commit identity (`user.email`), or null if unset. */
+  async configuredAuthorEmail(): Promise<string | null> {
+    try {
+      const email = (await this.git.raw(['config', 'user.email'])).trim();
+      return email || null;
+    } catch {
+      return null; // no identity configured
+    }
+  }
+
+  /**
+   * Non-merge commits across all refs since `since` (ISO cutoff, or null for
+   * all-time), newest-first, each with its author date and line/file counts.
+   * When `authorEmail` is set, only that author's commits are returned; passing
+   * null (no configured identity) counts every non-merge commit instead.
+   *
+   * Reads the shared object store, so pointing this at a project's repo root
+   * captures commits on every worktree branch — from any surface (chat,
+   * terminal, changes view, external). `--all` walks the DAG, so a commit
+   * reachable from multiple branches is counted once.
+   */
+  async authoredCommits(authorEmail: string | null, since: string | null): Promise<CommitLogEntry[]> {
+    // Header line per commit: NUL record-marker, then hash US-separated from the
+    // ISO author date; `--numstat` appends `<ins>\t<del>\t<path>` lines after it.
+    const args = ['log', '--all', '--no-merges', '--numstat', '--pretty=format:%x00%H%x1f%aI'];
+    if (authorEmail) args.push(`--author=${authorEmail}`, '--fixed-strings');
+    if (since) args.push(`--since=${since}`);
+
+    const out = await this.git.raw(args);
+    const entries: CommitLogEntry[] = [];
+    for (const record of out.split('\0')) {
+      if (!record.trim()) continue;
+      const newline = record.indexOf('\n');
+      const header = newline === -1 ? record : record.slice(0, newline);
+      const [hash, authorDateIso] = header.split('\x1f');
+      if (!hash || !authorDateIso) continue;
+
+      let insertions = 0;
+      let deletions = 0;
+      let filesChanged = 0;
+      const body = newline === -1 ? '' : record.slice(newline + 1);
+      for (const line of body.split('\n')) {
+        if (!line.trim()) continue;
+        const [ins, del, path] = line.split('\t');
+        if (!path) continue;
+        // Binary files report '-' for both counts — still a changed file.
+        insertions += ins === '-' ? 0 : Number(ins) || 0;
+        deletions += del === '-' ? 0 : Number(del) || 0;
+        filesChanged += 1;
+      }
+      entries.push({ hash, authorDateIso, insertions, deletions, filesChanged });
+    }
+    return entries;
   }
 }

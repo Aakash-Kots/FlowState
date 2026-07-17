@@ -1,9 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { create } from 'zustand';
 import { DEFAULT_WORKSPACE_ID, GitFileStatus, PrState } from '@flowstate/shared';
 import type { GitChange, GitDiffStat, GitFileDiff, GitStatus, PrStatus } from '@flowstate/shared';
+import { useWindowActive } from './hooks/useWindowActive';
+import { useWindowFocus } from './hooks/useWindowFocus';
 import { trpc } from './trpc';
 import { useWorkspace } from './workspace';
 
@@ -321,24 +323,27 @@ const PR_POLL_MS = 20_000;
 export function useWorktreeDiffStat(workspaceId: string): GitDiffStat | null {
   const [stat, setStat] = useState<GitDiffStat | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const next = await trpc().git.diffStat.query({ workspaceId });
-        if (!cancelled) setStat(next);
-      } catch {
-        if (!cancelled) setStat(null);
-      }
-    };
-    void load();
-    const onFocus = () => void load();
-    window.addEventListener('focus', onFocus);
-    return () => {
-      cancelled = true;
-      window.removeEventListener('focus', onFocus);
-    };
+  const cancelledRef = useRef(false);
+  const load = useCallback(async () => {
+    try {
+      const next = await trpc().git.diffStat.query({ workspaceId });
+      if (!cancelledRef.current) setStat(next);
+    } catch {
+      if (!cancelledRef.current) setStat(null);
+    }
   }, [workspaceId]);
+
+  useEffect(() => {
+    cancelledRef.current = false;
+    void load();
+    return () => {
+      cancelledRef.current = true;
+    };
+  }, [load]);
+
+  // Git state can change from a terminal or the Claude session; refresh on focus
+  // through the shared coordinator so N rows don't each add a focus listener.
+  useWindowFocus(load);
 
   return stat;
 }
@@ -353,24 +358,27 @@ export function useWorktreeDiffStat(workspaceId: string): GitDiffStat | null {
 export function useWorktreePr(workspaceId: string): PrStatus | null {
   const [pr, setPr] = useState<PrStatus | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const next = await trpc().git.prStatus.query({ workspaceId });
-        if (!cancelled) setPr(next);
-      } catch {
-        if (!cancelled) setPr(null);
-      }
-    };
-    void load();
-    const onFocus = () => void load();
-    window.addEventListener('focus', onFocus);
-    return () => {
-      cancelled = true;
-      window.removeEventListener('focus', onFocus);
-    };
+  const cancelledRef = useRef(false);
+  const load = useCallback(async () => {
+    try {
+      const next = await trpc().git.prStatus.query({ workspaceId });
+      if (!cancelledRef.current) setPr(next);
+    } catch {
+      if (!cancelledRef.current) setPr(null);
+    }
   }, [workspaceId]);
+
+  useEffect(() => {
+    cancelledRef.current = false;
+    void load();
+    return () => {
+      cancelledRef.current = true;
+    };
+  }, [load]);
+
+  // One GitHub call per row; refresh on focus through the shared coordinator so
+  // N rows collapse to a single debounced focus dispatch instead of N listeners.
+  useWindowFocus(load);
 
   return pr;
 }
@@ -385,6 +393,7 @@ export function useWorktreePr(workspaceId: string): PrStatus | null {
  */
 export function useGitSync(): void {
   const workspaceId = useWorkspace((s) => s.workspaceId);
+  const active = useWindowActive();
 
   useEffect(() => {
     if (workspaceId === DEFAULT_WORKSPACE_ID) return;
@@ -393,15 +402,11 @@ export function useGitSync(): void {
     void refreshPr();
   }, [workspaceId]);
 
-  useEffect(() => {
+  useWindowFocus(() => {
     if (workspaceId === DEFAULT_WORKSPACE_ID) return;
-    const onFocus = () => {
-      void refreshStatus();
-      void refreshPr();
-    };
-    window.addEventListener('focus', onFocus);
-    return () => window.removeEventListener('focus', onFocus);
-  }, [workspaceId]);
+    void refreshStatus();
+    void refreshPr();
+  });
 
   // Reflect on-disk changes (from Claude, a terminal, anything) as they happen,
   // so the changes view is fresh without waiting for a focus event or manual
@@ -415,9 +420,11 @@ export function useGitSync(): void {
     return () => sub.unsubscribe();
   }, [workspaceId]);
 
+  // Only poll while the window is active; when backgrounded, pause the interval
+  // (the `useWindowFocus` handler above already refetches the moment we return).
   useEffect(() => {
-    if (workspaceId === DEFAULT_WORKSPACE_ID) return;
+    if (workspaceId === DEFAULT_WORKSPACE_ID || !active) return;
     const id = setInterval(() => void refreshPr(), PR_POLL_MS);
     return () => clearInterval(id);
-  }, [workspaceId]);
+  }, [workspaceId, active]);
 }

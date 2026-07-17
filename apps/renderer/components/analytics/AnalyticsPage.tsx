@@ -258,9 +258,9 @@ function AnalyticsContent({ data }: { data: AnalyticsSummary }) {
 
         <ChartCard
           title="Commits over time"
-          subtitle="Commits made from FlowState"
+          subtitle="Commits you authored"
           isEmpty={data.commitsByDay.length === 0}
-          emptyLabel="No commits recorded yet — new commits from the changes view will show here."
+          emptyLabel="No commits yet — commits you author in these repos will show here."
         >
           <CommitsBarChart data={data.commitsByDay} />
         </ChartCard>

@@ -4,11 +4,15 @@
  * from the usage ledger, the activity ledger, and entity lifecycle timestamps.
  */
 import { type AnalyticsSummary, analyticsSummaryInputSchema, analyticsSummarySchema } from '@flowstate/shared';
-import { getAnalyticsSummary } from '../store';
+import { getCommitHistoryStats } from '../services/commitHistory';
+import { getAnalyticsSummary, rangeCutoff } from '../store';
 import { publicProcedure, router } from '../trpc';
 
 export const analyticsRouter = router({
   summary: publicProcedure
     .input(analyticsSummaryInputSchema)
-    .query(({ input }): AnalyticsSummary => analyticsSummarySchema.parse(getAnalyticsSummary(input.range))),
+    .query(async ({ input }): Promise<AnalyticsSummary> => {
+      const commits = await getCommitHistoryStats(rangeCutoff(input.range));
+      return analyticsSummarySchema.parse({ ...getAnalyticsSummary(input.range), ...commits });
+    }),
 });

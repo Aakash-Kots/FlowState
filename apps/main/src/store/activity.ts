@@ -10,13 +10,11 @@
  */
 import {
   ActivityType,
-  type CommitDayPoint,
-  type CommitStats,
   type NewActivityEvent,
   type TerminalRunStats,
   newActivityEventSchema,
 } from '@flowstate/shared';
-import { and, eq, gte, sql } from 'drizzle-orm';
+import { and, eq, gte, lt, sql } from 'drizzle-orm';
 import { getDb } from './db';
 import { activityEvents } from './schema';
 
@@ -49,38 +47,9 @@ export function recordActivityEvent(input: NewActivityEvent): void {
     .run();
 }
 
-/** Commits grouped by local calendar day, oldest first. */
-export function getCommitsByDay(since: string | null): CommitDayPoint[] {
-  return getDb()
-    .select({
-      day: sql<string>`date(${activityEvents.createdAt}, 'localtime')`,
-      commits: sql<number>`count(*)`,
-      insertions: sql<number>`coalesce(sum(json_extract(${activityEvents.data}, '$.insertions')), 0)`,
-      deletions: sql<number>`coalesce(sum(json_extract(${activityEvents.data}, '$.deletions')), 0)`,
-    })
-    .from(activityEvents)
-    .where(and(eq(activityEvents.type, ActivityType.GitCommit), sinceFilter(since)))
-    .groupBy(sql`date(${activityEvents.createdAt}, 'localtime')`)
-    .orderBy(sql`date(${activityEvents.createdAt}, 'localtime')`)
-    .all();
-}
-
-/** Commit totals across the range. */
-export function getCommitStats(since: string | null): CommitStats {
-  const row = getDb()
-    .select({
-      commits: sql<number>`count(*)`,
-      insertions: sql<number>`coalesce(sum(json_extract(${activityEvents.data}, '$.insertions')), 0)`,
-      deletions: sql<number>`coalesce(sum(json_extract(${activityEvents.data}, '$.deletions')), 0)`,
-    })
-    .from(activityEvents)
-    .where(and(eq(activityEvents.type, ActivityType.GitCommit), sinceFilter(since)))
-    .get();
-  return {
-    commits: row?.commits ?? 0,
-    insertions: row?.insertions ?? 0,
-    deletions: row?.deletions ?? 0,
-  };
+/** Delete activity rows older than `cutoff` (ISO). Returns the number pruned. */
+export function pruneActivityEventsBefore(cutoff: string): number {
+  return getDb().delete(activityEvents).where(lt(activityEvents.createdAt, cutoff)).run().changes;
 }
 
 /** Tracked Setup/Run terminal-script totals across the range. */

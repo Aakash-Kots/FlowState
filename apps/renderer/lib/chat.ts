@@ -61,6 +61,12 @@ type ChatState = {
   /** True while the first skills fetch is in flight (the session is booting up). */
   skillsLoading: boolean;
   messages: ChatEntry[];
+  /** DB row id of the oldest loaded message — the cursor for paging older history. */
+  oldestId: number | null;
+  /** Whether older messages exist before `oldestId` (drives the "load earlier" control). */
+  hasMoreBefore: boolean;
+  /** True while a scroll-back page of older messages is being fetched. */
+  loadingOlder: boolean;
   /** In-flight assistant text for the current turn (replaced by the final message). */
   streamingText: string | null;
   /** What the agent is doing between text, for the activity indicator. */
@@ -98,6 +104,9 @@ const INITIAL: ChatState = {
   skillsLoaded: false,
   skillsLoading: false,
   messages: [],
+  oldestId: null,
+  hasMoreBefore: false,
+  loadingOlder: false,
   streamingText: null,
   activeIndicator: null,
   activeToolName: null,
@@ -114,6 +123,9 @@ const INITIAL: ChatState = {
 // by the optimistic `clearChat` action and the authoritative `Cleared` reducer.
 const CLEARED_PATCH: Partial<ChatState> = {
   messages: [],
+  oldestId: null,
+  hasMoreBefore: false,
+  loadingOlder: false,
   sessionId: null,
   sessionState: ClaudeSessionState.Idle,
   runStartedAt: null,
@@ -412,6 +424,8 @@ export function useChatSync(tabId: string): void {
           effort: snapshot.effort,
           permissionMode: snapshot.permissionMode,
           messages: snapshot.messages,
+          oldestId: snapshot.oldestId,
+          hasMoreBefore: snapshot.hasMoreBefore,
           pendingPermissions: snapshot.pendingPermissions,
           pendingQuestions: snapshot.pendingQuestions,
           skills: snapshot.skills,
@@ -480,6 +494,35 @@ export function sendPrompt(tabId: string, text: string, images?: ChatImageInput[
 
 export function interruptSession(tabId: string): void {
   void trpc().claude.interrupt.mutate({ tabId });
+}
+
+/**
+ * Fetch and prepend the next page of older transcript entries. No-op when there's
+ * nothing older, the cursor is unknown, or a page is already in flight. New
+ * entries are deduped by message id against what's already loaded.
+ */
+export async function loadOlderMessages(tabId: string): Promise<void> {
+  const store = storeFor(tabId);
+  const { hasMoreBefore, oldestId, loadingOlder } = store.getState();
+  if (!hasMoreBefore || oldestId == null || loadingOlder) return;
+  store.setState({ loadingOlder: true });
+  try {
+    const page = await trpc().claude.olderMessages.query({ tabId, beforeId: oldestId });
+    store.setState((s) => {
+      const seen = new Set(s.messages.map((m) => m.message.id));
+      const older = page.messages.filter((e) => !seen.has(e.message.id));
+      return {
+        messages: [...older, ...s.messages],
+        // Advance the cursor to the page's oldest raw row; keep it if the page
+        // was empty so we never re-request the same exhausted range.
+        oldestId: page.oldestId ?? s.oldestId,
+        hasMoreBefore: page.hasMoreBefore,
+        loadingOlder: false,
+      };
+    });
+  } catch {
+    store.setState({ loadingOlder: false });
+  }
 }
 
 /**

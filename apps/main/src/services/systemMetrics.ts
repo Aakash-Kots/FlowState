@@ -56,6 +56,12 @@ class SystemMetricsService {
   private refCount = 0;
   private sampling = false;
   private latest: SystemMetrics | null = null;
+  /**
+   * Whether this machine reports live GPU utilization. `si.graphics()` shells out
+   * to `system_profiler` on macOS (slow) and returns no util there, so once the
+   * first probe comes back empty we stop calling it every tick.
+   */
+  private gpuState: 'unprobed' | 'supported' | 'unsupported' = 'unprobed';
 
   /** Most recent sample, or null before the first tick lands. */
   getSnapshot(): SystemMetrics | null {
@@ -95,16 +101,23 @@ class SystemMetricsService {
     if (this.sampling) return;
     this.sampling = true;
     try {
+      // Skip the expensive `graphics()` shell-out entirely on machines that don't
+      // report GPU util (decided by the first probe below).
+      const wantGraphics = this.gpuState !== 'unsupported';
       const [mem, load, graphics] = await Promise.all([
         si.mem(),
         si.currentLoad(),
-        si.graphics().catch(() => null),
+        wantGraphics ? si.graphics().catch(() => null) : Promise.resolve(null),
       ]);
 
       const ramUsedBytes = Math.max(0, mem.total - mem.available);
       const ramPct = mem.total > 0 ? (ramUsedBytes / mem.total) * 100 : 0;
       const swapPct = mem.swaptotal > 0 ? (mem.swapused / mem.swaptotal) * 100 : null;
       const gpuPct = pickGpuUtilization(graphics);
+      // First probe decides: no util reported → stop shelling out on every tick.
+      if (wantGraphics && this.gpuState === 'unprobed') {
+        this.gpuState = gpuPct === null ? 'unsupported' : 'supported';
+      }
 
       const metrics: SystemMetrics = {
         ramPct: clampPct(ramPct),

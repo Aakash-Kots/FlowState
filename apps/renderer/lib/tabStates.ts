@@ -176,12 +176,16 @@ export function useTabUnread(tabId: string): boolean {
   return useTabStates((s) => s.unread[tabId] ?? false);
 }
 
-/** The aggregate (most-urgent) state across a worktree's tabs. */
+/** The aggregate (most-urgent) state across a worktree's tabs. This selector runs
+ * on every store change for every mounted row, so it iterates keys directly (no
+ * `Object.entries` array) and returns a primitive (no extra re-renders). */
 export function useWorktreeState(workspaceId: string): ClaudeSessionState {
   return useTabStates((s) => {
     const states: ClaudeSessionState[] = [];
-    for (const [tabId, ws] of Object.entries(s.workspaceOf)) {
-      if (ws === workspaceId) states.push(s.states[tabId] ?? ClaudeSessionState.Idle);
+    for (const tabId in s.workspaceOf) {
+      if (s.workspaceOf[tabId] === workspaceId) {
+        states.push(s.states[tabId] ?? ClaudeSessionState.Idle);
+      }
     }
     return aggregate(states);
   });
@@ -189,7 +193,10 @@ export function useWorktreeState(workspaceId: string): ClaudeSessionState {
 
 /** Whether any of a worktree's tabs finished unseen. */
 export function useWorktreeUnread(workspaceId: string): boolean {
-  return useTabStates((s) =>
-    Object.entries(s.workspaceOf).some(([tabId, ws]) => ws === workspaceId && s.unread[tabId]),
-  );
+  return useTabStates((s) => {
+    for (const tabId in s.workspaceOf) {
+      if (s.workspaceOf[tabId] === workspaceId && s.unread[tabId]) return true;
+    }
+    return false;
+  });
 }

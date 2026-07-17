@@ -18,7 +18,6 @@ import { trpc } from '@/lib/trpc';
 import { AudioWaveform } from '../ui/AudioWaveform';
 import { cn } from '../ui/cn';
 import { DropdownMenu } from '../ui/dropdown-menu';
-import { IconButton } from '../ui/IconButton';
 import { Input } from '../ui/input';
 
 /////////////
@@ -144,6 +143,30 @@ function Search() {
   );
 }
 
+/** One control: Play when paused; bars when playing, swapping to Pause on hover. */
+function PlayToggle() {
+  const isPlaying = useSpotify((s) => s.playback?.isPlaying ?? false);
+
+  return (
+    <button
+      type="button"
+      onClick={() => void togglePlay()}
+      title={isPlaying ? 'Pause' : 'Play'}
+      aria-label={isPlaying ? 'Pause' : 'Play'}
+      className="group flex size-6 items-center justify-center text-muted-foreground transition-colors hover:text-neutral-100"
+    >
+      {isPlaying ? (
+        <>
+          <AudioWaveform playing className="group-hover:hidden" />
+          <Pause className="hidden size-3.5 group-hover:block" />
+        </>
+      ) : (
+        <Play className="size-3.5" />
+      )}
+    </button>
+  );
+}
+
 /** The panel body shown when Spotify isn't connected yet. */
 function ConnectPrompt() {
   const [connecting, setConnecting] = useState(false);
@@ -220,20 +243,7 @@ export function SpotifyButton() {
           <ConnectPrompt />
         ))}
       </DropdownMenu>
-      {connected && (
-        <>
-          <AudioWaveform playing={isPlaying} />
-          <IconButton
-            variant="ghost"
-            className="h-6 w-6"
-            title={isPlaying ? 'Pause' : 'Play'}
-            aria-label={isPlaying ? 'Pause' : 'Play'}
-            onClick={() => void togglePlay()}
-          >
-            {isPlaying ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
-          </IconButton>
-        </>
-      )}
+      {connected && <PlayToggle />}
     </div>
   );
 }

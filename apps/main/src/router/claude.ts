@@ -27,6 +27,12 @@ export const claudeRouter = router({
     .input(z.object({ tabId: z.string() }))
     .query(({ input }) => claudeService.getSnapshot(input.tabId)),
 
+  // A page of older transcript entries before `beforeId`, for scrolling back
+  // through a long history the snapshot only loaded the tail of.
+  olderMessages: publicProcedure
+    .input(z.object({ tabId: z.string(), beforeId: z.number() }))
+    .query(({ input }) => claudeService.loadOlderMessages(input.tabId, input.beforeId)),
+
   send: publicProcedure
     .input(
       z

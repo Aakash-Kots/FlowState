@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { memo, useMemo, useState } from 'react';
 import { highlightToHtml } from '@/lib/highlight';
 import { cn } from '../ui/cn';
 
@@ -87,6 +87,14 @@ const NUM_COLOR: Partial<Record<LineKind, string>> = {
   del: 'var(--code-del-fg)',
 };
 
+/**
+ * Cap how many diff lines mount at once. A large file diff can be tens of
+ * thousands of lines; rendering them all freezes the UI. Beyond this the rest
+ * collapse behind a "show all" reveal. Small diffs (the common case, and every
+ * chat tool preview) render whole.
+ */
+const MAX_RENDERED_LINES = 2000;
+
 ///////////////////
 // Sub-components //
 ///////////////////
@@ -94,7 +102,15 @@ const NUM_COLOR: Partial<Record<LineKind, string>> = {
 /** Fixed single-column line-number gutter with a left accent stripe, sticky so
  * it survives the horizontal scroll of an unwrapped diff. Deletions show the old
  * line number in red, adds/context the new number (adds in green, context muted). */
-function Gutter({ no, kind, width }: { no: LineNo; kind: LineKind; width: number }) {
+const Gutter = memo(function Gutter({
+  no,
+  kind,
+  width,
+}: {
+  no: LineNo;
+  kind: LineKind;
+  width: number;
+}) {
   const num = kind === 'del' ? no.old : no.new;
   const accent = NUM_COLOR[kind];
   return (
@@ -116,12 +132,12 @@ function Gutter({ no, kind, width }: { no: LineNo; kind: LineKind; width: number
       </span>
     </span>
   );
-}
+});
 
 /** One diff line: hunk/meta headers stay plain; +/-/context get their code
  * portion syntax-highlighted while the leading marker keeps its diff color. A
  * fixed old|new line-number gutter precedes every line. */
-function DiffLine({
+const DiffLine = memo(function DiffLine({
   line,
   lang,
   no,
@@ -166,7 +182,7 @@ function DiffLine({
       </span>
     </div>
   );
-}
+});
 
 ////////////
 // Export //
@@ -189,6 +205,7 @@ export function DiffView({
   /** Wrap long lines (default) or let them scroll horizontally. */
   wrap?: boolean;
 }) {
+  const [showAll, setShowAll] = useState(false);
   const lines = useMemo(() => (patch ? patch.split('\n') : []), [patch]);
   const lineNumbers = useMemo(() => computeLineNumbers(lines), [lines]);
 
@@ -199,16 +216,33 @@ export function DiffView({
     return Math.max(2, String(max).length);
   }, [lineNumbers]);
 
+  // Cap the mounted line count for a huge diff so it doesn't freeze on open; a
+  // reveal renders the rest on demand.
+  const clamped = !showAll && lines.length > MAX_RENDERED_LINES;
+  const visibleCount = clamped ? MAX_RENDERED_LINES : lines.length;
+
   return (
-    <pre
-      className={cn(
-        'code-hl font-mono text-xs leading-5',
-        wrap ? 'w-full whitespace-pre-wrap break-words' : 'w-max min-w-full whitespace-pre',
+    <>
+      <pre
+        className={cn(
+          'code-hl font-mono text-xs leading-5',
+          wrap ? 'w-full whitespace-pre-wrap break-words' : 'w-max min-w-full whitespace-pre',
+        )}
+      >
+        {lines.slice(0, visibleCount).map((line, i) => (
+          <DiffLine key={i} line={line} lang={lang} no={lineNumbers[i]} gutterWidth={gutterWidth} />
+        ))}
+      </pre>
+      {clamped && (
+        <button
+          type="button"
+          onClick={() => setShowAll(true)}
+          className="w-full border-t border-border bg-muted/40 px-3 py-2 text-left text-xs text-muted-foreground hover:text-foreground"
+        >
+          Showing {MAX_RENDERED_LINES.toLocaleString()} of {lines.length.toLocaleString()} lines —
+          show all
+        </button>
       )}
-    >
-      {lines.map((line, i) => (
-        <DiffLine key={i} line={line} lang={lang} no={lineNumbers[i]} gutterWidth={gutterWidth} />
-      ))}
-    </pre>
+    </>
   );
 }

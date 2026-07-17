@@ -1,8 +1,9 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import { ClipboardList } from 'lucide-react';
-import { highlightToHtml } from '@/lib/highlight';
+import { buildEditPatch, buildMultiEditPatch } from '@/lib/diff';
+import { highlightToHtml, langForPath } from '@/lib/highlight';
 import type { TodoItem } from '@/lib/types/toolInput';
 import { DiffView } from '../../git/DiffView';
 import { cn } from '../../ui/cn';
@@ -81,6 +82,40 @@ export function DiffPreview({ patch, lang }: { patch: string; lang: string | nul
       <DiffView patch={clamp(patch)} lang={lang} wrap={false} />
     </PreviewFrame>
   );
+}
+
+/**
+ * Edit preview that builds its unified-diff patch lazily — this only renders when
+ * the row is expanded (ToolRowShell mounts `preview` on demand), so a collapsed
+ * Edit row never runs jsdiff. The eager `editDiffStat` (collapsed `+/−` chip) is
+ * a separate, lighter pass.
+ */
+export function EditDiffPreview({
+  filePath,
+  oldString,
+  newString,
+}: {
+  filePath: string;
+  oldString: string;
+  newString: string;
+}) {
+  const patch = useMemo(
+    () => buildEditPatch(filePath, oldString, newString),
+    [filePath, oldString, newString],
+  );
+  return <DiffPreview patch={patch} lang={langForPath(filePath)} />;
+}
+
+/** MultiEdit preview — builds its combined patch lazily, same as {@link EditDiffPreview}. */
+export function MultiEditDiffPreview({
+  filePath,
+  edits,
+}: {
+  filePath: string;
+  edits: { oldString: string; newString: string }[];
+}) {
+  const patch = useMemo(() => buildMultiEditPatch(filePath, edits), [filePath, edits]);
+  return <DiffPreview patch={patch} lang={langForPath(filePath)} />;
 }
 
 /** An ExitPlanMode preview — the plan markdown rendered as a formatted plan.

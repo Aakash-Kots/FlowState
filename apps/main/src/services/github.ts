@@ -31,11 +31,28 @@ import { authService } from './auth';
 
 const GITHUB_API = 'https://api.github.com';
 
+/**
+ * How long a branch's PR status stays cached (ms). The header polls every ~20s
+ * and every sidebar row + focus/archive read hits this same call; without a
+ * cache each read fans out to 3 GitHub REST requests. A short TTL collapses a
+ * focus burst onto one result while staying fresh against the poll.
+ */
+const PR_STATUS_TTL_MS = 15_000;
+
+/** How long a worktree's parsed `origin` remote stays cached (ms) — it ~never changes. */
+const ORIGIN_TTL_MS = 5 * 60_000;
+
 /////////////
 // Helpers //
 /////////////
 
 const execFileAsync = promisify(execFile);
+
+/** Per-(worktree, branch) PR-status cache; only definitive results are stored. */
+const prStatusCache = new Map<string, { value: PrStatus | null; expiresAt: number }>();
+
+/** Per-worktree parsed `origin` cache. */
+const originCache = new Map<string, { value: { owner: string; fullName: string }; expiresAt: number }>();
 
 /** Run a `git` subcommand, surfacing stderr on failure. */
 async function git(args: string[]): Promise<void> {
@@ -253,12 +270,16 @@ export class GithubService {
    * remote is missing or not a GitHub URL (the UI gates push/PR on this).
    */
   private async githubOrigin(worktreePath: string): Promise<{ owner: string; fullName: string }> {
+    const cached = originCache.get(worktreePath);
+    if (cached && cached.expiresAt > Date.now()) return cached.value;
     const origin = await gitOutput(['-C', worktreePath, 'remote', 'get-url', 'origin']);
     const parsed = origin ? parseGithubRemote(origin) : null;
     if (!parsed) {
       throw new Error('This worktree has no GitHub `origin` remote.');
     }
-    return { owner: parsed.owner, fullName: parsed.fullName };
+    const value = { owner: parsed.owner, fullName: parsed.fullName };
+    originCache.set(worktreePath, { value, expiresAt: Date.now() + ORIGIN_TTL_MS });
+    return value;
   }
 
   /**
@@ -317,6 +338,8 @@ export class GithubService {
     await this.githubOrigin(worktreePath);
     const auth = await this.authHeaderArgs();
     await git(['-C', worktreePath, ...auth, 'push', '-u', 'origin', branch]);
+    // A push changes CI/PR state — drop the cache so the next read is fresh.
+    this.invalidatePrStatus(worktreePath, branch);
   }
 
   /**
@@ -351,6 +374,8 @@ export class GithubService {
 
     if (res.ok) {
       const pr = (await res.json()) as { html_url: string; number: number };
+      // A new PR exists now — drop any cached "no PR" for this branch.
+      this.invalidatePrStatus(input.worktreePath, input.head);
       return { url: pr.html_url, number: pr.number };
     }
 
@@ -388,7 +413,11 @@ export class GithubService {
       headers: this.apiHeaders(token),
       body: JSON.stringify({}),
     });
-    if (res.ok) return;
+    if (res.ok) {
+      // The PR is now merged — drop the cache so the header flips promptly.
+      this.invalidatePrStatus(worktreePath, branch);
+      return;
+    }
 
     const detail = await githubErrorDetail(res);
     throw new Error(
@@ -432,6 +461,20 @@ export class GithubService {
    * "Delete Worktree". Checks are only rolled up while the PR is open.
    */
   async prStatus(worktreePath: string, branch: string): Promise<PrStatus | null> {
+    const key = `${worktreePath}\n${branch}`;
+    const cached = prStatusCache.get(key);
+    if (cached && cached.expiresAt > Date.now()) return cached.value;
+    const value = await this.computePrStatus(worktreePath, branch);
+    prStatusCache.set(key, { value, expiresAt: Date.now() + PR_STATUS_TTL_MS });
+    return value;
+  }
+
+  /** Invalidate the cached PR status for a branch — call after a mutation (push/merge). */
+  private invalidatePrStatus(worktreePath: string, branch: string): void {
+    prStatusCache.delete(`${worktreePath}\n${branch}`);
+  }
+
+  private async computePrStatus(worktreePath: string, branch: string): Promise<PrStatus | null> {
     const token = await this.token();
     const { owner, fullName } = await this.githubOrigin(worktreePath);
     const headers = this.apiHeaders(token);

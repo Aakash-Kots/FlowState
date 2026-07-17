@@ -194,7 +194,12 @@ export const ComposerEditor = forwardRef<
       .map((el) => el.dataset.imgId)
       .filter((id): id is string => Boolean(id));
     const liveSet = new Set(live);
-    setPills((prev) => prev.filter((p) => liveSet.has(p.id)));
+    // Only replace the pills array when something actually dropped — otherwise a
+    // fresh reference re-renders the editor on every keystroke for no reason.
+    setPills((prev) => {
+      const next = prev.filter((p) => liveSet.has(p.id));
+      return next.length === prev.length ? prev : next;
+    });
     for (const key of Array.from(imagesRef.current.keys())) {
       if (!liveSet.has(key)) imagesRef.current.delete(key);
     }

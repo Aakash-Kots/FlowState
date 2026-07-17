@@ -1,6 +1,12 @@
 'use client';
 
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from 'react';
 import {
   ClaudeSessionState,
   PermissionBehavior,
@@ -104,14 +110,19 @@ export function InputBar({ disabled }: { disabled: boolean }) {
   const [menuDismissed, setMenuDismissed] = useState(false);
   const slashMatch = /^\/(\S*)$/.exec(text);
   const slashQuery = slashMatch ? slashMatch[1].toLowerCase() : null;
-  const filteredSkills =
-    slashQuery !== null
-      ? skills.filter(
-          (sk) =>
-            sk.name.toLowerCase().includes(slashQuery) ||
-            sk.aliases?.some((a) => a.toLowerCase().includes(slashQuery)),
-        )
-      : [];
+  // Recompute only when the query or skill set changes — not on every re-render
+  // (e.g. arrow-key menu navigation, which only moves the highlight).
+  const filteredSkills = useMemo(
+    () =>
+      slashQuery !== null
+        ? skills.filter(
+            (sk) =>
+              sk.name.toLowerCase().includes(slashQuery) ||
+              sk.aliases?.some((a) => a.toLowerCase().includes(slashQuery)),
+          )
+        : [],
+    [skills, slashQuery],
+  );
   // Keep the menu up during the initial load so it can show a spinner.
   const menuLoading = skillsLoading && filteredSkills.length === 0;
   const menuActive = !disabled && !hasPrompt && !menuDismissed && slashQuery !== null;
