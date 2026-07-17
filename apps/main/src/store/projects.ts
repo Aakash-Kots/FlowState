@@ -20,6 +20,7 @@ function rowToProject(row: ProjectRow): Project {
     cloneUrl: row.cloneUrl,
     localPath: row.localPath,
     defaultBranch: row.defaultBranch,
+    worktreeBaseBranch: row.worktreeBaseBranch,
     private: row.private,
     setupScript: row.setupScript,
     runScript: row.runScript,
@@ -36,6 +37,7 @@ function projectToRow(project: Project): ProjectRow {
     cloneUrl: project.cloneUrl,
     localPath: project.localPath,
     defaultBranch: project.defaultBranch,
+    worktreeBaseBranch: project.worktreeBaseBranch,
     private: project.private,
     setupScript: project.setupScript,
     runScript: project.runScript,
@@ -70,6 +72,7 @@ export function upsertProject(input: Project): Project {
         cloneUrl: row.cloneUrl,
         localPath: row.localPath,
         defaultBranch: row.defaultBranch,
+        worktreeBaseBranch: row.worktreeBaseBranch,
         private: row.private,
         setupScript: row.setupScript,
         runScript: row.runScript,
@@ -87,6 +90,19 @@ export function setProjectScripts(
   const existing = getProject(projectId);
   if (!existing) return null;
   return upsertProject({ ...existing, ...scripts });
+}
+
+/**
+ * Set the branch new worktrees are cut from (null falls back to `defaultBranch`).
+ * Returns the updated record, or null if the project is absent.
+ */
+export function setProjectBaseBranch(
+  projectId: string,
+  worktreeBaseBranch: string | null,
+): Project | null {
+  const existing = getProject(projectId);
+  if (!existing) return null;
+  return upsertProject({ ...existing, worktreeBaseBranch });
 }
 
 export function deleteProject(id: string): void {

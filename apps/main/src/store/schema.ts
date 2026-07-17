@@ -177,6 +177,8 @@ export const projects = sqliteTable('projects', {
   cloneUrl: text('clone_url').notNull(),
   localPath: text('local_path').notNull(),
   defaultBranch: text('default_branch').notNull(),
+  // Branch new worktrees are cut from, overriding `default_branch`; null uses the default.
+  worktreeBaseBranch: text('worktree_base_branch'),
   private: integer('private', { mode: 'boolean' }).notNull(),
   // Project-scoped shell commands for the Setup/Run default terminals; null until set.
   setupScript: text('setup_script'),

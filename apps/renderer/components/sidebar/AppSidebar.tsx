@@ -19,7 +19,7 @@ import {
 import { useWorktreeDiffStat, useWorktreePr } from '@/lib/git';
 import { useOnboarding } from '@/lib/onboarding';
 import { projectName } from '@/lib/paths';
-import { setSettingsOpen, useSettings } from '@/lib/settings';
+import { setProjectSettingsOpen, setSettingsOpen, useSettings } from '@/lib/settings';
 import { useWorktreeState, useWorktreeUnread } from '@/lib/tabStates';
 import { pickWorkingFolder, useWorkspace } from '@/lib/workspace';
 import { CreateTicketModal } from '../linear/CreateTicketModal';
@@ -217,6 +217,18 @@ function ProjectGroup({ project }: { project: Project }) {
         <SidebarMenuAction
           showOnHover
           className="right-7 text-muted-foreground hover:text-foreground"
+          title="Project settings"
+          onClick={(e) => {
+            e.stopPropagation();
+            setProjectSettingsOpen(project.id);
+          }}
+        >
+          <Settings />
+          <span className="sr-only">Project settings</span>
+        </SidebarMenuAction>
+        <SidebarMenuAction
+          showOnHover
+          className="right-[3.25rem] text-muted-foreground hover:text-foreground"
           title="Delete project"
           onClick={(e) => {
             e.stopPropagation();

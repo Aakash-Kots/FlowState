@@ -12,6 +12,7 @@ import { BrowserWindow, dialog } from 'electron';
 import {
   DEFAULT_WORKSPACE_ID,
   addProjectInputSchema,
+  updateProjectBaseBranchInputSchema,
   updateProjectScriptsInputSchema,
   type Project,
 } from '@flowstate/shared';
@@ -23,6 +24,7 @@ import {
   getProject,
   listProjects,
   listWorkspacesByProject,
+  setProjectBaseBranch,
   setProjectScripts,
   upsertProject,
 } from '../store';
@@ -75,6 +77,7 @@ export const projectsRouter = router({
       cloneUrl: meta.cloneUrl,
       localPath,
       defaultBranch: meta.defaultBranch,
+      worktreeBaseBranch: existing?.worktreeBaseBranch ?? null,
       private: existing?.private ?? false,
       setupScript: existing?.setupScript ?? null,
       runScript: existing?.runScript ?? null,
@@ -108,6 +111,7 @@ export const projectsRouter = router({
         cloneUrl: input.cloneUrl,
         localPath: clone.localPath,
         defaultBranch: clone.defaultBranch,
+        worktreeBaseBranch: null,
         private: input.private,
         setupScript: null,
         runScript: null,
@@ -158,6 +162,15 @@ export const projectsRouter = router({
         setupScript: input.setupScript,
         runScript: input.runScript,
       });
+      if (!project) throw new TRPCError({ code: 'NOT_FOUND', message: 'Project not found.' });
+      return project;
+    }),
+
+  /** Set the branch new worktrees are cut from (null falls back to the default). */
+  setBaseBranch: publicProcedure
+    .input(updateProjectBaseBranchInputSchema)
+    .mutation(({ input }): Project => {
+      const project = setProjectBaseBranch(input.projectId, input.worktreeBaseBranch);
       if (!project) throw new TRPCError({ code: 'NOT_FOUND', message: 'Project not found.' });
       return project;
     }),

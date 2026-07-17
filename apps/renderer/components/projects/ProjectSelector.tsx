@@ -1,8 +1,9 @@
 'use client';
 
-import { FolderPlus, GitBranch, Plus } from 'lucide-react';
+import { FolderPlus, GitBranch, Plus, Settings } from 'lucide-react';
 import type { Project } from '@flowstate/shared';
 import { openCreateWorktree, selectWorktree, setAddOpen, useProjects } from '@/lib/projects';
+import { setProjectSettingsOpen } from '@/lib/settings';
 import { Button } from '@/components/ui/Button';
 import { ProjectAvatar } from './ProjectAvatar';
 
@@ -22,28 +23,42 @@ function ProjectCard({ project }: { project: Project }) {
     else openCreateWorktree(project.id);
   };
   return (
-    <button
-      type="button"
-      onClick={open}
-      className="group flex min-w-0 flex-col gap-3 rounded-xl border border-border bg-secondary p-4 text-left transition-colors hover:border-border/80 hover:bg-muted focus:outline-none focus-visible:ring-1 focus-visible:ring-ring/60"
-    >
-      <div className="flex min-w-0 items-center gap-3">
-        <ProjectAvatar owner={project.owner} className="size-9 shrink-0 rounded-lg" />
-        <div className="min-w-0">
-          <p className="truncate text-sm font-medium text-foreground">{project.name}</p>
+    <div className="group relative flex min-w-0 flex-col rounded-xl border border-border bg-secondary transition-colors hover:border-border/80 hover:bg-muted focus-within:ring-1 focus-within:ring-ring/60">
+      <button
+        type="button"
+        onClick={open}
+        className="flex min-w-0 flex-col gap-3 p-4 text-left focus:outline-none"
+      >
+        <div className="flex min-w-0 items-center gap-3">
+          <ProjectAvatar owner={project.owner} className="size-9 shrink-0 rounded-lg" />
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium text-foreground">{project.name}</p>
+          </div>
         </div>
-      </div>
-      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        <GitBranch className="size-3.5" />
-        {count > 0 ? (
-          <span>
-            {count} worktree{count === 1 ? '' : 's'}
-          </span>
-        ) : (
-          <span>New worktree</span>
-        )}
-      </div>
-    </button>
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <GitBranch className="size-3.5" />
+          {count > 0 ? (
+            <span>
+              {count} worktree{count === 1 ? '' : 's'}
+            </span>
+          ) : (
+            <span>New worktree</span>
+          )}
+        </div>
+      </button>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setProjectSettingsOpen(project.id);
+        }}
+        title="Project settings"
+        className="absolute right-2 top-2 rounded-md p-1.5 text-muted-foreground opacity-0 transition-opacity hover:bg-secondary hover:text-foreground focus:opacity-100 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring/60 group-hover:opacity-100"
+      >
+        <Settings className="size-4" />
+        <span className="sr-only">Project settings</span>
+      </button>
+    </div>
   );
 }
 

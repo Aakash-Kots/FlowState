@@ -207,8 +207,8 @@ export class GithubService {
 
   /**
    * Describe an existing local folder as a project. Reads its git `origin`
-   * remote + current branch when available; falls back to the folder name and
-   * `main` for a non-git (or remote-less) directory.
+   * remote + the repo's real default branch when available; falls back to the
+   * folder name and `main` for a non-git (or remote-less) directory.
    */
   async describeLocal(localPath: string): Promise<{
     owner: string;
@@ -220,14 +220,27 @@ export class GithubService {
     const name = basename(localPath);
     const origin = await gitOutput(['-C', localPath, 'remote', 'get-url', 'origin']);
     const parsed = origin ? parseGithubRemote(origin) : null;
-    const branch = await gitOutput(['-C', localPath, 'branch', '--show-current']);
+
+    // Prefer the repo's true default branch (`origin/HEAD`) over whatever happens
+    // to be checked out right now, so new worktrees don't cut from a stray branch.
+    // `symbolic-ref` yields e.g. `origin/main`; strip the remote prefix. Fall back
+    // to the current branch, then `main`, for a bare/remote-less directory.
+    const originHead = await gitOutput([
+      '-C',
+      localPath,
+      'symbolic-ref',
+      '--short',
+      'refs/remotes/origin/HEAD',
+    ]);
+    const defaultFromRemote = originHead?.replace(/^origin\//, '') ?? null;
+    const currentBranch = await gitOutput(['-C', localPath, 'branch', '--show-current']);
 
     return {
       owner: parsed?.owner ?? '',
       name,
       fullName: parsed?.fullName ?? name,
       cloneUrl: parsed?.cloneUrl ?? origin ?? '',
-      defaultBranch: branch ?? 'main',
+      defaultBranch: defaultFromRemote ?? currentBranch ?? 'main',
     };
   }
 

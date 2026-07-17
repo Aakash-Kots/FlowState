@@ -39,6 +39,8 @@ export type Project = {
   /** Absolute path to the local clone. */
   localPath: string;
   defaultBranch: string;
+  /** Branch new worktrees are cut from, overriding `defaultBranch`; null uses the default. */
+  worktreeBaseBranch: string | null;
   private: boolean;
   /** Shell command run in each new worktree's Setup terminal (e.g. `bun install`); null until set. */
   setupScript: string | null;
@@ -60,4 +62,10 @@ export type UpdateProjectScriptsInput = {
   projectId: string;
   setupScript: string | null;
   runScript: string | null;
+};
+
+/** Input to set the branch new worktrees are cut from (null falls back to the default). */
+export type UpdateProjectBaseBranchInput = {
+  projectId: string;
+  worktreeBaseBranch: string | null;
 };
