@@ -3,7 +3,7 @@
 import { useMemo } from 'react';
 import { GitBranch } from 'lucide-react';
 import { type LinearIssue } from '@flowstate/shared';
-import { selectIssue, useLinear } from '@/lib/linear';
+import { filterIssues, rankIssues, selectIssue, useLinear } from '@/lib/linear';
 import { useProjects } from '@/lib/projects';
 import { useWorkspace } from '@/lib/workspace';
 import { cn } from '../ui/cn';
@@ -61,6 +61,7 @@ function IssueRow({ issue, isCurrent }: { issue: LinearIssue; isCurrent: boolean
  */
 export function IssueList() {
   const issues = useLinear((s) => s.issues);
+  const searchQuery = useLinear((s) => s.searchQuery);
   const loading = useLinear((s) => s.issuesLoading);
 
   // The issue linked to the worktree currently open — highlighted in the list.
@@ -73,7 +74,10 @@ export function IssueList() {
     return null;
   });
 
-  const rows = useMemo(() => issues, [issues]);
+  // Filter the already-loaded issues locally for instant feedback on every
+  // keystroke (a debounced server search widens the pool in the background), then
+  // order by relevance: open-PR / in-progress / not-started above finished work.
+  const rows = useMemo(() => rankIssues(filterIssues(issues, searchQuery)), [issues, searchQuery]);
 
   return (
     <div className="flex w-96 shrink-0 flex-col overflow-y-auto border-r border-border">

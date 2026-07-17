@@ -4,6 +4,8 @@ import { useEffect } from 'react';
 import { create } from 'zustand';
 import {
   DEFAULT_WORKSPACE_ID,
+  LinearPrStatus,
+  LinearStateType,
   type CreateLinearIssueInput,
   type LinearIssue,
   type LinearIssueRef,
@@ -16,6 +18,7 @@ import {
 } from '@flowstate/shared';
 import { WorkspaceView } from './enums/view';
 import { useOnboarding } from './onboarding';
+import { fuzzyScore } from './search';
 import { trpc } from './trpc';
 import { setViewMode, useWorkspace } from './workspace';
 
@@ -120,6 +123,9 @@ function message(err: unknown): string {
 
 let searchTimer: ReturnType<typeof setTimeout> | null = null;
 
+/** Monotonic token so a slow issues fetch can't clobber a newer one's results. */
+let issuesReq = 0;
+
 /** Down-convert a browser issue to the small ref a linked worktree persists. */
 export function issueToRef(issue: LinearIssue): LinearIssueRef {
   return {
@@ -141,6 +147,55 @@ export function worktreesByIssue(linked: LinkedWorktree[]): Map<string, LinkedWo
     else map.set(w.issueId, [w]);
   }
   return map;
+}
+
+/**
+ * Relevance bucket for search ordering (lower sorts first). Surfaces the tickets
+ * you're most likely reaching for — open-PR, in-progress, then not-started —
+ * above finished work (a merged/closed PR or a completed/canceled issue).
+ */
+export function issueRank(issue: LinearIssue): number {
+  const pr = issue.pr;
+  if (pr && (pr.status === LinearPrStatus.Open || pr.status === LinearPrStatus.Draft)) return 0;
+  if (pr && (pr.status === LinearPrStatus.Merged || pr.status === LinearPrStatus.Closed)) return 3;
+  switch (issue.state.type) {
+    case LinearStateType.Started:
+      return 1;
+    case LinearStateType.Unstarted:
+    case LinearStateType.Backlog:
+    case LinearStateType.Triage:
+      return 2;
+    case LinearStateType.Completed:
+    case LinearStateType.Canceled:
+      return 3;
+    default:
+      return 2;
+  }
+}
+
+/**
+ * Stable-sort issues by relevance bucket (`issueRank`), preserving the incoming
+ * order (updatedAt-desc) within a bucket. Pure — returns a new array.
+ */
+export function rankIssues(issues: LinearIssue[]): LinearIssue[] {
+  return issues
+    .map((issue, i) => ({ issue, i, rank: issueRank(issue) }))
+    .sort((a, b) => a.rank - b.rank || a.i - b.i)
+    .map((x) => x.issue);
+}
+
+/** Client-side text filter over an already-loaded issue list (identifier + title). */
+export function filterIssues(issues: LinearIssue[], query: string): LinearIssue[] {
+  const q = query.trim();
+  if (!q) return issues;
+  return issues.filter((i) => fuzzyScore(`${i.identifier} ${i.title}`, q) >= 0);
+}
+
+/** Merge fresh server issues into a pool (server copy wins), keeping pool order. */
+function mergeIssues(prev: LinearIssue[], incoming: LinearIssue[]): LinearIssue[] {
+  const byId = new Map(prev.map((i) => [i.id, i]));
+  for (const issue of incoming) byId.set(issue.id, issue);
+  return [...byId.values()];
 }
 
 /////////////
@@ -168,13 +223,20 @@ export async function refreshTeams(): Promise<void> {
   }
 }
 
-/** Fetch browser issues for the current team, search text, and filters. */
-export async function refreshIssues(): Promise<void> {
+/**
+ * Fetch browser issues for the current team, search text, and filters. `merge`
+ * folds the results into the existing pool (server copy wins) instead of
+ * replacing it — used by the debounced search so the locally-filtered list only
+ * grows as the server widens it; filter changes replace. A monotonic token drops
+ * stale responses so out-of-order fetches can't clobber newer state.
+ */
+export async function refreshIssues(merge = false): Promise<void> {
   const { selectedTeamId, searchQuery, filterAssigneeId, filterStateIds, filterPriorities, includeCompleted } =
     useLinear.getState();
+  const token = ++issuesReq;
   useLinear.setState({ issuesLoading: true, issuesError: null });
   try {
-    const issues = await trpc().linear.issues.query({
+    const results = await trpc().linear.issues.query({
       teamId: selectedTeamId ?? undefined,
       query: searchQuery.trim() || undefined,
       assigneeId: filterAssigneeId ?? undefined,
@@ -182,8 +244,13 @@ export async function refreshIssues(): Promise<void> {
       priorities: filterPriorities.length ? filterPriorities : undefined,
       includeCompleted: includeCompleted || undefined,
     });
-    useLinear.setState({ issues, issuesLoading: false });
+    if (token !== issuesReq) return; // a newer refresh superseded this one
+    useLinear.setState((s) => ({
+      issues: merge ? mergeIssues(s.issues, results) : results,
+      issuesLoading: false,
+    }));
   } catch (err) {
+    if (token !== issuesReq) return;
     useLinear.setState({ issuesLoading: false, issuesError: message(err) });
   }
 }
@@ -214,11 +281,15 @@ export function setSelectedTeam(selectedTeamId: string | null): void {
   void refreshIssues();
 }
 
-/** Update the search text; refetch after a short debounce. */
+/**
+ * Update the search text. The list filters the already-loaded issues locally for
+ * instant feedback (see `IssueList`); after a short debounce we merge in server
+ * matches to widen the pool beyond what's loaded.
+ */
 export function setSearchQuery(searchQuery: string): void {
   useLinear.setState({ searchQuery });
   if (searchTimer) clearTimeout(searchTimer);
-  searchTimer = setTimeout(() => void refreshIssues(), SEARCH_DEBOUNCE_MS);
+  searchTimer = setTimeout(() => void refreshIssues(true), SEARCH_DEBOUNCE_MS);
 }
 
 /** Filter the browser list by assignee (null = anyone) and refetch. */
@@ -250,6 +321,7 @@ export function selectIssue(issueId: string | null): void {
   useLinear.setState({ selectedIssueId: issueId });
   if (!issueId) return;
   void ensureSubIssues(issueId);
+  void ensureIssueDetail(issueId); // the list query omits the body — fetch it for the panel
   const issue = findIssue(issueId);
   if (issue?.teamId) void ensureWorkflowStates(issue.teamId);
 }
@@ -449,7 +521,9 @@ export function useLinearSync(): void {
   useEffect(() => {
     if (workspaceId === DEFAULT_WORKSPACE_ID || !linearConnected) return;
     const onFocus = () => {
-      void refreshIssues();
+      // With an active search, merge so a background refresh doesn't reset the
+      // locally-filtered pool out from under the user.
+      void refreshIssues(useLinear.getState().searchQuery.trim().length > 0);
       void refreshMyWork();
       void refreshLinkedWorktrees();
     };

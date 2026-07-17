@@ -26,6 +26,8 @@ Command.displayName = CommandPrimitive.displayName;
  * restyles the dialog surface (default `max-w-lg`); `commandClassName` overrides
  * the inner `Command` layout (e.g. `flex-row` for a two-pane palette). `value` /
  * `onValueChange` control the highlighted item (e.g. to drive a preview pane).
+ * `shouldFilter={false}` hands filtering to the caller (cmdk renders items as-is)
+ * — use it when you filter/rank a large candidate set yourself.
  */
 function CommandDialog({
   open,
@@ -35,6 +37,7 @@ function CommandDialog({
   commandClassName,
   value,
   onValueChange,
+  shouldFilter,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -43,6 +46,7 @@ function CommandDialog({
   commandClassName?: string;
   value?: string;
   onValueChange?: (value: string) => void;
+  shouldFilter?: boolean;
 }) {
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
@@ -55,7 +59,12 @@ function CommandDialog({
           )}
         >
           <DialogPrimitive.Title className="sr-only">Command palette</DialogPrimitive.Title>
-          <Command className={commandClassName} value={value} onValueChange={onValueChange}>
+          <Command
+            className={commandClassName}
+            value={value}
+            onValueChange={onValueChange}
+            shouldFilter={shouldFilter}
+          >
             {children}
           </Command>
         </DialogPrimitive.Content>

@@ -192,6 +192,11 @@ export function IssueDetail() {
       s.myWorkIssues.find((i) => i.id === s.selectedIssueId) ??
       null,
   );
+  // The body isn't in the list query — read it from the on-demand detail fetch
+  // (`selectIssue` primes it), falling back to nothing while it loads.
+  const description = useLinear((s) =>
+    s.selectedIssueId ? (s.issueDetailsById[s.selectedIssueId]?.description ?? null) : null,
+  );
 
   // The project of the worktree we're viewing — where a new linked worktree lands.
   const projectId = useCurrentProjectId();
@@ -228,9 +233,9 @@ export function IssueDetail() {
       <h2 className="mb-3 text-xl font-semibold text-neutral-100">{issue.title}</h2>
 
       {/* Description (rendered as Linear markdown) */}
-      {issue.description?.trim() && (
+      {description?.trim() && (
         <div className="mb-5">
-          <Markdown>{issue.description.trim()}</Markdown>
+          <Markdown>{description.trim()}</Markdown>
         </div>
       )}
 
