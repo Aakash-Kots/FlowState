@@ -1,0 +1,1 @@
+CREATE INDEX `idx_activity_events_type_created` ON `activity_events` (`type`,`created_at`);
