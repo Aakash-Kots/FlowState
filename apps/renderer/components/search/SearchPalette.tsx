@@ -1,18 +1,18 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronRight, ExternalLink, FileCode, GitBranch } from 'lucide-react';
 import { type LinearIssue } from '@flowstate/shared';
 import {
   CommandDialog,
-  CommandEmpty,
   CommandGroup,
   CommandInput,
   CommandItem,
   CommandList,
 } from '@/components/ui/command';
-import { openIssueInLinearTab, useLinear } from '@/lib/linear';
+import { ensureIssueDetail, issueRank, openIssueInLinearTab, rankIssues, useLinear } from '@/lib/linear';
 import { useOnboarding } from '@/lib/onboarding';
+import { fuzzyScore } from '@/lib/search';
 import { setFileFinderOpen, useShortcuts } from '@/lib/shortcuts/store';
 import { trpc } from '@/lib/trpc';
 import { openFileTab, selectWorkspace, useWorkspace } from '@/lib/workspace';
@@ -30,6 +30,13 @@ const SEARCH_DEBOUNCE_MS = 300;
 
 /** Longest description slice rendered in the preview (full text lives in the tab). */
 const SNIPPET_CHARS = 600;
+
+/**
+ * Cap on rendered rows per group. We filter/rank the full candidate set in JS and
+ * only mount the best matches, so cmdk never scores (or lays out) thousands of
+ * nodes per keystroke — the top slice is all the user can act on anyway.
+ */
+const RESULT_LIMIT = 50;
 
 /////////////
 // Helpers //
@@ -68,7 +75,12 @@ function snippet(description: string | null): string | null {
 /** The right-hand preview for a highlighted issue: metadata, snippet, worktrees. */
 function IssuePreview({ issue, onOpen }: { issue: LinearIssue; onOpen: (issue: LinearIssue) => void }) {
   const linked = useLinear((s) => s.linkedWorktrees.filter((w) => w.issueId === issue.id));
-  const description = snippet(issue.description);
+  // The list query omits the body to stay light; fetch the full issue on demand.
+  const detail = useLinear((s) => s.issueDetailsById[issue.id]);
+  useEffect(() => {
+    void ensureIssueDetail(issue.id);
+  }, [issue.id]);
+  const description = snippet(detail?.description ?? issue.description);
 
   return (
     <div className="flex h-full flex-col">
@@ -214,8 +226,10 @@ export function SearchPalette() {
   const open = useShortcuts((s) => s.fileFinderOpen);
   const workspaceId = useWorkspace((s) => s.workspaceId);
   const linearConnected = useOnboarding((s) => s.linearConnected);
+  const linkedWorktrees = useLinear((s) => s.linkedWorktrees);
 
   const [files, setFiles] = useState<string[] | null>(null);
+  const [recentFiles, setRecentFiles] = useState<string[]>([]);
   const [candidates, setCandidates] = useState<LinearIssue[]>([]);
   const [query, setQuery] = useState('');
   const [activeValue, setActiveValue] = useState('');
@@ -239,6 +253,14 @@ export function SearchPalette() {
       .catch(() => {
         if (!cancelled) setFiles([]);
       });
+
+    setRecentFiles([]);
+    trpc()
+      .files.recent.query({ workspaceId })
+      .then((list) => {
+        if (!cancelled) setRecentFiles(list);
+      })
+      .catch(() => {});
 
     if (linearConnected) {
       const { myWorkIssues, issues } = useLinear.getState();
@@ -293,6 +315,74 @@ export function SearchPalette() {
   const activeIssue = issuesByValue.get(activeKey) ?? null;
   const activeFile = activeIssue ? null : (filesByValue.get(activeKey) ?? null);
 
+  // We own filtering (cmdk's `shouldFilter={false}`): match/rank in JS off a
+  // deferred query so a fast typist isn't blocked on scoring the full set, and
+  // only the top slice per group is ever mounted.
+  const deferredQuery = useDeferredValue(query);
+  const q = deferredQuery.trim();
+
+  // Each candidate's searchable text, computed once per pool (not per keystroke).
+  const issueSearchText = useMemo(
+    () =>
+      candidates.map((issue) => ({
+        issue,
+        text: `${issue.identifier} ${issue.title} ${issue.state.name} ${issue.assignee?.name ?? ''}`,
+      })),
+    [candidates],
+  );
+
+  // Files: fuzzy-match, best first, capped. Empty query shows none — the palette
+  // opens on issues, not the whole worktree.
+  const matchedFiles = useMemo(() => {
+    if (!files || !q) return [];
+    const scored: { path: string; score: number }[] = [];
+    for (const path of files) {
+      const score = fuzzyScore(path, q);
+      if (score >= 0) scored.push({ path, score });
+    }
+    scored.sort((a, b) => b.score - a.score);
+    return scored.slice(0, RESULT_LIMIT).map((s) => s.path);
+  }, [files, q]);
+
+  // Issues: relevance bucket first (open-PR / in-progress / not-started above
+  // finished), then match strength within a bucket. Only while typing — the empty
+  // query shows the curated groups below instead.
+  const matchedIssues = useMemo(() => {
+    if (!q) return [];
+    const scored: { issue: LinearIssue; score: number }[] = [];
+    for (const { issue, text } of issueSearchText) {
+      const score = fuzzyScore(text, q);
+      if (score >= 0) scored.push({ issue, score });
+    }
+    scored.sort((a, b) => issueRank(a.issue) - issueRank(b.issue) || b.score - a.score);
+    return scored.slice(0, RESULT_LIMIT).map((s) => s.issue);
+  }, [issueSearchText, q]);
+
+  // Empty-state groups (shown only before the user types). Recent files come from
+  // the per-worktree MRU, intersected with the live list so deleted paths drop
+  // out. Tickets split into those with a linked worktree vs. the rest.
+  const worktreeIssueIds = useMemo(
+    () => new Set(linkedWorktrees.map((w) => w.issueId)),
+    [linkedWorktrees],
+  );
+  const recentGroup = useMemo(() => {
+    if (q || !files) return [];
+    const live = new Set(files);
+    return recentFiles.filter((p) => live.has(p)).slice(0, RESULT_LIMIT);
+  }, [q, files, recentFiles]);
+  const activeTicketGroup = useMemo(() => {
+    if (q) return [];
+    return rankIssues(candidates.filter((i) => worktreeIssueIds.has(i.id))).slice(0, RESULT_LIMIT);
+  }, [q, candidates, worktreeIssueIds]);
+  const myIssuesGroup = useMemo(() => {
+    if (q) return [];
+    return rankIssues(candidates.filter((i) => !worktreeIssueIds.has(i.id))).slice(0, RESULT_LIMIT);
+  }, [q, candidates, worktreeIssueIds]);
+
+  const nothingToShow = q
+    ? matchedFiles.length === 0 && matchedIssues.length === 0
+    : recentGroup.length === 0 && activeTicketGroup.length === 0 && myIssuesGroup.length === 0;
+
   const chooseFile = (path: string) => {
     setFileFinderOpen(false);
     void openFileTab(path);
@@ -302,6 +392,22 @@ export function SearchPalette() {
     openIssueInLinearTab(issue);
   };
 
+  const fileItem = (path: string) => (
+    <CommandItem key={path} value={path} onSelect={() => chooseFile(path)}>
+      <FileCode className="size-4 shrink-0 text-muted-foreground" />
+      <span className="truncate">{path}</span>
+    </CommandItem>
+  );
+  const issueItem = (issue: LinearIssue) => (
+    <CommandItem key={issue.id} value={issue.id} onSelect={() => chooseIssue(issue)}>
+      <PriorityIcon priority={issue.priority} className="shrink-0" />
+      <StateDot color={issue.state.color} title={issue.state.name} />
+      <span className="shrink-0 font-mono text-xs text-muted-foreground">{issue.identifier}</span>
+      <span className="min-w-0 flex-1 truncate">{issue.title}</span>
+      {issue.pr && <PrBadge pr={issue.pr} />}
+    </CommandItem>
+  );
+
   return (
     <CommandDialog
       open={open}
@@ -310,6 +416,7 @@ export function SearchPalette() {
       commandClassName="h-[28rem] flex-row"
       value={activeValue}
       onValueChange={setActiveValue}
+      shouldFilter={false}
     >
       {/* Left: input + results */}
       <div className="flex min-w-0 flex-1 flex-col">
@@ -319,42 +426,37 @@ export function SearchPalette() {
           onValueChange={setQuery}
         />
         <CommandList className="max-h-none min-h-0 flex-1">
-          <CommandEmpty>{files === null ? 'Loading…' : 'No matches.'}</CommandEmpty>
-
-          {files && files.length > 0 && (
-            <CommandGroup heading="Files">
-              {files.map((path) => (
-                <CommandItem key={path} value={path} onSelect={() => chooseFile(path)}>
-                  <FileCode className="size-4 shrink-0 text-muted-foreground" />
-                  <span className="truncate">{path}</span>
-                </CommandItem>
-              ))}
-            </CommandGroup>
+          {nothingToShow && (
+            <div className="py-6 text-center text-sm text-muted-foreground">
+              {files === null ? 'Loading…' : q ? 'No matches.' : 'Search files and issues…'}
+            </div>
           )}
 
-          {linearConnected && candidates.length > 0 && (
-            <CommandGroup heading={searching ? 'Issues · searching…' : 'Issues'}>
-              {candidates.map((issue) => (
-                <CommandItem
-                  key={issue.id}
-                  value={issue.id}
-                  keywords={
-                    [issue.identifier, issue.title, issue.state.name, issue.assignee?.name].filter(
-                      Boolean,
-                    ) as string[]
-                  }
-                  onSelect={() => chooseIssue(issue)}
-                >
-                  <PriorityIcon priority={issue.priority} className="shrink-0" />
-                  <StateDot color={issue.state.color} title={issue.state.name} />
-                  <span className="shrink-0 font-mono text-xs text-muted-foreground">
-                    {issue.identifier}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate">{issue.title}</span>
-                  {issue.pr && <PrBadge pr={issue.pr} />}
-                </CommandItem>
-              ))}
-            </CommandGroup>
+          {q ? (
+            <>
+              {matchedFiles.length > 0 && (
+                <CommandGroup heading="Files">{matchedFiles.map(fileItem)}</CommandGroup>
+              )}
+              {linearConnected && matchedIssues.length > 0 && (
+                <CommandGroup heading={searching ? 'Issues · searching…' : 'Issues'}>
+                  {matchedIssues.map(issueItem)}
+                </CommandGroup>
+              )}
+            </>
+          ) : (
+            <>
+              {recentGroup.length > 0 && (
+                <CommandGroup heading="Recent files">{recentGroup.map(fileItem)}</CommandGroup>
+              )}
+              {linearConnected && activeTicketGroup.length > 0 && (
+                <CommandGroup heading="Active · worktrees">
+                  {activeTicketGroup.map(issueItem)}
+                </CommandGroup>
+              )}
+              {linearConnected && myIssuesGroup.length > 0 && (
+                <CommandGroup heading="My issues">{myIssuesGroup.map(issueItem)}</CommandGroup>
+              )}
+            </>
           )}
         </CommandList>
       </div>

@@ -3,6 +3,7 @@
  * Backed by the `settings` table — a single source of truth on disk.
  */
 import { eq } from 'drizzle-orm';
+import { z } from 'zod';
 import {
   ArchiveRetention,
   CodeTheme,
@@ -37,9 +38,16 @@ const SKILLS_PANEL_WIDTH_KEY = 'skillsPanel.width';
 const SKILLS_PANEL_OPEN_KEY = 'skillsPanel.open';
 const TERMINAL_PANEL_FRACTION_KEY = 'terminalPanel.fraction';
 const WORKSPACE_RECENT_KEY = 'workspace.recent';
+const RECENT_FILES_KEY = 'files.recent';
 
 /** How many recently-active worktrees to remember for reload restoration. */
 const MAX_RECENT_WORKSPACES = 10;
+
+/** How many recently-opened files to remember per worktree (the ⌘P empty state). */
+const MAX_RECENT_FILES = 15;
+
+/** Validator for the persisted per-worktree recent-files map (defensive parse). */
+const recentFilesMapSchema = z.record(z.array(z.string()));
 
 /**
  * Default width (px) of the right-hand panel, and its clamp range. Wider than a
@@ -184,4 +192,27 @@ export function getRecentWorkspaces(): RecentWorkspaceEntry[] {
 export function rememberRecentWorkspace(entry: RecentWorkspaceEntry): void {
   const next = [entry, ...getRecentWorkspaces().filter((e) => e.workspaceId !== entry.workspaceId)];
   setSetting(WORKSPACE_RECENT_KEY, next.slice(0, MAX_RECENT_WORKSPACES));
+}
+
+/**
+ * The worktree-relative paths most recently opened in a workspace, most-recent-
+ * first — the ⌘P finder's empty-state "Recent files". Parsed defensively so a
+ * stale shape degrades to "no history" rather than throwing.
+ */
+export function getRecentFiles(workspaceId: string): string[] {
+  const parsed = recentFilesMapSchema.safeParse(getSetting(RECENT_FILES_KEY));
+  return parsed.success ? (parsed.data[workspaceId] ?? []) : [];
+}
+
+/**
+ * Record a file as the most-recently opened in a workspace: move it to the front
+ * of that worktree's list (deduped) and cap the length. Other worktrees' lists
+ * are left untouched.
+ */
+export function rememberRecentFile(workspaceId: string, filePath: string): void {
+  const parsed = recentFilesMapSchema.safeParse(getSetting(RECENT_FILES_KEY));
+  const map = parsed.success ? parsed.data : {};
+  const current = map[workspaceId] ?? [];
+  map[workspaceId] = [filePath, ...current.filter((p) => p !== filePath)].slice(0, MAX_RECENT_FILES);
+  setSetting(RECENT_FILES_KEY, map);
 }
