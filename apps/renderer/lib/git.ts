@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { create } from 'zustand';
 import { DEFAULT_WORKSPACE_ID, GitFileStatus, PrState } from '@flowstate/shared';
 import type { GitChange, GitDiffStat, GitFileDiff, GitStatus, PrStatus } from '@flowstate/shared';
+import { useWindowActive } from './hooks/useWindowActive';
 import { useWindowFocus } from './hooks/useWindowFocus';
 import { trpc } from './trpc';
 import { useWorkspace } from './workspace';
@@ -392,6 +393,7 @@ export function useWorktreePr(workspaceId: string): PrStatus | null {
  */
 export function useGitSync(): void {
   const workspaceId = useWorkspace((s) => s.workspaceId);
+  const active = useWindowActive();
 
   useEffect(() => {
     if (workspaceId === DEFAULT_WORKSPACE_ID) return;
@@ -418,9 +420,11 @@ export function useGitSync(): void {
     return () => sub.unsubscribe();
   }, [workspaceId]);
 
+  // Only poll while the window is active; when backgrounded, pause the interval
+  // (the `useWindowFocus` handler above already refetches the moment we return).
   useEffect(() => {
-    if (workspaceId === DEFAULT_WORKSPACE_ID) return;
+    if (workspaceId === DEFAULT_WORKSPACE_ID || !active) return;
     const id = setInterval(() => void refreshPr(), PR_POLL_MS);
     return () => clearInterval(id);
-  }, [workspaceId]);
+  }, [workspaceId, active]);
 }

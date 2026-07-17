@@ -69,9 +69,10 @@ export function WorkspaceTerminal({
       const el = containerRef.current;
       if (!el) return;
 
-      const [{ Terminal }, { FitAddon }] = await Promise.all([
+      const [{ Terminal }, { FitAddon }, { WebglAddon }] = await Promise.all([
         import('@xterm/xterm'),
         import('@xterm/addon-fit'),
+        import('@xterm/addon-webgl'),
       ]);
       if (disposed) return;
 
@@ -82,13 +83,27 @@ export function WorkspaceTerminal({
         theme: { ...XTERM_THEME, background: panelBg, cursorAccent: panelBg },
         fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
         fontSize: 13,
-        cursorBlink: true,
+        // Blinking drives a perpetual repaint that keeps the compositor awake
+        // even on an idle terminal; a static block cursor costs nothing.
+        cursorBlink: false,
         allowProposedApi: true,
       });
       const fit = new FitAddon();
       t.loadAddon(fit);
       t.open(el);
       fit.fit();
+
+      // Prefer the GPU renderer: xterm's default DOM renderer is its most
+      // CPU/energy-expensive backend under heavy output. Fall back to the DOM
+      // renderer if a WebGL context isn't available or is later lost (GPU reset,
+      // headless); `dispose()` on the addon reverts xterm to DOM automatically.
+      try {
+        const webgl = new WebglAddon();
+        webgl.onContextLoss(() => webgl.dispose());
+        t.loadAddon(webgl);
+      } catch {
+        /* no WebGL context — DOM renderer stays active */
+      }
       term = t;
 
       // Spawn-if-needed: main returns the same id (a no-op) when the pty is

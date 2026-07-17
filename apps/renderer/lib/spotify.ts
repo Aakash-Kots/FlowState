@@ -7,6 +7,7 @@ import {
   type SpotifyPlaybackState,
   type SpotifyTrack,
 } from '@flowstate/shared';
+import { useWindowActive } from './hooks/useWindowActive';
 import { useOnboarding } from './onboarding';
 import { trpc } from './trpc';
 
@@ -142,34 +143,11 @@ async function runSearch(query: string): Promise<void> {
  */
 export function useSpotifySync(active: boolean): void {
   const connected = useOnboarding((s) => s.spotifyConnected);
+  const windowActive = useWindowActive();
   useEffect(() => {
-    if (!active || !connected) return;
-
-    let intervalId: ReturnType<typeof setInterval> | null = null;
-    const start = () => {
-      if (intervalId !== null) return;
-      void refreshPlayback();
-      intervalId = setInterval(() => void refreshPlayback(), SPOTIFY_POLL_INTERVAL_MS);
-    };
-    const stop = () => {
-      if (intervalId === null) return;
-      clearInterval(intervalId);
-      intervalId = null;
-    };
-    const evaluate = () => {
-      if (document.visibilityState === 'visible' && document.hasFocus()) start();
-      else stop();
-    };
-
-    evaluate();
-    document.addEventListener('visibilitychange', evaluate);
-    window.addEventListener('focus', evaluate);
-    window.addEventListener('blur', evaluate);
-    return () => {
-      stop();
-      document.removeEventListener('visibilitychange', evaluate);
-      window.removeEventListener('focus', evaluate);
-      window.removeEventListener('blur', evaluate);
-    };
-  }, [active, connected]);
+    if (!active || !connected || !windowActive) return;
+    void refreshPlayback();
+    const intervalId = setInterval(() => void refreshPlayback(), SPOTIFY_POLL_INTERVAL_MS);
+    return () => clearInterval(intervalId);
+  }, [active, connected, windowActive]);
 }
