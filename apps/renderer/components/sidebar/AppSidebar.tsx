@@ -7,6 +7,7 @@ import { DEFAULT_WORKSPACE_ID, PrState, type Project, type Workspace } from '@fl
 import {
   archiveWorktree,
   loadProjects,
+  loadViewer,
   openCreateWorktree,
   removeProject,
   removeWorktree,
@@ -16,6 +17,7 @@ import {
   useProjects,
 } from '@/lib/projects';
 import { useWorktreeDiffStat, useWorktreePr } from '@/lib/git';
+import { useOnboarding } from '@/lib/onboarding';
 import { projectName } from '@/lib/paths';
 import { setSettingsOpen, useSettings } from '@/lib/settings';
 import { useWorktreeState, useWorktreeUnread } from '@/lib/tabStates';
@@ -276,11 +278,19 @@ export function AppSidebar() {
   const workspaceId = useWorkspace((s) => s.workspaceId);
   const projects = useProjects((s) => s.projects);
   const settingsOpen = useSettings((s) => s.settingsOpen);
+  const githubConnected = useOnboarding((s) => s.githubConnected);
 
   // Hydrate the persisted project list (and each project's worktrees) once.
   useEffect(() => {
     void loadProjects();
   }, []);
+
+  // Refresh the linked GitHub identity (login + avatar) whenever GitHub connects
+  // — otherwise a first-ever connect leaves the sidebar avatar empty until the
+  // next app launch, since the initial load runs before any account is linked.
+  useEffect(() => {
+    if (githubConnected) void loadViewer();
+  }, [githubConnected]);
 
   // A legacy working folder opened on the default workspace that isn't one of the
   // tracked projects. Worktrees are real workspaces shown under their project, so
