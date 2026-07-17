@@ -51,7 +51,12 @@ export function DiffPanel() {
   } else {
     body = (
       <div className="min-h-0 flex-1 overflow-auto" style={{ backgroundColor: 'var(--code-bg)' }}>
-        <DiffView patch={diff.patch} lang={lang} wrap={wrap} />
+        <DiffView
+          key={`${selected.path}:${selected.staged}`}
+          patch={diff.patch}
+          lang={lang}
+          wrap={wrap}
+        />
       </div>
     );
   }

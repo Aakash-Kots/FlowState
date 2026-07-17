@@ -5,10 +5,11 @@ import { ChatBlockType, ChatMessageRole, ClaudeSessionState } from '@flowstate/s
 import { ActivityIndicator, ChatItemKind } from '@/lib/enums/chat';
 import type { ToolResultBlock } from '@/lib/types/chat';
 import { groupChatItems } from '@/lib/chatItems';
-import { useChat } from '@/lib/chat';
+import { loadOlderMessages, useChat, useTabId } from '@/lib/chat';
 import { verbForTool } from '@/lib/constants/tools';
 import { formatDuration } from '@/lib/format';
 import { useElapsed } from '@/lib/hooks/useElapsed';
+import { useThrottledValue } from '@/lib/hooks/useThrottledValue';
 import { clearInitialising, useWorkspace } from '@/lib/workspace';
 import { EmptyChat } from './EmptyChat';
 import { InitialisingMessage } from './InitialisingMessage';
@@ -21,6 +22,9 @@ import { ToolUseRow } from './ToolUseRow';
 
 const NEAR_BOTTOM_PX = 80;
 
+/** Re-parse the live streaming markdown at most this often (ms), not per token. */
+const STREAM_RENDER_INTERVAL_MS = 66;
+
 /**
  * Scrollable conversation: persisted messages then the in-flight streaming
  * bubble. Permission/question prompts render in the floating input bar, not
@@ -28,8 +32,16 @@ const NEAR_BOTTOM_PX = 80;
  * scrollback isn't yanked away mid-stream.
  */
 export function ChatView() {
+  const tabId = useTabId();
   const messages = useChat((s) => s.messages);
+  const hasMoreBefore = useChat((s) => s.hasMoreBefore);
+  const loadingOlder = useChat((s) => s.loadingOlder);
   const streamingText = useChat((s) => s.streamingText);
+  // Cap markdown re-parsing of the in-flight reply to a fixed cadence — the raw
+  // text updates per token, but re-running ReactMarkdown+Prism that often is
+  // O(n²) over a long reply. The `streamingText` guard below still hides the
+  // block the instant the turn ends, so the finalized message never double-renders.
+  const throttledStreamingText = useThrottledValue(streamingText, STREAM_RENDER_INTERVAL_MS);
   const activeIndicator = useChat((s) => s.activeIndicator);
   const activeToolName = useChat((s) => s.activeToolName);
   const toolProgress = useChat((s) => s.toolProgress);
@@ -120,6 +132,19 @@ export function ChatView() {
       >
         {initialisingIssue && <InitialisingMessage issue={initialisingIssue} />}
 
+        {hasMoreBefore && (
+          <div className="flex justify-center pb-1">
+            <button
+              type="button"
+              onClick={() => void loadOlderMessages(tabId)}
+              disabled={loadingOlder}
+              className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground hover:text-foreground disabled:opacity-60"
+            >
+              {loadingOlder ? 'Loading…' : 'Load earlier messages'}
+            </button>
+          </div>
+        )}
+
         {messages.length === 0 && !streamingText && !initialisingIssue && <EmptyChat />}
 
         {items.map((item) => {
@@ -161,7 +186,7 @@ export function ChatView() {
           }
         })}
 
-        {streamingText && <Markdown>{streamingText}</Markdown>}
+        {streamingText && <Markdown>{throttledStreamingText ?? streamingText}</Markdown>}
 
         {(showWorking || activeIndicator || progress) && (
           <div className="flex items-center gap-2 text-xs text-muted-foreground">

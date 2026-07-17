@@ -42,6 +42,11 @@ export function openDb(): Db {
   const file = join(app.getPath('userData'), 'flowstate.db');
   sqlite = new Database(file);
   sqlite.pragma('journal_mode = WAL');
+  // NORMAL is the recommended durability level under WAL: it fsyncs at
+  // checkpoints rather than on every commit, cutting write latency on the hot
+  // per-message insert path with no corruption risk (only the last few committed
+  // transactions could be lost on an OS crash — acceptable for local app state).
+  sqlite.pragma('synchronous = NORMAL');
   sqlite.pragma('foreign_keys = ON');
   db = drizzle(sqlite, { schema });
   migrate(db, { migrationsFolder: migrationsFolder() });

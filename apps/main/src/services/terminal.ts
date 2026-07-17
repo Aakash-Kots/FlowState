@@ -33,10 +33,16 @@ type Session = {
   events: EventEmitter;
   /** Tail of the pty's output, replayed to a (re)attaching renderer. */
   scrollback: string;
+  /** Visible output accumulated since the last flush (coalesced before emitting). */
+  outBuffer: string;
+  /** Pending output-flush timer, or null when nothing is buffered. */
+  outFlush: ReturnType<typeof setTimeout> | null;
   /** True once a startup/injected command has been auto-typed (once per pty). */
   injected: boolean;
   /** Regex matching this session's hidden completion sentinel, or null if untracked. */
   marker: RegExp | null;
+  /** Global variant of `marker`, precompiled once so `filterSentinel` doesn't build one per chunk. */
+  markerGlobal: RegExp | null;
   /** The echoed sentinel source to strip from visible output, or null if untracked. */
   markerSource: string | null;
   /** Trailing bytes withheld from the last chunk in case a sentinel is split across chunks. */
@@ -60,6 +66,14 @@ type SpawnOpts = { id?: string; cwd?: string; cols?: number; rows?: number };
  * the buffer without bound.
  */
 const SCROLLBACK_LIMIT = 256 * 1024;
+
+/**
+ * Coalesce pty output into one IPC emit per this window (ms). A chatty process
+ * (a watch dev server, a noisy build) can push hundreds of small chunks a
+ * second; emitting each as its own subscription message floods the bridge.
+ * ~16ms (a frame) keeps output feeling instant while collapsing the bursts.
+ */
+const OUTPUT_FLUSH_MS = 16;
 
 /** Let the login shell source its rc files and print a prompt before auto-typing. */
 const STARTUP_DELAY_MS = 300;
@@ -97,9 +111,12 @@ function sentinelSource(id: string): string {
   return `; printf '\\n${MARKER_LEAD}${id}_%d_FS__\\n' "$?"`;
 }
 
-/** Matches the *executed* sentinel line (a real digit), never the echoed `%d` source. */
-function sentinelRegex(id: string): RegExp {
-  return new RegExp(`${MARKER_LEAD}${id}_(\\d+)_FS__`);
+/**
+ * Matches the *executed* sentinel line (a real digit), never the echoed `%d`
+ * source. Pass `global` for the sweep-all-matches variant used by the filter.
+ */
+function sentinelRegex(id: string, global = false): RegExp {
+  return new RegExp(`${MARKER_LEAD}${id}_(\\d+)_FS__`, global ? 'g' : undefined);
 }
 
 export class TerminalService {
@@ -178,6 +195,7 @@ export class TerminalService {
     }
     const track = (opts.trackCompletion ?? false) && process.platform !== 'win32';
     session.marker = track ? sentinelRegex(id) : null;
+    session.markerGlobal = track ? sentinelRegex(id, true) : null;
     session.markerSource = track ? sentinelSource(id) : null;
     session.trackedCommand = track ? command : null;
     session.trackedStartedAt = track ? Date.now() : null;
@@ -207,8 +225,11 @@ export class TerminalService {
       pty: child,
       events,
       scrollback: '',
+      outBuffer: '',
+      outFlush: null,
       injected: false,
       marker: null,
+      markerGlobal: null,
       markerSource: null,
       filterCarry: '',
       trackedCommand: null,
@@ -216,6 +237,7 @@ export class TerminalService {
     };
     child.onData((chunk) => this.handleData(id, session, chunk));
     child.onExit(({ exitCode }) => {
+      this.flushOut(session); // deliver any buffered tail before the exit signal
       events.emit('exit', exitCode);
       this.sessions.delete(id);
     });
@@ -232,6 +254,7 @@ export class TerminalService {
     let write = `${command}\r`;
     if (track) {
       session.marker = sentinelRegex(id);
+      session.markerGlobal = sentinelRegex(id, true);
       session.markerSource = sentinelSource(id);
       session.trackedCommand = command;
       session.trackedStartedAt = Date.now();
@@ -249,12 +272,31 @@ export class TerminalService {
     }, STARTUP_DELAY_MS);
   }
 
-  /** Filter the completion sentinel out of a chunk, record completion, then fan out. */
+  /** Filter the completion sentinel out of a chunk, record completion, then buffer for a coalesced emit. */
   private handleData(id: string, session: Session, chunk: string): void {
     const visible = session.marker ? this.filterSentinel(id, session, chunk) : chunk;
     if (!visible) return;
-    session.scrollback = (session.scrollback + visible).slice(-SCROLLBACK_LIMIT);
-    session.events.emit('data', visible);
+    this.bufferOut(session, visible);
+  }
+
+  /** Accumulate visible output and schedule a coalesced flush. */
+  private bufferOut(session: Session, text: string): void {
+    session.outBuffer += text;
+    if (session.outFlush) return;
+    session.outFlush = setTimeout(() => this.flushOut(session), OUTPUT_FLUSH_MS);
+  }
+
+  /** Emit buffered output as one chunk, appending it to scrollback in a single slice. */
+  private flushOut(session: Session): void {
+    if (session.outFlush) {
+      clearTimeout(session.outFlush);
+      session.outFlush = null;
+    }
+    if (!session.outBuffer) return;
+    const data = session.outBuffer;
+    session.outBuffer = '';
+    session.scrollback = (session.scrollback + data).slice(-SCROLLBACK_LIMIT);
+    session.events.emit('data', data);
   }
 
   /**
@@ -268,7 +310,9 @@ export class TerminalService {
     session.filterCarry = '';
 
     // Executed result line → capture exit code, emit completion, drop the line.
-    s = s.replace(new RegExp(session.marker!.source, 'g'), (_m, code: string) => {
+    // `markerGlobal` is precompiled with the session (not rebuilt per chunk);
+    // `String.replace` resets its lastIndex, so reusing the global regex is safe.
+    s = s.replace(session.markerGlobal!, (_m, code: string) => {
       const exitCode = Number(code);
       this.completions.set(id, exitCode);
       this.completionBus.emit(id, exitCode);
@@ -370,6 +414,7 @@ export class TerminalService {
   kill(id: string): void {
     const session = this.sessions.get(id);
     if (!session) return;
+    if (session.outFlush) clearTimeout(session.outFlush);
     session.pty.kill();
     this.sessions.delete(id);
     this.completions.delete(id);
@@ -390,7 +435,10 @@ export class TerminalService {
 
   /** Kill every live pty — called on app quit. */
   disposeAll(): void {
-    for (const { pty: child } of this.sessions.values()) child.kill();
+    for (const session of this.sessions.values()) {
+      if (session.outFlush) clearTimeout(session.outFlush);
+      session.pty.kill();
+    }
     this.sessions.clear();
     this.completions.clear();
   }

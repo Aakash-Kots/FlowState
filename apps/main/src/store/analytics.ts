@@ -9,7 +9,7 @@ import {
   type LifecycleStats,
 } from '@flowstate/shared';
 import { sql } from 'drizzle-orm';
-import { getCommitStats, getCommitsByDay, getTerminalRunStats } from './activity';
+import { getTerminalRunStats } from './activity';
 import { getDb } from './db';
 import { projects, workspaces } from './schema';
 import {
@@ -29,8 +29,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 // Helpers //
 /////////////
 
-/** The `created_at` ISO cutoff for a range, or null for all-time. */
-function rangeCutoff(range: AnalyticsRange): string | null {
+/** The ISO cutoff for a range, or null for all-time. */
+export function rangeCutoff(range: AnalyticsRange): string | null {
   switch (range) {
     case AnalyticsRange.Last7Days:
       return new Date(Date.now() - 7 * DAY_MS).toISOString();
@@ -70,8 +70,14 @@ export function getLifecycleStats(): LifecycleStats {
   };
 }
 
-/** Everything the analytics page needs for one range, in a single call. */
-export function getAnalyticsSummary(range: AnalyticsRange): AnalyticsSummary {
+/**
+ * The DB-derived slice of the analytics summary for one range. The commit
+ * aggregates (`commitsByDay` / `commitStats`) come from live `git log` and are
+ * composed on top of this at the router — see {@link getCommitHistoryStats}.
+ */
+export function getAnalyticsSummary(
+  range: AnalyticsRange,
+): Omit<AnalyticsSummary, 'commitsByDay' | 'commitStats'> {
   const since = rangeCutoff(range);
   return {
     totals: getUsageTotalsRange(since),
@@ -79,8 +85,6 @@ export function getAnalyticsSummary(range: AnalyticsRange): AnalyticsSummary {
     usageByModel: getUsageByModel(since),
     usageByWorkspace: getUsageByWorkspace(since),
     lifecycle: getLifecycleStats(),
-    commitsByDay: getCommitsByDay(since),
-    commitStats: getCommitStats(since),
     terminalRunStats: getTerminalRunStats(since),
   };
 }

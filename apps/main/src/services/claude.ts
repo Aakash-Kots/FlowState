@@ -54,9 +54,11 @@ import {
   mergeModelOptions,
   type ChatBlock,
   type ChatEvent,
+  type ChatHistoryPage,
   type ChatImageInput,
   type ChatMessage,
   type ChatSnapshot,
+  type ChatSnapshotEntry,
   type ModelOption,
   type PermissionRequest,
   type QuestionItem,
@@ -72,7 +74,9 @@ import {
 import {
   appendMessage,
   deleteTabTranscript,
+  getRecentTabChatRows,
   getTab,
+  getTabChatRowsBefore,
   getTabTranscript,
   getWorkspace,
   listAllTabs,
@@ -80,6 +84,7 @@ import {
   recordUsageEvent,
   upsertTab,
   upsertWorkspace,
+  type TabChatPage,
 } from '../store';
 import { SdkSystemSubtype } from '../lib/enums/claude';
 import { authService } from './auth';
@@ -122,6 +127,18 @@ type RawBlock = {
 
 /** The built-in tool Claude uses to ask the user a structured question. */
 const ASK_USER_QUESTION_TOOL = 'AskUserQuestion';
+
+/**
+ * How many recent transcript entries a tab hydrates with, and how many older
+ * entries each scroll-back page loads. Bounding the initial load keeps opening a
+ * long-running tab cheap (one full-transcript read + validate used to run on
+ * every open); older history pages in on demand.
+ */
+const SNAPSHOT_MESSAGE_LIMIT = 200;
+const HISTORY_PAGE_SIZE = 100;
+
+/** Coalesce streamed `text_delta` tokens into one IPC emit per this window (ms). */
+const TEXT_FLUSH_MS = 33;
 
 /**
  * Signatures of a crash where the SDK's native `claude` runtime never launched
@@ -466,6 +483,14 @@ class ClaudeSession {
    * the snapshot failed (best-effort — the summary is simply omitted).
    */
   turnBaseline: Promise<string | null> | null = null;
+  /**
+   * Coalesced streaming text: the SDK pushes a `text_delta` per token, but
+   * emitting one IPC message each is wasteful. Deltas accumulate here and flush
+   * as a single `TextDelta` on a short timer (or immediately before any other
+   * event, to preserve ordering).
+   */
+  textBuffer = '';
+  textFlush: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     readonly tabId: string,
@@ -930,16 +955,12 @@ export class ClaudeService {
     this.usageEvents.emit('usage', patched);
   }
 
-  /** Hydrate a tab on mount: persisted state, resume id, cwd, and transcript. */
+  /** Hydrate a tab on mount: persisted state, resume id, cwd, and recent transcript. */
   getSnapshot(tabId: string): ChatSnapshot {
     const tab = getTab(tabId);
     const session = this.sessions.get(tabId);
-    const messages: ChatSnapshot['messages'] = [];
-    for (const row of getTabTranscript(tabId)) {
-      // Rows persisted by older builds may not match the normalized shape — skip them.
-      const parsed = chatMessageSchema.safeParse(row.content);
-      if (parsed.success) messages.push({ message: parsed.data, createdAt: row.createdAt });
-    }
+    const page = getRecentTabChatRows(tabId, SNAPSHOT_MESSAGE_LIMIT);
+    const { messages, oldestId } = this.validatePage(page);
     return {
       state: tab?.claudeState ?? ClaudeSessionState.Idle,
       sessionId: tab?.claudeSessionId ?? null,
@@ -949,12 +970,35 @@ export class ClaudeService {
       effort: session?.effort ?? tab?.effort ?? null,
       permissionMode: session?.permissionMode ?? tab?.permissionMode ?? PermissionMode.Default,
       messages,
+      oldestId,
+      hasMoreBefore: page.hasMoreBefore,
       pendingPermissions: session
         ? [...session.pendingPermissions.values()].map((p) => p.request)
         : [],
       pendingQuestions: session ? [...session.pendingQuestions.values()].map((p) => p.request) : [],
       skills: session?.skills ?? [],
     };
+  }
+
+  /** Load a page of older transcript entries before `beforeId`, for scroll-back paging. */
+  loadOlderMessages(tabId: string, beforeId: number): ChatHistoryPage {
+    const page = getTabChatRowsBefore(tabId, beforeId, HISTORY_PAGE_SIZE);
+    const { messages, oldestId } = this.validatePage(page);
+    return { messages, oldestId, hasMoreBefore: page.hasMoreBefore };
+  }
+
+  /**
+   * Validate a lean transcript page into snapshot entries in a single zod pass.
+   * The cursor (`oldestId`) is the oldest *raw* row's id so it always advances,
+   * even if that row failed validation (older builds may not match the shape).
+   */
+  private validatePage(page: TabChatPage): { messages: ChatSnapshotEntry[]; oldestId: number | null } {
+    const messages: ChatSnapshotEntry[] = [];
+    for (const row of page.rows) {
+      const parsed = chatMessageSchema.safeParse(row.content);
+      if (parsed.success) messages.push({ message: parsed.data, createdAt: row.createdAt });
+    }
+    return { messages, oldestId: page.rows[0]?.id ?? null };
   }
 
   /** Fetch and cache the session's skills, then broadcast them to the renderer. */
@@ -1029,6 +1073,7 @@ export class ClaudeService {
     const session = this.sessions.get(tabId);
     if (!session) return;
     this.sessions.delete(tabId);
+    if (session.textFlush) clearTimeout(session.textFlush);
     this.resolveAllPermissions(session, {
       behavior: 'deny',
       message: 'The session was closed.',
@@ -1157,9 +1202,7 @@ export class ClaudeService {
           content_block?: RawBlock;
         };
         if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
-          if (event.delta.text) {
-            this.emit(tabId, { kind: ChatEventKind.TextDelta, text: event.delta.text });
-          }
+          if (event.delta.text) this.bufferText(session, event.delta.text);
         } else if (event.type === 'content_block_start' && event.content_block?.type) {
           this.emit(tabId, {
             kind: ChatEventKind.BlockStart,
@@ -1477,7 +1520,33 @@ export class ClaudeService {
   }
 
   private emit(tabId: string, event: ChatEvent): void {
+    // Any non-text event must land after the streamed text that preceded it —
+    // flush the pending TextDelta buffer first so ordering is preserved.
+    if (event.kind !== ChatEventKind.TextDelta) {
+      const session = this.sessions.get(tabId);
+      if (session) this.flushText(session);
+    }
     this.events.emit(tabId, event);
+  }
+
+  /** Accumulate a streamed text delta and schedule a coalesced flush. */
+  private bufferText(session: ClaudeSession, text: string): void {
+    session.textBuffer += text;
+    if (session.textFlush) return;
+    session.textFlush = setTimeout(() => this.flushText(session), TEXT_FLUSH_MS);
+  }
+
+  /** Emit any buffered streaming text as a single `TextDelta` and clear the timer. */
+  private flushText(session: ClaudeSession): void {
+    if (session.textFlush) {
+      clearTimeout(session.textFlush);
+      session.textFlush = null;
+    }
+    if (!session.textBuffer) return;
+    const text = session.textBuffer;
+    session.textBuffer = '';
+    // Emit directly (not via `emit`) — this IS the text flush, so it must not recurse.
+    this.events.emit(session.tabId, { kind: ChatEventKind.TextDelta, text });
   }
 }
 

@@ -224,9 +224,22 @@ export type ChatSnapshot = {
   model: string | null;
   effort: ReasoningEffort | null;
   permissionMode: PermissionMode;
+  /** The most recent page of transcript entries (oldest-first within the page). */
   messages: ChatSnapshotEntry[];
+  /** DB row id of the oldest loaded entry — the cursor for paging older history. */
+  oldestId: number | null;
+  /** Whether older entries exist before `oldestId` (drives "load earlier"). */
+  hasMoreBefore: boolean;
   pendingPermissions: PermissionRequest[];
   pendingQuestions: QuestionRequest[];
   /** Skills the session can run right now (empty until a session exists). */
   skills: SkillOption[];
+};
+
+/** A page of older transcript entries, fetched when scrolling back through history. */
+export type ChatHistoryPage = {
+  messages: ChatSnapshotEntry[];
+  /** DB row id of the oldest entry in this page, or null when none remained. */
+  oldestId: number | null;
+  hasMoreBefore: boolean;
 };

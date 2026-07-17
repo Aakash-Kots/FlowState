@@ -2,13 +2,7 @@
 
 import { useChat } from '@/lib/chat';
 import { EXIT_PLAN_MODE_TOOL, iconForTool } from '@/lib/constants/tools';
-import {
-  buildEditPatch,
-  buildMultiEditPatch,
-  editDiffStat,
-  multiEditDiffStat,
-  writeDiffStat,
-} from '@/lib/diff';
+import { editDiffStat, multiEditDiffStat, writeDiffStat } from '@/lib/diff';
 import { langForPath } from '@/lib/highlight';
 import {
   bashInputSchema,
@@ -28,7 +22,8 @@ import { FileRef } from '../FileRef';
 import { DefaultToolRow } from './DefaultToolRow';
 import {
   CodePreview,
-  DiffPreview,
+  EditDiffPreview,
+  MultiEditDiffPreview,
   PlanDocument,
   PlanPreview,
   TextPreview,
@@ -158,7 +153,7 @@ export function EditToolRow({ block, result }: ToolRowProps) {
       counts={editDiffStat(old_string, new_string)}
       isError={result?.isError}
       preview={
-        <DiffPreview patch={buildEditPatch(file_path, old_string, new_string)} lang={langForPath(file_path)} />
+        <EditDiffPreview filePath={file_path} oldString={old_string} newString={new_string} />
       }
     />
   );
@@ -168,10 +163,7 @@ export function MultiEditToolRow({ block, result }: ToolRowProps) {
   const parsed = multiEditInputSchema.safeParse(block.input);
   if (!parsed.success) return <DefaultToolRow block={block} result={result} />;
   const { file_path, edits } = parsed.data;
-  const patch = buildMultiEditPatch(
-    file_path,
-    edits.map((e) => ({ oldString: e.old_string, newString: e.new_string })),
-  );
+  const replacements = edits.map((e) => ({ oldString: e.old_string, newString: e.new_string }));
   return (
     <ToolRowShell
       icon={<ToolIcon name="MultiEdit" />}
@@ -179,12 +171,10 @@ export function MultiEditToolRow({ block, result }: ToolRowProps) {
       target={<FileRef path={file_path} />}
       targetAsChip
       targetTitle={file_path}
-      counts={multiEditDiffStat(
-        edits.map((e) => ({ oldString: e.old_string, newString: e.new_string })),
-      )}
+      counts={multiEditDiffStat(replacements)}
       meta={`${edits.length} edit${edits.length === 1 ? '' : 's'}`}
       isError={result?.isError}
-      preview={<DiffPreview patch={patch} lang={langForPath(file_path)} />}
+      preview={<MultiEditDiffPreview filePath={file_path} edits={replacements} />}
     />
   );
 }

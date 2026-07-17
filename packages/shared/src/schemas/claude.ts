@@ -19,6 +19,7 @@ import { GitFileStatus } from '../enums/git';
 import type {
   ChatBlock,
   ChatEvent,
+  ChatHistoryPage,
   ChatImageInput,
   ChatMessage,
   ChatSnapshot,
@@ -206,7 +207,15 @@ export const chatSnapshotSchema: z.ZodType<ChatSnapshot> = z.object({
   effort: reasoningEffortSchema.nullable(),
   permissionMode: z.nativeEnum(PermissionMode),
   messages: z.array(z.object({ message: chatMessageSchema, createdAt: z.string().datetime() })),
+  oldestId: z.number().nullable(),
+  hasMoreBefore: z.boolean(),
   pendingPermissions: z.array(permissionRequestSchema),
   pendingQuestions: z.array(questionRequestSchema),
   skills: z.array(skillOptionSchema),
+});
+
+export const chatHistoryPageSchema: z.ZodType<ChatHistoryPage> = z.object({
+  messages: z.array(z.object({ message: chatMessageSchema, createdAt: z.string().datetime() })),
+  oldestId: z.number().nullable(),
+  hasMoreBefore: z.boolean(),
 });

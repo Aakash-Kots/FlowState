@@ -6,7 +6,6 @@
  * the linked account's token.
  */
 import {
-  ActivityType,
   type CreatePrResult,
   type GitDiffStat,
   type GitFileDiff,
@@ -21,7 +20,7 @@ import {
 } from '@flowstate/shared';
 import { TRPCError } from '@trpc/server';
 import { observable } from '@trpc/server/observable';
-import { getProject, getWorkspace, recordActivityEvent } from '../store';
+import { getProject, getWorkspace } from '../store';
 import { GitService } from '../services/git';
 import { gitWatcherService } from '../services/gitWatcher';
 import { githubService } from '../services/github';
@@ -123,29 +122,9 @@ export const gitRouter = router({
     return new GitService(ws.worktreePath).discard(input.paths);
   }),
 
-  commit: publicProcedure.input(commitInputSchema).mutation(async ({ input }) => {
+  commit: publicProcedure.input(commitInputSchema).mutation(({ input }) => {
     const ws = requireWorkspace(input.workspaceId);
-    const result = await new GitService(ws.worktreePath).commit(input.summary, input.description);
-    // Record to the activity ledger for the analytics page — best-effort, so a
-    // logging failure never fails the commit the user just made.
-    try {
-      recordActivityEvent({
-        workspaceId: ws.id,
-        projectId: ws.projectId,
-        createdAt: new Date().toISOString(),
-        data: {
-          type: ActivityType.GitCommit,
-          hash: result.hash,
-          summary: input.summary,
-          insertions: result.insertions,
-          deletions: result.deletions,
-          filesChanged: result.filesChanged,
-        },
-      });
-    } catch {
-      // ignore ledger write failures
-    }
-    return result;
+    return new GitService(ws.worktreePath).commit(input.summary, input.description);
   }),
 
   fetch: publicProcedure.input(gitWorkspaceInputSchema).mutation(async ({ input }) => {

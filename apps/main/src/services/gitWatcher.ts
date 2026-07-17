@@ -18,8 +18,14 @@ import { getWorkspace } from '../store';
 // Constants //
 ///////////////
 
-/** Coalesce a burst of filesystem events into one emit per this window (ms). */
-const DEBOUNCE_MS = 200;
+/**
+ * Coalesce a burst of filesystem events into one emit per this window (ms).
+ * Each emit makes the renderer re-run `git.status` (several git subprocesses),
+ * so during an active agent turn — which writes files continuously — a tighter
+ * window just multiplies that cost with no visible benefit. ~450ms keeps the
+ * changes view feeling live while collapsing write bursts into far fewer refreshes.
+ */
+const DEBOUNCE_MS = 450;
 
 /////////////
 // Helpers //

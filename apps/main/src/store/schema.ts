@@ -164,6 +164,10 @@ export const activityEvents = sqliteTable(
   (t) => [
     index('idx_activity_events_type').on(t.type),
     index('idx_activity_events_created').on(t.createdAt),
+    // Analytics reads filter by `type` AND a `created_at` range together (e.g.
+    // terminal-run stats); a composite index lets both predicates use the index
+    // instead of scanning one dimension and filtering the other.
+    index('idx_activity_events_type_created').on(t.type, t.createdAt),
   ],
 );
 

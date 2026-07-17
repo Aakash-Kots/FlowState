@@ -15,7 +15,7 @@ import {
   type UsageWorkspaceStat,
   newUsageEventSchema,
 } from '@flowstate/shared';
-import { gte, sql } from 'drizzle-orm';
+import { gte, lt, sql } from 'drizzle-orm';
 import { getDb } from './db';
 import { getProject } from './projects';
 import { projects, usageEvents, workspaces } from './schema';
@@ -28,6 +28,11 @@ import { getWorkspace } from './workspaces';
 /** `created_at >= since` when a cutoff is set, else no time filter. */
 function sinceFilter(since: string | null) {
   return since ? gte(usageEvents.createdAt, since) : undefined;
+}
+
+/** Delete usage rows older than `cutoff` (ISO). Returns the number pruned. */
+export function pruneUsageEventsBefore(cutoff: string): number {
+  return getDb().delete(usageEvents).where(lt(usageEvents.createdAt, cutoff)).run().changes;
 }
 
 /** Append one turn's usage to the ledger, snapshotting the workspace identity. */
