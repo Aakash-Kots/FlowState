@@ -9,11 +9,18 @@
  * subscription the cost is money not spent, so summing these rows yields the
  * savings/spend graph. `workspaceId`/`tabId` are denormalized (the owning rows
  * may since have been deleted); `tabId` is null once its tab is gone.
+ * `workspaceName`/`branch`/`projectId`/`projectName` are an identity snapshot
+ * taken at write time so per-workspace spend stays labelled after the workspace
+ * is hard-deleted; each is null when it couldn't be resolved when recorded.
  */
 export type UsageEvent = {
   id: number;
   workspaceId: string;
   tabId: string | null;
+  workspaceName: string | null;
+  branch: string | null;
+  projectId: string | null;
+  projectName: string | null;
   sessionId: string;
   model: string | null;
   costUsd: number;
@@ -27,8 +34,14 @@ export type UsageEvent = {
   createdAt: string;
 };
 
-/** A usage row to record — the persisted shape minus the autoincrement `id`. */
-export type NewUsageEvent = Omit<UsageEvent, 'id'>;
+/**
+ * A usage row to record — the persisted shape minus the autoincrement `id` and
+ * the identity snapshot, which the store derives from `workspaceId` at insert.
+ */
+export type NewUsageEvent = Omit<
+  UsageEvent,
+  'id' | 'workspaceName' | 'branch' | 'projectId' | 'projectName'
+>;
 
 /** Running totals across the ledger. */
 export type UsageTotals = {

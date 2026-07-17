@@ -42,10 +42,16 @@ export type UsageModelStat = {
   turns: number;
 };
 
-/** Spend + turn totals for one workspace (name resolved when the row still exists). */
+/**
+ * Spend + turn totals for one workspace. `name`/`branch`/`project` resolve from
+ * the live row when it exists, else from the ledger's write-time snapshot; each
+ * is null (or "Deleted workspace" for `name`) when neither is available.
+ */
 export type UsageWorkspaceStat = {
   workspaceId: string;
   name: string;
+  branch: string | null;
+  project: string | null;
   costUsd: number;
   turns: number;
 };
