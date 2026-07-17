@@ -14,9 +14,8 @@ export const KEYBINDINGS_SETTING_KEY = 'keybindings';
 /** Built-in bindings, one per command. */
 export const DEFAULT_KEYBINDINGS: Keybinding[] = [
   { command: ShortcutCommand.OpenCommandPalette, keys: 'mod+k' },
-  // ⌘⇧F opens the fuzzy file/issue search. (⌘F cycles views — see NextView below —
-  // so search lives on the shifted chord rather than the bare ⌘F.)
-  { command: ShortcutCommand.OpenFileFinder, keys: 'mod+shift+f' },
+  // ⌘P opens the fuzzy file/issue finder (free of any native-menu accelerator).
+  { command: ShortcutCommand.OpenFileFinder, keys: 'mod+p' },
   // ⌘⇧P toggles a Markdown file tab between rendered preview and source.
   { command: ShortcutCommand.ToggleFilePreview, keys: 'mod+shift+p' },
   { command: ShortcutCommand.ShowShortcutsHelp, keys: 'mod+/' },
