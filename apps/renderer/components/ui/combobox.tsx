@@ -96,6 +96,7 @@ export function Combobox<T>({
     >
       {(close) => (
         <ComboboxPanel
+          placement={placement}
           items={items}
           getKey={getKey}
           getFilterText={getFilterText}
@@ -132,6 +133,7 @@ export function Combobox<T>({
  * free), which is why the search input can `autoFocus`.
  */
 function ComboboxPanel<T>({
+  placement,
   items,
   getKey,
   getFilterText,
@@ -144,6 +146,7 @@ function ComboboxPanel<T>({
   onSelect,
   onClear,
 }: {
+  placement?: Placement;
   items: T[];
   getKey: (item: T) => string;
   getFilterText: (item: T) => string;
@@ -192,25 +195,35 @@ function ComboboxPanel<T>({
     }
   };
 
+  // The panel opens upward for `top` placement (the default), so put the search
+  // input on the edge nearest the trigger — the bottom — keeping it on-screen even
+  // when a long list would otherwise push it (and the panel's top) off the viewport.
+  // Only the scrollable list can then be clipped, and it scrolls.
+  const searchAtBottom = (placement ?? 'top') === 'top';
+
+  const searchInput = (
+    <div className={cn('relative', searchAtBottom ? 'mt-1' : 'mb-1')}>
+      <input
+        autoFocus
+        value={query}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setActive(0);
+        }}
+        onKeyDown={onKeyDown}
+        placeholder={placeholder}
+        spellCheck={false}
+        className="h-7 w-full rounded-md border border-border bg-background pl-2 pr-7 text-xs text-neutral-100 placeholder:text-muted-foreground focus:border-primary/50 focus:outline-none"
+      />
+      {loading ? (
+        <Loader2 className="absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 animate-spin text-muted-foreground" />
+      ) : null}
+    </div>
+  );
+
   return (
     <div className="flex w-72 flex-col">
-      <div className="relative mb-1">
-        <input
-          autoFocus
-          value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setActive(0);
-          }}
-          onKeyDown={onKeyDown}
-          placeholder={placeholder}
-          spellCheck={false}
-          className="h-7 w-full rounded-md border border-border bg-background pl-2 pr-7 text-xs text-neutral-100 placeholder:text-muted-foreground focus:border-primary/50 focus:outline-none"
-        />
-        {loading ? (
-          <Loader2 className="absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 animate-spin text-muted-foreground" />
-        ) : null}
-      </div>
+      {searchAtBottom ? null : searchInput}
       <div ref={listRef} className="max-h-56 overflow-y-auto">
         {onClear && clear ? (
           <button
@@ -257,6 +270,7 @@ function ComboboxPanel<T>({
           })
         )}
       </div>
+      {searchAtBottom ? searchInput : null}
     </div>
   );
 }

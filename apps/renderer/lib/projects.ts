@@ -397,6 +397,20 @@ export async function saveProjectScripts(
 }
 
 /**
+ * Set the branch new worktrees of a project are cut from (null falls back to the
+ * repo's default branch) and patch the project in the store.
+ */
+export async function saveProjectBaseBranch(
+  projectId: string,
+  worktreeBaseBranch: string | null,
+): Promise<void> {
+  const project = await trpc().projects.setBaseBranch.mutate({ projectId, worktreeBaseBranch });
+  useProjects.setState((s) => ({
+    projects: s.projects.map((p) => (p.id === projectId ? project : p)),
+  }));
+}
+
+/**
  * Drop a worktree from the sidebar tree right away and return a `restore` that
  * re-inserts it at its original position (idempotent — a no-op if it's already
  * back). Lets remove/archive update optimistically, then roll back if the

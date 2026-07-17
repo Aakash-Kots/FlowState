@@ -25,6 +25,9 @@ type SettingsState = {
   /** Whether the full-screen Analytics surface is open (UI-only, not persisted).
    * Mutually exclusive with `settingsOpen` — only one full-body overlay shows. */
   analyticsOpen: boolean;
+  /** Id of the project whose settings page is open, or null (UI-only, not persisted).
+   * Mutually exclusive with the other full-body overlays. */
+  projectSettingsOpen: string | null;
   /** Width (px) of the chat view's Skills & Actions panel. */
   skillsPanelWidth: number;
   /** Whether the Skills & Actions panel is expanded. */
@@ -45,6 +48,7 @@ const INITIAL: SettingsState = {
   archiveRetention: ArchiveRetention.OneDay,
   settingsOpen: false,
   analyticsOpen: false,
+  projectSettingsOpen: null,
   skillsPanelWidth: 360,
   skillsPanelOpen: true,
   terminalPanelFraction: 0.5,
@@ -143,14 +147,28 @@ export function setArchiveRetention(retention: ArchiveRetention): void {
   void trpc().settings.setArchiveRetention.mutate({ retention });
 }
 
-/** Open or close the Settings surface; opening it closes Analytics. */
+/** Open or close the Settings surface; opening it closes the other full-body overlays. */
 export function setSettingsOpen(open: boolean): void {
-  useSettings.setState({ settingsOpen: open, ...(open ? { analyticsOpen: false } : {}) });
+  useSettings.setState({
+    settingsOpen: open,
+    ...(open ? { analyticsOpen: false, projectSettingsOpen: null } : {}),
+  });
 }
 
-/** Open or close the Analytics surface; opening it closes Settings. */
+/** Open or close the Analytics surface; opening it closes the other full-body overlays. */
 export function setAnalyticsOpen(open: boolean): void {
-  useSettings.setState({ analyticsOpen: open, ...(open ? { settingsOpen: false } : {}) });
+  useSettings.setState({
+    analyticsOpen: open,
+    ...(open ? { settingsOpen: false, projectSettingsOpen: null } : {}),
+  });
+}
+
+/** Open a project's settings page (by id) or close it (null); opening closes the others. */
+export function setProjectSettingsOpen(projectId: string | null): void {
+  useSettings.setState({
+    projectSettingsOpen: projectId,
+    ...(projectId ? { settingsOpen: false, analyticsOpen: false } : {}),
+  });
 }
 
 /** Clamp range for the right-hand panel width (mirrors the main store). */

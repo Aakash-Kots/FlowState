@@ -170,7 +170,8 @@ export const worktreeRouter = router({
       if (!project) throw new TRPCError({ code: 'NOT_FOUND', message: 'Project not found.' });
 
       const repoRoot = project.localPath;
-      const baseRef = input.baseRef?.trim() || project.defaultBranch;
+      const baseRef =
+        input.baseRef?.trim() || project.worktreeBaseBranch || project.defaultBranch;
       // Branch name: an explicit override (e.g. the user-edited Linear branch), else
       // the linked issue's suggested branch, else a friendly random name that
       // `maybeGenerateTitle` later renames to a slug of the first chat. Made unique

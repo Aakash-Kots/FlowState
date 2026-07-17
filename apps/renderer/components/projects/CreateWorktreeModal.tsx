@@ -55,7 +55,7 @@ export function CreateWorktreeModal() {
   // latest assigned issues if the account is linked.
   useEffect(() => {
     if (!open) return;
-    setBaseRef(project?.defaultBranch ?? '');
+    setBaseRef(project?.worktreeBaseBranch ?? project?.defaultBranch ?? '');
     setPrompt('');
     setPlanMode(false);
     setLinearIssue(linearSeed);
@@ -64,7 +64,14 @@ export function CreateWorktreeModal() {
     editorRef.current?.clear();
     editorRef.current?.focus();
     if (linearConnected) void refreshAssignedIssues();
-  }, [open, projectId, project?.defaultBranch, linearConnected, linearSeed]);
+  }, [
+    open,
+    projectId,
+    project?.worktreeBaseBranch,
+    project?.defaultBranch,
+    linearConnected,
+    linearSeed,
+  ]);
 
   // Tickets are created constantly, so re-fetch when the window regains focus
   // while the modal is open (e.g. after creating a ticket in Linear).

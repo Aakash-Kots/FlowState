@@ -10,6 +10,7 @@ import type {
   GithubRepo,
   GithubViewer,
   Project,
+  UpdateProjectBaseBranchInput,
   UpdateProjectScriptsInput,
 } from '../types/project';
 
@@ -37,6 +38,7 @@ export const projectSchema: z.ZodType<Project> = z.object({
   cloneUrl: z.string(),
   localPath: z.string(),
   defaultBranch: z.string(),
+  worktreeBaseBranch: z.string().nullable(),
   private: z.boolean(),
   setupScript: z.string().nullable(),
   runScript: z.string().nullable(),
@@ -55,3 +57,9 @@ export const updateProjectScriptsInputSchema: z.ZodType<UpdateProjectScriptsInpu
   setupScript: z.string().nullable(),
   runScript: z.string().nullable(),
 });
+
+export const updateProjectBaseBranchInputSchema: z.ZodType<UpdateProjectBaseBranchInput> =
+  z.object({
+    projectId: z.string(),
+    worktreeBaseBranch: z.string().nullable(),
+  });

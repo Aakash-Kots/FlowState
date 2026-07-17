@@ -14,6 +14,7 @@ import { SettingsPage } from '@/components/settings/SettingsPage';
 import { SoundToggle } from '@/components/settings/SoundToggle';
 import { AppSidebar } from '@/components/sidebar/AppSidebar';
 import { ProjectSelector } from '@/components/projects/ProjectSelector';
+import { ProjectSettingsPage } from '@/components/projects/ProjectSettingsPage';
 import { GitHeaderButton } from '@/components/git/GitHeaderButton';
 import { SpotifyButton } from '@/components/spotify/SpotifyButton';
 import { ShortcutProvider } from '@/components/shortcuts/ShortcutProvider';
@@ -75,6 +76,7 @@ function WorkspaceShell() {
   const onDefaultWorkspace = useWorkspace((s) => s.workspaceId) === DEFAULT_WORKSPACE_ID;
   const settingsOpen = useSettings((s) => s.settingsOpen);
   const analyticsOpen = useSettings((s) => s.analyticsOpen);
+  const projectSettingsOpen = useSettings((s) => s.projectSettingsOpen);
 
   return (
     <SidebarProvider className="h-screen">
@@ -92,7 +94,7 @@ function WorkspaceShell() {
               )}
             </div>
             {/* Centered Workspace/Terminals toggle, independent of the side content widths. */}
-            {!onDefaultWorkspace && !settingsOpen && !analyticsOpen && (
+            {!onDefaultWorkspace && !settingsOpen && !analyticsOpen && !projectSettingsOpen && (
               <div className="absolute left-1/2 -translate-x-1/2">
                 <ViewModeTabs />
               </div>
@@ -109,6 +111,8 @@ function WorkspaceShell() {
             <AnalyticsPage />
           ) : settingsOpen ? (
             <SettingsPage />
+          ) : projectSettingsOpen ? (
+            <ProjectSettingsPage projectId={projectSettingsOpen} />
           ) : onDefaultWorkspace ? (
             <ProjectSelector />
           ) : (
