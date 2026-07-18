@@ -128,15 +128,15 @@ Security posture: `contextIsolation: true`, `nodeIntegration: false`, `sandbox: 
 
 1. Pick a Linear ticket → 2. FlowState creates a worktree + branch named after it → 3. Claude Code session starts in that worktree with ticket context in the prompt → 4. Review the diff in the Git panel, run tests in the terminal → 5. Commit + push → 6. Linear status updates automatically.
 
-## 5. Packaging & Distribution (macOS DMG)
+## 5. Packaging & Distribution (macOS DMG + Windows NSIS)
 
-- **electron-builder** targets: `dmg` and `zip` (zip required for auto-update), `arm64` + `x64` (or universal).
-- **Native modules:** `node-pty` must be rebuilt against Electron's Node ABI — `electron-builder install-app-deps` / `@electron/rebuild` in postinstall.
-- **Signing & notarization:** Developer ID Application certificate, hardened runtime, entitlements for JIT if needed; notarize via `notarytool` (electron-builder's `notarize` option) in CI using App Store Connect API key secrets.
-- **Auto-update:** `electron-updater` pointed at GitHub Releases; publish on tag.
+- **electron-builder** targets: macOS `dmg` + `zip` (zip required for auto-update), `arm64`; Windows `nsis`, `x64`. The Agent SDK's per-platform native `claude` runtime (`darwin-arm64` / `win32-x64`) is shipped unpacked via a per-platform `extraResources` entry and located at runtime by `claudeExecutable()` in `services/claude.ts` (`.exe` suffix on Windows).
+- **Native modules:** `node-pty` and `better-sqlite3` must be rebuilt against Electron's Node ABI — `electron-builder install-app-deps` / `@electron/rebuild` in postinstall. This makes each OS's artifacts buildable only on that OS.
+- **Signing & notarization:** macOS uses a Developer ID Application certificate, hardened runtime, notarized via `notarytool` (electron-builder's `notarize` option) in CI using App Store Connect API key secrets. Windows ships **unsigned** for now (SmartScreen "unknown publisher" prompt); NSIS applies unsigned auto-updates fine.
+- **Auto-update:** `electron-updater` pointed at GitHub Releases (`latest-mac.yml` / `latest.yml`); publish on tag.
 - **CI (GitHub Actions):**
-  - `ci.yml` — lint, typecheck, unit tests on PRs.
-  - `release.yml` — on `v*` tag: build renderer (static export) → build main → `electron-builder --mac --publish always` on a macOS runner with signing certs in secrets.
+  - `ci.yml` — lint, typecheck, build on PRs.
+  - `release.yml` — on a `v*` tag (or manual `workflow_dispatch`): build renderer (static export) → build main → `electron-builder --win --publish always` on a `windows-latest` runner. A macOS leg (`--mac`) is added here once Developer ID signing certs are in secrets.
 
 ## 6. Build Order (suggested milestones)
 

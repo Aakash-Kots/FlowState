@@ -189,10 +189,13 @@ function loadSdk(): Promise<SdkModule> {
  * Absolute path to the native `claude` runtime the SDK forks, or undefined to let
  * the SDK resolve it from node_modules (dev). In a packaged app the SDK can't
  * resolve its per-platform binary out of Bun's symlink store, so we ship it as an
- * extraResource (`Resources/claude-code/claude`) and point the SDK straight at it.
+ * extraResource (`Resources/claude-code/claude[.exe]`) and point the SDK straight
+ * at it. The binary carries a `.exe` suffix on Windows (see electron-builder.yml).
  */
 function claudeExecutable(): string | undefined {
-  return app.isPackaged ? join(process.resourcesPath, 'claude-code', 'claude') : undefined;
+  if (!app.isPackaged) return undefined;
+  const bin = process.platform === 'win32' ? 'claude.exe' : 'claude';
+  return join(process.resourcesPath, 'claude-code', bin);
 }
 
 /**

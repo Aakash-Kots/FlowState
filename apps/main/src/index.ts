@@ -184,10 +184,14 @@ function createWindow(): void {
     // transparent (the sidebar strip) the desktop shows through as frosted
     // glass. Every full-page screen still paints its own opaque `bg-background`,
     // so only the sidebar is see-through. `visualEffectState: 'active'` keeps
-    // the glass lit even when the window is unfocused.
-    backgroundColor: '#00000000',
-    vibrancy: 'sidebar',
-    visualEffectState: 'active',
+    // the glass lit even when the window is unfocused. Windows/Linux have no
+    // NSVisualEffectView, so `vibrancy` is a no-op there and a transparent bg
+    // would leave the sidebar strip unpainted — fall back to an opaque surface
+    // matching the sidebar tone (`--sidebar-background` ≈ #1b1a17). Win11's Mica
+    // gives a comparable subtle backdrop where available.
+    ...(IS_MAC
+      ? { backgroundColor: '#00000000', vibrancy: 'sidebar', visualEffectState: 'active' }
+      : { backgroundColor: '#1b1a17', backgroundMaterial: 'mica' }),
     show: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),

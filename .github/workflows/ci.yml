@@ -42,8 +42,9 @@ jobs:
           LINEAR_CLIENT_SECRET: ${{ secrets.LINEAR_CLIENT_SECRET }}
           SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
 
-  # Release workflow (sign, notarize, DMG, publish) is added once Developer ID
-  # signing certificates are available in repo secrets. See docs/ARCHITECTURE.md §5.
-  # NOTE: that release job's `bun run dist` step needs the same LINEAR_CLIENT_ID /
-  # LINEAR_CLIENT_SECRET / SPOTIFY_CLIENT_ID `env:` block so the published app has
-  # the creds baked in.
+  # The Windows release job lives in release.yml (windows-latest, on `v*` tag or
+  # manual dispatch). The macOS release job (sign, notarize, DMG, publish) is
+  # added there once Developer ID signing certificates are in repo secrets — see
+  # docs/ARCHITECTURE.md §5. Any release job's build step needs the same
+  # LINEAR_CLIENT_ID / LINEAR_CLIENT_SECRET / SPOTIFY_CLIENT_ID `env:` block so the
+  # published app has the creds baked in.

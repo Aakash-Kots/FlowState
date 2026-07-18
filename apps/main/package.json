@@ -8,6 +8,7 @@
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "dist": "electron-builder --mac --config electron-builder.yml",
+    "dist:win": "electron-builder --win --config electron-builder.yml",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "ELECTRON_RUN_AS_NODE=1 electron ./node_modules/drizzle-kit/bin.cjs migrate",
     "postinstall": "electron-builder install-app-deps"
@@ -27,8 +28,11 @@
     "systeminformation": "^5.31.17",
     "zod": "^3.23.8"
   },
-  "devDependencies": {
+  "optionalDependencies": {
     "@anthropic-ai/claude-agent-sdk-darwin-arm64": "0.3.207",
+    "@anthropic-ai/claude-agent-sdk-win32-x64": "0.3.207"
+  },
+  "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.10.1",
     "drizzle-kit": "^0.31.5",

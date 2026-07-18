@@ -1,0 +1,61 @@
+name: Release
+
+# Builds and publishes distributable artifacts to the GitHub release whose tag
+# matches the built version (electron-builder derives the tag from package.json).
+# Runs on a `v*` tag push, or manually via workflow_dispatch (used to attach a
+# Windows build to an already-tagged release).
+#
+# Windows only for now — macOS releases are still cut manually (`bun run dist`)
+# until Developer ID signing certs are in secrets. A macOS leg can be added here
+# as a second job once that lands (see docs/ARCHITECTURE.md §5).
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+# Needed so the built-in GITHUB_TOKEN can create/update the release and upload
+# assets.
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      # node-gyp (electron-builder's install-app-deps postinstall rebuilds
+      # node-pty + better-sqlite3 against Electron's ABI) imports distutils,
+      # removed from Python 3.12+. Pin 3.11, which still ships it. Must run before
+      # `bun install` so the postinstall rebuild finds it. Windows runners already
+      # carry the Visual Studio C++ build tools node-gyp needs.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build (renderer export + main bundle)
+        run: bun run build
+        # Linear + Spotify OAuth client credentials are inlined into the main
+        # bundle at build time (electron-vite `define`). Provided as repo secrets;
+        # Spotify uses PKCE, so only its client id is needed (no secret).
+        env:
+          LINEAR_CLIENT_ID: ${{ secrets.LINEAR_CLIENT_ID }}
+          LINEAR_CLIENT_SECRET: ${{ secrets.LINEAR_CLIENT_SECRET }}
+          SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
+
+      - name: Package & publish Windows installer
+        working-directory: apps/main
+        # Packages the already-built bundle into the NSIS installer and uploads
+        # it + latest.yml to the GitHub release for this version. `--publish
+        # always` is forwarded to electron-builder.
+        run: bun run dist:win --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

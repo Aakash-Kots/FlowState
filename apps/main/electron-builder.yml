@@ -8,21 +8,17 @@ directories:
 files:
   - out/**/*
   - '!**/*.map'
-  # The Agent SDK's ~241MB native runtime is a transitive optional dep, so
-  # electron-builder would copy it into app.asar — where it can't be fork/exec'd
-  # anyway. Drop that copy; the usable one is shipped unpacked via extraResources
-  # below and located through pathToClaudeCodeExecutable.
-  - '!**/node_modules/@anthropic-ai/claude-agent-sdk-darwin-arm64/**'
+  # The Agent SDK's ~241MB per-platform native runtime is a transitive optional
+  # dep, so electron-builder would copy it into app.asar — where it can't be
+  # fork/exec'd anyway. Drop every platform copy; the usable one is shipped
+  # unpacked via the per-platform extraResources below and located through
+  # pathToClaudeCodeExecutable.
+  - '!**/node_modules/@anthropic-ai/claude-agent-sdk-*/**'
 # drizzle migrations are read at runtime from Resources/drizzle (see store/db.ts).
+# The SDK's `claude` runtime is copied per-platform in the mac/win blocks below.
 extraResources:
   - from: drizzle
     to: drizzle
-  # The Agent SDK forks a native `claude` runtime; ship it outside app.asar so it
-  # can be spawned (an executable inside asar can't be fork/exec'd). Located at
-  # runtime via process.resourcesPath in services/claude.ts. arm64-only, in
-  # lockstep with @anthropic-ai/claude-agent-sdk's version.
-  - from: node_modules/@anthropic-ai/claude-agent-sdk-darwin-arm64/claude
-    to: claude-code/claude
 asar: true
 
 mac:
@@ -36,6 +32,13 @@ mac:
     - target: zip # required for electron-updater auto-update
       arch:
         - arm64
+  # The Agent SDK forks a native `claude` runtime; ship it outside app.asar so it
+  # can be spawned (an executable inside asar can't be fork/exec'd). Located at
+  # runtime via process.resourcesPath in services/claude.ts. arm64-only, in
+  # lockstep with @anthropic-ai/claude-agent-sdk's version.
+  extraResources:
+    - from: node_modules/@anthropic-ai/claude-agent-sdk-darwin-arm64/claude
+      to: claude-code/claude
   # Signing & notarization — supplied via CI env / a local .env, never committed:
   #   CSC_LINK, CSC_KEY_PASSWORD (Developer ID Application cert)
   #   APPLE_API_KEY, APPLE_API_KEY_ID, APPLE_API_ISSUER (notarytool)
@@ -43,14 +46,30 @@ mac:
   # gatekeeperAssess: false
   # notarize: true
 
+win:
+  # x64 only for now. NSIS installer emits the `latest.yml` feed electron-updater
+  # polls; unlike macOS's Squirrel, NSIS applies unsigned updates, so no code
+  # signing is wired up yet (SmartScreen shows an "unknown publisher" prompt).
+  target:
+    - target: nsis
+      arch:
+        - x64
+  # Windows counterpart of the mac extraResource above — the win32 `claude.exe`
+  # the SDK forks, shipped unpacked and pointed at by claudeExecutable().
+  extraResources:
+    - from: node_modules/@anthropic-ai/claude-agent-sdk-win32-x64/claude.exe
+      to: claude-code/claude.exe
+
 # The renderer's static export lives outside apps/main, so include it explicitly.
 extraFiles:
   - from: ../renderer/out
     to: Resources/renderer/out
 
-# Release channel for electron-updater. `bun run dist --publish always` (with
-# GH_TOKEN set) uploads the dmg/zip + latest-mac.yml to a GitHub release tagged
-# with this build's version; installed apps poll it via services/update.ts.
+# Release channel for electron-updater. `bun run dist --publish always` (macOS)
+# or `bun run dist:win --publish always` (Windows), with GH_TOKEN set, uploads the
+# platform artifacts + feed file (latest-mac.yml on macOS, latest.yml on Windows)
+# to a GitHub release tagged with this build's version; installed apps poll it via
+# services/update.ts.
 publish:
   provider: github
   owner: Aakash-Kots

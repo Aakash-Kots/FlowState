@@ -41,13 +41,21 @@ const POLL_TIMEOUT_MS = 3 * 60 * 1000;
 
 const execFileAsync = promisify(execFile);
 
-/** Run a command through the user's login shell so PATH matches their terminal. */
+/**
+ * Run a command through the user's login shell so PATH matches their terminal.
+ * On Windows there's no login-shell concept, so we go through cmd.exe (`/d /s /c`)
+ * — the child inherits the app's PATH, which is the user's environment PATH.
+ */
 async function loginShell(
   command: string,
 ): Promise<{ code: number; stdout: string; stderr: string }> {
-  const shell = process.env.SHELL ?? '/bin/zsh';
+  const isWindows = process.platform === 'win32';
+  const shell = isWindows
+    ? (process.env.COMSPEC ?? 'cmd.exe')
+    : (process.env.SHELL ?? '/bin/zsh');
+  const args = isWindows ? ['/d', '/s', '/c', command] : ['-lic', command];
   try {
-    const { stdout, stderr } = await execFileAsync(shell, ['-lic', command], {
+    const { stdout, stderr } = await execFileAsync(shell, args, {
       env: process.env,
       timeout: 20_000,
       maxBuffer: 1024 * 1024,
@@ -115,7 +123,9 @@ export class AuthService extends EventEmitter {
   }
 
   async hasGithubCli(): Promise<boolean> {
-    const { code } = await loginShell('command -v gh');
+    // `command -v` is a POSIX shell builtin; `where` is its cmd.exe equivalent.
+    const probe = process.platform === 'win32' ? 'where gh' : 'command -v gh';
+    const { code } = await loginShell(probe);
     return code === 0;
   }
 

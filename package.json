@@ -22,6 +22,7 @@
     "build:renderer": "bun run --filter '@flowstate/renderer' build",
     "build:main": "bun run --filter '@flowstate/main' build",
     "dist": "bun run build && bun run --filter '@flowstate/main' dist",
+    "dist:win": "bun run build && bun run --filter '@flowstate/main' dist:win",
     "db:generate": "bun scripts/db-generate.mjs",
     "db:generate:local": "bun run --filter '@flowstate/main' db:generate",
     "db:migrate": "bun run --filter '@flowstate/main' db:migrate",

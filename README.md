@@ -100,6 +100,7 @@ bun run dev
 | `bun run lint`                                 | Lint the renderer                                             |
 | `bun run --filter @flowstate/main db:generate` | Generate a SQL migration from `store/schema.ts` (drizzle-kit) |
 | `bun run dist`                                 | Build and package a macOS **DMG** (see below)                 |
+| `bun run dist:win`                             | Build and package the Windows **NSIS installer** (x64)        |
 
 > **Migrations:** edit `apps/main/src/store/schema.ts`, run `db:generate` to produce a versioned SQL
 > file under `apps/main/drizzle/` (commit it), and the app **applies pending migrations automatically
@@ -122,6 +123,21 @@ xattr -dr com.apple.quarantine /Applications/FlowState.app
 ```
 
 Then open the app normally. This is only needed once per install.
+
+## Building the Windows installer
+
+Windows builds rebuild native modules (`node-pty`, `better-sqlite3`) against
+Electron's ABI and bundle the win32 `claude.exe` runtime, so they must run **on
+Windows** — they can't be produced on macOS. The [`release.yml`](.github/workflows/release.yml)
+workflow builds and publishes them on a `windows-latest` runner: it triggers on a
+`v*` tag push, or manually via **workflow dispatch** (used to attach a Windows
+build to an already-tagged release). It produces `FlowState Setup <version>.exe`
+plus the `latest.yml` auto-update feed and uploads them to the matching GitHub
+release. On a Windows machine you can build locally with `bun run dist:win`.
+
+The installer is **not code-signed**, so Windows SmartScreen shows an "unknown
+publisher" prompt — click **More info → Run anyway**. NSIS auto-update still works
+without a signature (unlike macOS's Squirrel).
 
 ## Roadmap
 
