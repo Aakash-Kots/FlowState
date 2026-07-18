@@ -21,7 +21,12 @@ permissions:
 
 jobs:
   windows:
-    runs-on: windows-latest
+    # Pinned to windows-2022, NOT windows-latest: the latter now resolves to
+    # windows-2025, which ships Visual Studio 2026 — and the node-gyp (9.4.1)
+    # that electron-builder's install-app-deps uses to rebuild node-pty /
+    # better-sqlite3 can't detect a VS newer than 2022 ("Could not find any
+    # Visual Studio installation"). windows-2022 carries VS2022, which it finds.
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
 
