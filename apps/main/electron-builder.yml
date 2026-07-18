@@ -74,3 +74,7 @@ publish:
   provider: github
   owner: Aakash-Kots
   repo: FlowState
+  # Publish straight to the (already-published) GitHub release for this version.
+  # The default `draft` refuses to attach assets to an existing non-draft release
+  # ("existing type not compatible with publishing type").
+  releaseType: release
