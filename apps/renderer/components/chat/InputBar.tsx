@@ -26,15 +26,21 @@ import {
   usePrefillComposer,
   useTabId,
 } from '@/lib/chat';
+import {
+  clearComposerDraft,
+  getComposerDraft,
+  setComposerDraft,
+} from '@/lib/composerDrafts';
 import { MAX_COMPOSER_IMAGE_BYTES } from '@/lib/constants/chat';
 import { EXIT_PLAN_MODE_TOOL } from '@/lib/constants/tools';
 import { trpc } from '@/lib/trpc';
+import type { ComposerDraft } from '@/lib/types/chat';
 import { useWorkspace } from '@/lib/workspace';
 import { ArrowUp, Square } from 'lucide-react';
 import { cn } from '../ui/cn';
 import { Button } from '../ui/Button';
 import { IconButton } from '../ui/IconButton';
-import { ComposerEditor, type ComposerDraft, type ComposerEditorHandle } from './ComposerEditor';
+import { ComposerEditor, type ComposerEditorHandle } from './ComposerEditor';
 import { InlinePrompt } from './InlinePrompt';
 import { InputToolbar } from './InputToolbar';
 import { SlashMenu } from './SlashMenu';
@@ -74,6 +80,20 @@ export function InputBar({ disabled }: { disabled: boolean }) {
 
   const busy =
     sessionState === ClaudeSessionState.Running || sessionState === ClaudeSessionState.Waiting;
+
+  // Each chat tab owns its unsent draft. Restore this tab's saved text + images
+  // whenever the active chat changes (the composer instance is reused across tab
+  // switches, so it would otherwise carry the previous chat's text) or the editor
+  // remounts after an inline prompt clears. The editor is uncontrolled, so push
+  // the stored draft in imperatively and re-sync the mirrored plain text.
+  useEffect(() => {
+    if (hasPrompt) return;
+    const draft = getComposerDraft(tabId);
+    editorRef.current?.setDraft(draft);
+    setText(draft.text);
+    setHasImages(draft.images.length > 0);
+    setMenuDismissed(true);
+  }, [tabId, hasPrompt]);
 
   useEffect(() => {
     if (!disabled && !hasPrompt) editorRef.current?.focus();
@@ -146,6 +166,7 @@ export function InputBar({ disabled }: { disabled: boolean }) {
     setText(next);
     setHasImages(false);
     setMenuDismissed(true);
+    setComposerDraft(tabId, { text: next, images: [] });
   };
 
   const selectSkill = (skill: SkillOption) => setComposer(`/${skill.name} `);
@@ -184,6 +205,7 @@ export function InputBar({ disabled }: { disabled: boolean }) {
     setText(draft.text);
     setHasImages(draft.images.length > 0);
     setMenuDismissed(false);
+    setComposerDraft(tabId, draft);
   };
 
   // The toolbar's image button routes through a hidden file input; convert the
@@ -203,6 +225,7 @@ export function InputBar({ disabled }: { disabled: boolean }) {
     editorRef.current?.clear();
     setText('');
     setHasImages(false);
+    clearComposerDraft(tabId);
   };
 
   const submit = () => {
