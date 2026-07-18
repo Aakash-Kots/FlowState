@@ -51,7 +51,7 @@ import {
   ReasoningEffort,
   UNTITLED_WORKSPACE_NAME,
   chatMessageSchema,
-  mergeModelOptions,
+  resolveModelOptions,
   type ChatBlock,
   type ChatEvent,
   type ChatHistoryPage,
@@ -710,17 +710,25 @@ export class ClaudeService {
   }
 
   /**
-   * Models offered to a tab's picker: the curated set always shown, plus any
-   * extra models the live SDK reports for this session (deduped by value).
+   * Models offered to a tab's picker: the live list the SDK reports for this
+   * session (what the plan actually grants), falling back to the curated set only
+   * when the SDK reports nothing. Boots a no-prompt session when none exists (like
+   * `getSupportedSkills`) so the real list is available before the first message.
    */
   async getSupportedModels(tabId: string): Promise<ModelOption[]> {
-    const session = this.sessions.get(tabId);
+    let session = this.sessions.get(tabId);
+    if (!session) {
+      const tab = getTab(tabId);
+      const cwd = tab ? this.getCwd(tab.workspaceId) : null;
+      if (!tab || !cwd || !authService.status().claudeConnected) return resolveModelOptions([]);
+      session = this.ensureSession(tab, cwd);
+    }
     try {
-      const infos = await session?.query?.supportedModels();
-      return mergeModelOptions((infos ?? []).map(toModelOption));
+      const infos = await session.query?.supportedModels();
+      return resolveModelOptions((infos ?? []).map(toModelOption));
     } catch (err) {
       console.warn('[claude] supportedModels failed', err);
-      return mergeModelOptions([]);
+      return resolveModelOptions([]);
     }
   }
 

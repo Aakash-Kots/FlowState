@@ -1,15 +1,16 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { ChevronDown, ImagePlus } from 'lucide-react';
+import { ChevronDown, ImagePlus, Loader2 } from 'lucide-react';
+import { DEFAULT_EFFORT, DEFAULT_MODEL, PermissionMode, ReasoningEffort } from '@flowstate/shared';
 import {
-  CURATED_MODELS,
-  DEFAULT_EFFORT,
-  DEFAULT_MODEL,
-  PermissionMode,
-  ReasoningEffort,
-} from '@flowstate/shared';
-import { cyclePermissionMode, setEffort, setModel, useChat, useTabId } from '@/lib/chat';
+  cyclePermissionMode,
+  loadSupportedModels,
+  setEffort,
+  setModel,
+  useChat,
+  useTabId,
+} from '@/lib/chat';
 import { cn } from '../ui/cn';
 import { DropdownItem, DropdownMenu } from '../ui/dropdown-menu';
 
@@ -38,14 +39,11 @@ const MODE_PILL: Partial<Record<PermissionMode, { label: string; className: stri
   },
 };
 
-// The models offered in the picker are hardcoded (see @flowstate/shared) so the
-// list is always the full set regardless of what the SDK reports for a session.
-const MODELS = CURATED_MODELS;
-
 /**
  * Compact model + reasoning-effort pickers that sit below the textarea inside
- * the floating input card. The model list is fixed; the effort options are
- * gated by the selected model's supported levels.
+ * the floating input card. The model list is the live set the SDK reports for
+ * the session (loaded lazily when the picker opens, refreshed on session init);
+ * the effort options are gated by the selected model's supported levels.
  */
 export function InputToolbar({
   disabled,
@@ -66,7 +64,8 @@ export function InputToolbar({
   const effort = useChat((s) => s.effort) ?? DEFAULT_EFFORT;
   const permissionMode = useChat((s) => s.permissionMode);
   const modePill = MODE_PILL[permissionMode];
-  const models = MODELS;
+  const models = useChat((s) => s.availableModels);
+  const modelsLoading = useChat((s) => s.modelsLoading);
 
   const current = models.find((m) => m.value === model);
   const modelLabel = current?.displayName ?? model;
@@ -111,36 +110,54 @@ export function InputToolbar({
       <DropdownMenu
         disabled={disabled}
         triggerClassName={triggerClass}
+        onOpenChange={(open) => {
+          if (open) loadSupportedModels(tabId);
+        }}
         trigger={
           <>
             <span className="max-w-[10rem] truncate">{modelLabel}</span>
-            <ChevronDown className="h-3 w-3 opacity-70" />
+            {modelsLoading ? (
+              <Loader2 className="h-3 w-3 animate-spin opacity-70" />
+            ) : (
+              <ChevronDown className="h-3 w-3 opacity-70" />
+            )}
           </>
         }
       >
         {(close) =>
           models.length === 0 ? (
-            <div className="px-2.5 py-2 text-xs text-muted-foreground">Loading models…</div>
+            <div className="flex items-center gap-2 px-2.5 py-2 text-xs text-muted-foreground">
+              <Loader2 className="size-3.5 animate-spin" />
+              Loading models…
+            </div>
           ) : (
-            models.map((m) => (
-              <DropdownItem
-                key={m.value}
-                selected={m.value === model}
-                onSelect={() => {
-                  setModel(tabId, m.value);
-                  close();
-                }}
-              >
-                <div className="flex flex-col gap-0.5">
-                  <span className="font-medium">{m.displayName}</span>
-                  {m.description && (
-                    <span className="text-[11px] leading-snug text-muted-foreground">
-                      {m.description}
-                    </span>
-                  )}
+            <>
+              {models.map((m) => (
+                <DropdownItem
+                  key={m.value}
+                  selected={m.value === model}
+                  onSelect={() => {
+                    setModel(tabId, m.value);
+                    close();
+                  }}
+                >
+                  <div className="flex flex-col gap-0.5">
+                    <span className="font-medium">{m.displayName}</span>
+                    {m.description && (
+                      <span className="text-[11px] leading-snug text-muted-foreground">
+                        {m.description}
+                      </span>
+                    )}
+                  </div>
+                </DropdownItem>
+              ))}
+              {modelsLoading && (
+                <div className="flex items-center gap-2 px-2.5 py-2 text-[11px] text-muted-foreground">
+                  <Loader2 className="size-3 animate-spin" />
+                  Updating from Claude…
                 </div>
-              </DropdownItem>
-            ))
+              )}
+            </>
           )
         }
       </DropdownMenu>

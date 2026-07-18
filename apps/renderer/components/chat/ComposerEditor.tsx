@@ -12,7 +12,7 @@ import { createPortal } from 'react-dom';
 import type { ChatImageInput } from '@flowstate/shared';
 import { fileToChatImage } from '@/lib/chat';
 import { MAX_COMPOSER_IMAGES, MAX_COMPOSER_IMAGE_BYTES } from '@/lib/constants/chat';
-import type { MentionCaret } from '@/lib/types/chat';
+import type { ComposerDraft, MentionCaret } from '@/lib/types/chat';
 import { cn } from '../ui/cn';
 import { ImagePill } from './ImagePill';
 import { MentionMenu } from './MentionMenu';
@@ -20,9 +20,6 @@ import { MentionMenu } from './MentionMenu';
 ///////////
 // Types //
 ///////////
-
-/** The composer's current content: typed text plus attached images, in order. */
-export type ComposerDraft = { text: string; images: ChatImageInput[] };
 
 /**
  * Enables the `@` file-mention menu. `fetch` returns the candidate paths (called
@@ -37,6 +34,8 @@ export type ComposerEditorHandle = {
   clear: () => void;
   /** Replace all content with plain text (drops images), caret at the end. */
   setText: (text: string) => void;
+  /** Replace all content with a saved draft (text + image pills), caret at the end. */
+  setDraft: (draft: ComposerDraft) => void;
   /** Insert image pills at the caret (or the end when unfocused). */
   insertImages: (images: ChatImageInput[]) => void;
   getDraft: () => ComposerDraft;
@@ -411,6 +410,36 @@ export const ComposerEditor = forwardRef<
       if (text) root.appendChild(document.createTextNode(text));
       setEmpty(text.length === 0);
       root.focus();
+      const range = document.createRange();
+      range.selectNodeContents(root);
+      range.collapse(false);
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+      savedRangeRef.current = range.cloneRange();
+    },
+    setDraft: (draft) => {
+      const root = editorRef.current;
+      if (!root) return;
+      root.innerHTML = '';
+      imagesRef.current.clear();
+      closeMention();
+      if (draft.text) root.appendChild(document.createTextNode(draft.text));
+      // Rehydrate image pills after the text (draft restore drops the original
+      // interleaving — the exact caret positions aren't worth persisting).
+      const images = allowImages ? draft.images.slice(0, MAX_COMPOSER_IMAGES) : [];
+      const restored: Pill[] = images.map((image) => {
+        const id = `img-${idRef.current++}`;
+        imagesRef.current.set(id, image);
+        const span = document.createElement('span');
+        span.dataset.imgId = id;
+        span.contentEditable = 'false';
+        span.className = 'mx-0.5 inline-flex align-middle';
+        root.appendChild(span);
+        return { id, node: span, image };
+      });
+      setPills(restored);
+      setEmpty(draft.text.length === 0 && restored.length === 0);
       const range = document.createRange();
       range.selectNodeContents(root);
       range.collapse(false);

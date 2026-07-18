@@ -5,6 +5,7 @@ import { claudeRouter } from './claude';
 import { filesRouter } from './files';
 import { gitRouter } from './git';
 import { linearRouter } from './linear';
+import { notesRouter } from './notes';
 import { onboardingRouter } from './onboarding';
 import { pinsRouter } from './pins';
 import { projectsRouter } from './projects';
@@ -28,6 +29,7 @@ export const appRouter = router({
   onboarding: onboardingRouter,
   projects: projectsRouter,
   pins: pinsRouter,
+  notes: notesRouter,
   skills: skillsRouter,
   claude: claudeRouter,
   linear: linearRouter,

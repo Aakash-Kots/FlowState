@@ -428,3 +428,113 @@ html[data-fullscreen='true'] [data-sidebar='sidebar'] {
 .animate-modal-in {
   animation: modal-fade-in 120ms ease-out;
 }
+
+/*
+ * The header notes pad (tiptap/ProseMirror). Tailwind's preflight strips list
+ * markers and there is no typography plugin, so the pad's block elements are
+ * styled here — mirroring the compact spacing of the chat Markdown renderer. The
+ * task-list checkboxes are real inputs the user ticks in place.
+ */
+.notes-editor > * + * {
+  margin-top: 0.4rem;
+}
+.notes-editor ul,
+.notes-editor ol {
+  padding-left: 1.25rem;
+}
+.notes-editor ul {
+  list-style: disc;
+}
+.notes-editor ol {
+  list-style: decimal;
+}
+.notes-editor li > p {
+  margin: 0;
+}
+.notes-editor h1 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: theme('colors.neutral.100');
+}
+.notes-editor h2,
+.notes-editor h3 {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: theme('colors.neutral.100');
+}
+.notes-editor a {
+  color: hsl(var(--foreground));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.notes-editor code {
+  border-radius: 0.25rem;
+  background: hsl(var(--muted));
+  padding: 0.05rem 0.3rem;
+  font-family: theme('fontFamily.mono');
+  font-size: 0.85em;
+  color: theme('colors.neutral.100');
+}
+.notes-editor blockquote {
+  border-left: 2px solid hsl(var(--border));
+  padding-left: 0.75rem;
+  color: hsl(var(--muted-foreground));
+}
+/* Task lists: strip the bullet and lay the checkbox beside its label. */
+.notes-editor ul[data-type='taskList'] {
+  list-style: none;
+  padding-left: 0.25rem;
+}
+.notes-editor ul[data-type='taskList'] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+.notes-editor ul[data-type='taskList'] li > label {
+  margin-top: 0.1rem;
+  user-select: none;
+}
+.notes-editor ul[data-type='taskList'] li > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+/* Custom circular checkbox: an outlined dot that fills with a check when done. */
+.notes-editor ul[data-type='taskList'] input[type='checkbox'] {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+  position: relative;
+  flex: none;
+  width: 1.05rem;
+  height: 1.05rem;
+  border: 1.5px solid hsl(var(--muted-foreground));
+  border-radius: 9999px;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+.notes-editor ul[data-type='taskList'] input[type='checkbox']:hover {
+  border-color: hsl(var(--foreground));
+}
+.notes-editor ul[data-type='taskList'] input[type='checkbox']:checked {
+  background-color: hsl(var(--primary));
+  border-color: hsl(var(--primary));
+}
+/* The check mark: a rotated right-angle border, drawn only when checked. */
+.notes-editor ul[data-type='taskList'] input[type='checkbox']:checked::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 46%;
+  width: 0.28rem;
+  height: 0.52rem;
+  transform: translate(-50%, -50%) rotate(45deg);
+  border: solid hsl(var(--primary-foreground));
+  border-width: 0 2px 2px 0;
+}
+/* A checked item reads as done. */
+.notes-editor ul[data-type='taskList'] li[data-checked='true'] > div {
+  color: hsl(var(--muted-foreground));
+  text-decoration: line-through;
+}

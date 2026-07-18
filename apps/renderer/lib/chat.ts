@@ -9,7 +9,7 @@ import {
   ClaudeSessionState,
   CURATED_MODELS,
   ImageMediaType,
-  mergeModelOptions,
+  resolveModelOptions,
   PermissionBehavior,
   PermissionMode,
   ReasoningEffort,
@@ -54,6 +54,8 @@ type ChatState = {
   permissionMode: PermissionMode;
   /** Models offered by the picker (loaded lazily from the main process). */
   availableModels: ModelOption[];
+  /** True while a live model fetch is in flight (the picker shows a spinner). */
+  modelsLoading: boolean;
   /** Skills the session can run — feeds the composer's `/` menu and the pin picker. */
   skills: SkillOption[];
   /** True once the session has reported its skills at least once (even if empty). */
@@ -100,6 +102,7 @@ const INITIAL: ChatState = {
   // Seed with the curated models so the picker always shows them immediately,
   // even before (or independent of) the live SDK fetch.
   availableModels: CURATED_MODELS,
+  modelsLoading: false,
   skills: [],
   skillsLoaded: false,
   skillsLoading: false,
@@ -211,6 +214,8 @@ function applyEvent(tabId: string, event: ChatEvent): void {
         model: event.model,
         cwd: event.cwd,
       });
+      // The session is live now, so the SDK can report the real model list.
+      loadSupportedModels(tabId);
       break;
     case ChatEventKind.TextDelta:
       set((s) => ({
@@ -606,15 +611,20 @@ export function answerQuestion(
 }
 
 /**
- * Load the model list for a tab's picker. Merges the live result onto the
- * curated base so the picker never shrinks below the curated models even if the
- * SDK reports a narrow set (or the request fails).
+ * Load the model list for a tab's picker from the SDK — the live set the plan
+ * actually grants. Falls back to the curated base only when the SDK reports
+ * nothing (session still booting, offline, or the request fails).
  */
 export function loadSupportedModels(tabId: string): void {
+  const store = storeFor(tabId);
+  if (store.getState().modelsLoading) return;
+  store.setState({ modelsLoading: true });
   void trpc()
     .claude.supportedModels.query({ tabId })
-    .then((models) => storeFor(tabId).setState({ availableModels: mergeModelOptions(models) }))
-    .catch(() => {});
+    .then((models) =>
+      store.setState({ availableModels: resolveModelOptions(models), modelsLoading: false }),
+    )
+    .catch(() => store.setState({ modelsLoading: false }));
 }
 
 /**
