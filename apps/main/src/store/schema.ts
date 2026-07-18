@@ -212,6 +212,20 @@ export const pinnedSkills = sqliteTable(
   ],
 );
 
+// A freeform Markdown notes pad. `workspace_id` null is the app-wide Global pad;
+// a set `workspace_id` scopes the pad to that worktree (cascade-deletes with it).
+// One row per scope, enforced by the store (get-or-create).
+export const notes = sqliteTable(
+  'notes',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),
+    body: text('body').notNull().default(''),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (t) => [index('idx_notes_workspace').on(t.workspaceId)],
+);
+
 export const settings = sqliteTable('settings', {
   key: text('key').primaryKey(),
   value: text('value').notNull(), // JSON
