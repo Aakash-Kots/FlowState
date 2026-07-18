@@ -1,9 +1,10 @@
 /**
- * Curated Claude models always offered in the model picker, independent of what
- * the Agent SDK's `Query.supportedModels()` reports for a given session/plan
- * (which can be a narrow subset — e.g. only Haiku). Both processes share this
- * list: the main process merges live SDK models on top, and the renderer seeds
- * the picker with it so the choices show immediately and never shrink below it.
+ * Curated Claude models used as the model picker's fallback when the Agent SDK's
+ * `Query.supportedModels()` reports nothing (no live session yet, offline, or an
+ * error). When the SDK does report models, that live list wins outright — the
+ * picker shows exactly what Claude returns for the session/plan. Both processes
+ * share this list: the renderer also seeds the picker with it so choices show
+ * immediately before the first live fetch resolves.
  */
 import { ReasoningEffort } from '../enums/claude';
 import type { ModelOption } from '../types/claude';
@@ -14,9 +15,22 @@ export const DEFAULT_EFFORT = ReasoningEffort.High;
 
 export const CURATED_MODELS: ModelOption[] = [
   {
+    value: 'claude-fable-5',
+    displayName: 'Fable 5',
+    description: 'Most capable — the most demanding reasoning and long-horizon work.',
+    supportsEffort: true,
+    supportedEffortLevels: [
+      ReasoningEffort.Low,
+      ReasoningEffort.Medium,
+      ReasoningEffort.High,
+      ReasoningEffort.XHigh,
+      ReasoningEffort.Max,
+    ],
+  },
+  {
     value: 'claude-opus-4-8',
     displayName: 'Opus 4.8',
-    description: 'Most capable — deep reasoning and complex tasks.',
+    description: 'Deep reasoning and complex tasks.',
     supportsEffort: true,
     supportedEffortLevels: [
       ReasoningEffort.Low,
@@ -47,15 +61,7 @@ export const CURATED_MODELS: ModelOption[] = [
   },
 ];
 
-/** Merge live SDK models onto the curated base, deduped by value (curated wins). */
-export function mergeModelOptions(live: ModelOption[]): ModelOption[] {
-  const merged = [...CURATED_MODELS];
-  const known = new Set(merged.map((m) => m.value));
-  for (const option of live) {
-    if (!known.has(option.value)) {
-      merged.push(option);
-      known.add(option.value);
-    }
-  }
-  return merged;
+/** Prefer the live SDK list; fall back to the curated base only when it's empty. */
+export function resolveModelOptions(live: ModelOption[]): ModelOption[] {
+  return live.length > 0 ? live : CURATED_MODELS;
 }
