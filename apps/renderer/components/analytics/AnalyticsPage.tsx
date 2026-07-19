@@ -9,8 +9,10 @@ import {
   formatPct,
   formatUsd,
   useAnalyticsSummary,
+  useGithubContributions,
 } from '@/lib/analytics';
 import { formatDuration } from '@/lib/format';
+import { useOnboarding } from '@/lib/onboarding';
 import { setAnalyticsOpen } from '@/lib/settings';
 import { Card, CardHeader } from '../ui/Card';
 import { cn } from '../ui/cn';
@@ -22,6 +24,7 @@ import {
   TurnsBarChart,
   WorkspaceBarChart,
 } from './charts';
+import { ContributionGraph } from './ContributionGraph';
 
 /////////////
 // Helpers //
@@ -113,6 +116,31 @@ function ChartCard({
         )}
       </div>
     </Card>
+  );
+}
+
+/**
+ * The GitHub contribution heatmap card — shown only when a GitHub account is
+ * connected. Fetches the viewer's trailing-year calendar and frames it like the
+ * other analytics cards, with loading/empty/error states.
+ */
+function GithubContributionCard() {
+  const githubConnected = useOnboarding((s) => s.githubConnected);
+  const { data, loading, error } = useGithubContributions();
+
+  if (!githubConnected) return null;
+
+  const emptyLabel = error
+    ? "Couldn't load your GitHub contributions."
+    : loading
+      ? 'Loading your GitHub contributions…'
+      : 'No GitHub contributions in the last year.';
+  const hasData = !!data && data.weeks.some((week) => week.length > 0);
+
+  return (
+    <ChartCard title="GitHub contributions" subtitle="Your activity over the last year" isEmpty={!hasData} emptyLabel={emptyLabel}>
+      {data ? <ContributionGraph data={data} /> : null}
+    </ChartCard>
   );
 }
 
@@ -265,6 +293,9 @@ function AnalyticsContent({ data }: { data: AnalyticsSummary }) {
           <CommitsBarChart data={data.commitsByDay} />
         </ChartCard>
       </div>
+
+      {/* GitHub contribution graph (only when GitHub is connected) */}
+      <GithubContributionCard />
 
       {/* Secondary stats */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

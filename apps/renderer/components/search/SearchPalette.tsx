@@ -395,7 +395,15 @@ export function SearchPalette() {
   const fileItem = (path: string) => (
     <CommandItem key={path} value={path} onSelect={() => chooseFile(path)}>
       <FileCode className="size-4 shrink-0 text-muted-foreground" />
-      <span className="truncate">{path}</span>
+      {/* Clip the *front* of the path (dir=rtl truncates at the logical start) so
+          a long path keeps its useful tail — filename + nearest folders — visible
+          instead of the irrelevant repo-root prefix. The lrm marks (‎) pin the
+          slashes to logical order so segments don't visually reorder under rtl. */}
+      <span className="min-w-0 flex-1 truncate text-left" dir="rtl">
+        {'‎'}
+        {path}
+        {'‎'}
+      </span>
     </CommandItem>
   );
   const issueItem = (issue: LinearIssue) => (
