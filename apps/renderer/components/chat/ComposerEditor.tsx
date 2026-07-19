@@ -2,6 +2,7 @@
 
 import {
   forwardRef,
+  useDeferredValue,
   useEffect,
   useImperativeHandle,
   useRef,
@@ -12,6 +13,7 @@ import { createPortal } from 'react-dom';
 import type { ChatImageInput } from '@flowstate/shared';
 import { fileToChatImage } from '@/lib/chat';
 import { MAX_COMPOSER_IMAGES, MAX_COMPOSER_IMAGE_BYTES } from '@/lib/constants/chat';
+import { fuzzyScorePath } from '@/lib/search';
 import type { ComposerDraft, MentionCaret } from '@/lib/types/chat';
 import { cn } from '../ui/cn';
 import { ImagePill } from './ImagePill';
@@ -76,11 +78,20 @@ function createMentionChip(path: string): HTMLSpanElement {
   return chip;
 }
 
-/** Filter candidate paths by a (case-insensitive) substring query, capped. */
+/**
+ * Rank candidate paths against the query with the shared fuzzy scorer (filename
+ * matches outrank directory-only ones), best-first, capped. An empty query keeps
+ * the server's alphabetical order. `sort` is stable, so equal-score results keep
+ * that incoming alphabetical order as a natural tiebreak.
+ */
 function filterMentions(files: string[], query: string): string[] {
-  const q = query.toLowerCase();
-  const matched = q ? files.filter((f) => f.toLowerCase().includes(q)) : files;
-  return matched.slice(0, MAX_MENTION_RESULTS);
+  if (!query) return files.slice(0, MAX_MENTION_RESULTS);
+  return files
+    .map((path) => ({ path, score: fuzzyScorePath(path, query) }))
+    .filter((m) => m.score >= 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, MAX_MENTION_RESULTS)
+    .map((m) => m.path);
 }
 
 /** Skip unsupported types / oversized files, then decode to base64 attachments. */
@@ -454,8 +465,13 @@ export const ComposerEditor = forwardRef<
     getDraft: () => serialize(),
   }));
 
+  // Defer the query so scoring the full file list per keystroke doesn't block a
+  // fast typist on large repos (mirrors the ⌘P finder).
+  const deferredMentionQuery = useDeferredValue(mentionQuery);
   const mentionCandidates =
-    mentionQuery !== null && mentionFiles ? filterMentions(mentionFiles, mentionQuery) : [];
+    deferredMentionQuery !== null && mentionFiles
+      ? filterMentions(mentionFiles, deferredMentionQuery)
+      : [];
   const mentionMenuOpen =
     !!mentions && mentionQuery !== null && (mentionCandidates.length > 0 || mentionLoading);
   const mentionActiveIndex = Math.min(mentionIndex, Math.max(0, mentionCandidates.length - 1));

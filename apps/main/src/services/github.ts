@@ -15,11 +15,13 @@ import { promisify } from 'node:util';
 import type {
   AddProjectInput,
   CreatePrResult,
+  GithubContributionCalendar,
+  GithubContributionDay,
   GithubRepo,
   GithubViewer,
   PrStatus,
 } from '@flowstate/shared';
-import { PrChecks, PrState } from '@flowstate/shared';
+import { GithubContributionLevel, PrChecks, PrState } from '@flowstate/shared';
 import { PROJECTS_DIR } from '../lib/constants/project';
 import { SecretName } from '../lib/enums/secret';
 import { getSecret } from '../store/secrets';
@@ -30,6 +32,32 @@ import { authService } from './auth';
 ///////////////
 
 const GITHUB_API = 'https://api.github.com';
+const GITHUB_GRAPHQL = 'https://api.github.com/graphql';
+
+/**
+ * How long the viewer's contribution calendar stays cached (ms). It changes at
+ * most a few times a day, but the analytics page re-queries on every open — a
+ * 10-minute TTL collapses repeated opens onto one GraphQL round-trip.
+ */
+const CONTRIBUTIONS_TTL_MS = 10 * 60_000;
+
+/** GraphQL for the viewer's trailing-year contribution calendar. */
+const CONTRIBUTIONS_QUERY = `query {
+  viewer {
+    contributionsCollection {
+      contributionCalendar {
+        totalContributions
+        weeks {
+          contributionDays {
+            date
+            contributionCount
+            contributionLevel
+          }
+        }
+      }
+    }
+  }
+}`;
 
 /**
  * How long a branch's PR status stays cached (ms). The header polls every ~20s
@@ -53,6 +81,52 @@ const prStatusCache = new Map<string, { value: PrStatus | null; expiresAt: numbe
 
 /** Per-worktree parsed `origin` cache. */
 const originCache = new Map<string, { value: { owner: string; fullName: string }; expiresAt: number }>();
+
+/** The viewer's contribution calendar cache (single viewer per app). */
+let contributionsCache: { value: GithubContributionCalendar; expiresAt: number } | null = null;
+
+/** GitHub's contribution-level buckets → a 0–4 heat step. */
+const CONTRIBUTION_LEVELS: Record<GithubContributionLevel, number> = {
+  [GithubContributionLevel.None]: 0,
+  [GithubContributionLevel.FirstQuartile]: 1,
+  [GithubContributionLevel.SecondQuartile]: 2,
+  [GithubContributionLevel.ThirdQuartile]: 3,
+  [GithubContributionLevel.FourthQuartile]: 4,
+};
+
+/** The GraphQL contribution-calendar response shape (the fields we select). */
+type GithubApiContributions = {
+  data?: {
+    viewer?: {
+      contributionsCollection?: {
+        contributionCalendar?: {
+          totalContributions: number;
+          weeks: {
+            contributionDays: {
+              date: string;
+              contributionCount: number;
+              contributionLevel: GithubContributionLevel;
+            }[];
+          }[];
+        };
+      };
+    };
+  };
+  errors?: { message: string }[];
+};
+
+/** Map a GraphQL contribution day (snake-ish wire) → the domain day. */
+function toContributionDay(d: {
+  date: string;
+  contributionCount: number;
+  contributionLevel: GithubContributionLevel;
+}): GithubContributionDay {
+  return {
+    day: d.date,
+    count: d.contributionCount,
+    level: CONTRIBUTION_LEVELS[d.contributionLevel] ?? 0,
+  };
+}
 
 /** Run a `git` subcommand, surfacing stderr on failure. */
 async function git(args: string[]): Promise<void> {
@@ -176,6 +250,43 @@ export class GithubService {
     }
     const user = (await res.json()) as { login: string; avatar_url: string };
     return { login: user.login, avatarUrl: user.avatar_url };
+  }
+
+  /**
+   * The linked account's own contribution calendar for the trailing year — the
+   * data behind the GitHub-style heatmap on the analytics page. Cached in memory
+   * (see `CONTRIBUTIONS_TTL_MS`) since the analytics page re-queries on every open.
+   */
+  async contributionCalendar(): Promise<GithubContributionCalendar> {
+    if (contributionsCache && contributionsCache.expiresAt > Date.now()) {
+      return contributionsCache.value;
+    }
+
+    const token = await this.token();
+    const res = await fetch(GITHUB_GRAPHQL, {
+      method: 'POST',
+      headers: { ...this.apiHeaders(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: CONTRIBUTIONS_QUERY }),
+    });
+    if (!res.ok) {
+      throw new Error(`GitHub API error (${res.status}): failed to read your contributions.`);
+    }
+
+    const body = (await res.json()) as GithubApiContributions;
+    if (body.errors?.length) {
+      throw new Error(`GitHub API error: ${body.errors.map((e) => e.message).join('; ')}`);
+    }
+    const calendar = body.data?.viewer?.contributionsCollection?.contributionCalendar;
+    if (!calendar) {
+      throw new Error('GitHub API error: no contribution calendar returned.');
+    }
+
+    const value: GithubContributionCalendar = {
+      totalContributions: calendar.totalContributions,
+      weeks: calendar.weeks.map((week) => week.contributionDays.map(toContributionDay)),
+    };
+    contributionsCache = { value, expiresAt: Date.now() + CONTRIBUTIONS_TTL_MS };
+    return value;
   }
 
   /** Repositories the linked account can access, most-recently-updated first. */

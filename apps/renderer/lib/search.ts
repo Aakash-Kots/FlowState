@@ -4,6 +4,13 @@
  * over thousands of candidates per keystroke without a worker.
  */
 
+///////////////
+// Constants //
+///////////////
+
+/** Filename matches always outrank directory-only matches. */
+const BASENAME_BOOST = 3000;
+
 /////////////
 // Helpers //
 /////////////
@@ -34,4 +41,21 @@ export function fuzzyScore(text: string, query: string): number {
     from = at + 1;
   }
   return score;
+}
+
+/**
+ * Score a repo-relative `path` against `query`, weighting matches that land on
+ * the filename above ones that only hit the parent directories — so `@`-mention
+ * and file-finder callers surface the file the user is naming rather than an
+ * unrelated file that happens to live under a matching folder. Returns `-1` when
+ * the query isn't a subsequence of the basename or the full path. Sort
+ * descending for "best first".
+ */
+export function fuzzyScorePath(path: string, query: string): number {
+  if (!query) return 0;
+  const slash = path.lastIndexOf('/');
+  const base = slash === -1 ? path : path.slice(slash + 1);
+  const baseScore = fuzzyScore(base, query);
+  if (baseScore >= 0) return BASENAME_BOOST + baseScore;
+  return fuzzyScore(path, query); // dir-only match, or -1 for no match
 }

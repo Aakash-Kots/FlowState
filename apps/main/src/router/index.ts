@@ -4,6 +4,7 @@ import { appRouter as appMeta } from './app';
 import { claudeRouter } from './claude';
 import { filesRouter } from './files';
 import { gitRouter } from './git';
+import { githubRouter } from './github';
 import { linearRouter } from './linear';
 import { notesRouter } from './notes';
 import { onboardingRouter } from './onboarding';
@@ -22,6 +23,7 @@ import { worktreeRouter } from './worktree';
 export const appRouter = router({
   app: appMeta,
   git: gitRouter,
+  github: githubRouter,
   files: filesRouter,
   worktree: worktreeRouter,
   tabs: tabsRouter,
