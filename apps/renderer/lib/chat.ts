@@ -13,6 +13,7 @@ import {
   PermissionBehavior,
   PermissionMode,
   ReasoningEffort,
+  type ChatBlock,
   type ChatEvent,
   type ChatImageInput,
   type ChatMessage,
@@ -21,6 +22,7 @@ import {
   type QuestionRequest,
   type SkillOption,
 } from '@flowstate/shared';
+import { TODO_WRITE_TOOL } from './constants/tools';
 import { ActivityIndicator } from './enums/chat';
 import { WorkspaceView } from './enums/view';
 import { playPing } from './notify';
@@ -389,6 +391,23 @@ export function useTabId(): string {
 export function useChat<T>(selector: (state: ChatState) => T): T {
   const tabId = useTabId();
   return useStore(storeFor(tabId), selector);
+}
+
+/**
+ * The most recent `TodoWrite` tool-use block in the transcript, or `null` if the
+ * session hasn't written a todo list. Scans newest-first and returns the block
+ * object itself — a stable reference (messages are immutable in the store) so it
+ * can be used directly as a `useChat` selector without churning re-renders.
+ */
+export function selectLatestTodoBlock(state: ChatState): ChatBlock | null {
+  for (let i = state.messages.length - 1; i >= 0; i--) {
+    const blocks = state.messages[i].message.blocks;
+    for (let j = blocks.length - 1; j >= 0; j--) {
+      const block = blocks[j];
+      if (block.type === ChatBlockType.ToolUse && block.name === TODO_WRITE_TOOL) return block;
+    }
+  }
+  return null;
 }
 
 /**
