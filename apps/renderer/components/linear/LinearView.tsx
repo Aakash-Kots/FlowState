@@ -1,15 +1,13 @@
 'use client';
 
 import { useEffect } from 'react';
-import { Loader2, Plus, RefreshCw, Sparkles } from 'lucide-react';
-import { LocalModelState } from '@flowstate/shared';
+import { Plus, RefreshCw } from 'lucide-react';
 import { useOnboarding } from '@/lib/onboarding';
 import {
   refreshIssues,
   refreshLinkedWorktrees,
   refreshMyWork,
   setCreateTicketOpen,
-  shouldRunSemantic,
   useLinear,
   useLinearSync,
 } from '@/lib/linear';
@@ -41,23 +39,6 @@ export function LinearView() {
   const linearConnected = useOnboarding((s) => s.linearConnected);
   const loading = useLinear((s) => s.issuesLoading);
   const error = useLinear((s) => s.issuesError);
-  const searchQuery = useLinear((s) => s.searchQuery);
-  const semanticSearching = useLinear((s) => s.semanticSearching);
-  const modelStatus = useLinear((s) => s.modelStatus);
-
-  // A prominent overlay while the model runs a natural-language search — or, if
-  // the query is semantic and the model is still downloading/loading, while it
-  // prepares. Literal/identifier searches never show it.
-  const preparing =
-    modelStatus?.state === LocalModelState.Downloading || modelStatus?.state === LocalModelState.Loading;
-  const wantsSemantic = shouldRunSemantic(searchQuery);
-  const showOverlay = semanticSearching || (preparing && wantsSemantic);
-  const overlayLabel =
-    preparing && wantsSemantic
-      ? modelStatus?.state === LocalModelState.Downloading
-        ? `Preparing smart search… ${Math.round((modelStatus.downloadProgress ?? 0) * 100)}%`
-        : 'Loading the model…'
-      : 'Searching by meaning…';
 
   const refresh = () => {
     void refreshIssues();
@@ -74,21 +55,7 @@ export function LinearView() {
   }
 
   return (
-    <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
-      {/* Full-view loading state while semantic search runs / the model prepares. */}
-      {showOverlay && (
-        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-background/80 backdrop-blur-sm">
-          <div className="relative">
-            <Sparkles className="size-7 text-primary" />
-            <Loader2 className="absolute -right-2 -top-2 size-4 animate-spin text-primary" />
-          </div>
-          <p className="text-sm font-medium text-neutral-200">{overlayLabel}</p>
-          <p className="max-w-xs text-center text-xs text-muted-foreground">
-            Ranking tickets by meaning on-device — the first run downloads the model once.
-          </p>
-        </div>
-      )}
-
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
       {/* Header */}
       <div className="flex items-center gap-2 border-b border-border bg-secondary px-3 py-1.5">
         <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
