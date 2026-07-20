@@ -12,6 +12,41 @@ import { formatDuration } from '@/lib/format';
 import { ImagePill } from './ImagePill';
 import { TurnSummary } from './TurnSummary';
 
+/////////////
+// Helpers //
+/////////////
+
+/** One rendered run of a user prompt: plain text or a file `@mention`. */
+type PromptSegment = { text: string } | { mention: string };
+
+/**
+ * Matches an `@mention` anywhere in the prompt: an `@` at the start or after
+ * whitespace, then the space-free path. Mirrors the composer's insertion grammar
+ * (`ComposerEditor` serializes each chosen file chip to `@<fullpath>`), so what
+ * the composer emits is exactly what we re-pill here. The leading boundary char
+ * is captured in group 1 to keep it in the surrounding text (never eaten).
+ */
+const MENTION_RE = /(^|\s)@([^\s@]+)/g;
+
+/**
+ * Split a sent user prompt into ordered text/mention segments so the bubble can
+ * render each `@path` as a `FileRef` chip while preserving every other character
+ * verbatim (whitespace/newlines matter under `whitespace-pre-wrap`).
+ */
+function splitPromptMentions(text: string): PromptSegment[] {
+  const segments: PromptSegment[] = [];
+  let last = 0;
+  for (const m of text.matchAll(MENTION_RE)) {
+    const [, boundary, path] = m;
+    const start = m.index + boundary.length;
+    if (start > last) segments.push({ text: text.slice(last, start) });
+    segments.push({ mention: path });
+    last = start + 1 + path.length; // skip the `@` + the path
+  }
+  if (last < text.length) segments.push({ text: text.slice(last) });
+  return segments;
+}
+
 /**
  * Renders a whole-message bubble — a user prompt or the end-of-turn result
  * footer. Assistant/tool content (text, thinking, tool runs) is flattened and
@@ -50,7 +85,23 @@ export const MessageBubble = memo(function MessageBubble({ message }: { message:
               ))}
             </div>
           )}
-          {text && <div className="whitespace-pre-wrap">{text}</div>}
+          {text && (
+            <div className="whitespace-pre-wrap">
+              {splitPromptMentions(text).map((seg, i) =>
+                'mention' in seg ? (
+                  <span
+                    key={i}
+                    title={seg.mention}
+                    className="mx-0.5 inline-flex items-center rounded bg-primary/15 px-1 align-baseline text-primary"
+                  >
+                    @{seg.mention.split('/').pop() ?? seg.mention}
+                  </span>
+                ) : (
+                  <span key={i}>{seg.text}</span>
+                ),
+              )}
+            </div>
+          )}
         </div>
         {text && (
           <button
