@@ -340,6 +340,7 @@ export class LinearService {
   async issues(input: ListLinearIssuesInput): Promise<LinearIssue[]> {
     const filter: Record<string, unknown> = {};
     if (input.teamId) filter.team = { id: { eq: input.teamId } };
+    else if (input.teamIds?.length) filter.team = { id: { in: input.teamIds } };
     if (!input.includeCompleted) Object.assign(filter, ACTIVE_STATE_FILTER);
     const q = input.query?.trim();
     if (q) {

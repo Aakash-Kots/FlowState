@@ -43,6 +43,8 @@ const RECENT_FILES_KEY = 'files.recent';
 const SEMANTIC_ENABLED_KEY = 'search.semanticEnabled';
 const SEMANTIC_SMALL_MODEL_KEY = 'search.preferSmallModel';
 const GEMMA_TIER_KEY = 'gemma.tierPreference';
+const SURFACED_TEAM_IDS_KEY = 'linear.surfacedTeamIds';
+const DEFAULT_TEAM_ID_KEY = 'linear.defaultTeamId';
 
 /** How many recently-active worktrees to remember for reload restoration. */
 const MAX_RECENT_WORKSPACES = 10;
@@ -52,6 +54,9 @@ const MAX_RECENT_FILES = 15;
 
 /** Validator for the persisted per-worktree recent-files map (defensive parse). */
 const recentFilesMapSchema = z.record(z.array(z.string()));
+
+/** Validator for the persisted surfaced-team-id list (defensive parse). */
+const surfacedTeamIdsSchema = z.array(z.string());
 
 /**
  * Default width (px) of the right-hand panel, and its clamp range. Wider than a
@@ -121,6 +126,31 @@ export function getGemmaTierPreference(): GemmaTierPreference {
 
 export function setGemmaTierPreference(preference: GemmaTierPreference): void {
   setSetting(GEMMA_TIER_KEY, preference);
+}
+
+/**
+ * Which Linear teams' issues to surface across the app (browser list, team
+ * pickers, assigned-work sections, semantic index). Empty means "all teams" —
+ * the default, preserving pre-setting behavior. Parsed defensively so a stale
+ * shape degrades to "all teams" rather than throwing.
+ */
+export function getSurfacedTeamIds(): string[] {
+  const parsed = surfacedTeamIdsSchema.safeParse(getSetting(SURFACED_TEAM_IDS_KEY));
+  return parsed.success ? parsed.data : [];
+}
+
+export function setSurfacedTeamIds(teamIds: string[]): void {
+  setSetting(SURFACED_TEAM_IDS_KEY, teamIds);
+}
+
+/** The team preselected when creating a new ticket (null = none chosen; the UI
+ * falls back to the first surfaced team). */
+export function getDefaultTeamId(): string | null {
+  return getSetting<string>(DEFAULT_TEAM_ID_KEY);
+}
+
+export function setDefaultTeamId(teamId: string | null): void {
+  setSetting(DEFAULT_TEAM_ID_KEY, teamId);
 }
 
 export function getWindowBounds(): WindowBounds | null {
