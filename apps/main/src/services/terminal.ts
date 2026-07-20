@@ -16,6 +16,7 @@
  * `electron-builder install-app-deps` (same as better-sqlite3).
  */
 import { EventEmitter } from 'node:events';
+import { spawnSync } from 'node:child_process';
 import { homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { ActivityType } from '@flowstate/shared';
@@ -100,6 +101,39 @@ const DEVICE_QUERY_RE = /\x1b\][0-9;]*\?(?:\x07|\x1b\\)|\x1b\[[0-9?;=>]*[nc]/g;
 function defaultShell(): string {
   if (process.platform === 'win32') return process.env.COMSPEC ?? 'powershell.exe';
   return process.env.SHELL ?? '/bin/zsh';
+}
+
+/**
+ * SIGKILL `pid` and every descendant. `pty.kill()` only signals the interactive
+ * shell (SIGHUP to its pid), but job control puts a launched dev server in its
+ * own process group, so it survives as an orphan. We instead walk the process
+ * tree and kill each process directly. Synchronous on purpose: the `will-quit`
+ * teardown (`disposeAll`) runs as the app exits, with no chance to await.
+ */
+function killProcessTree(pid: number): void {
+  if (process.platform === 'win32') {
+    // /T kills the whole tree, /F forces it. Swallow errors (already-dead pid).
+    spawnSync('taskkill', ['/pid', String(pid), '/T', '/F']);
+    return;
+  }
+  // Breadth-first collect descendants (deepest last), then kill deepest-first so
+  // a parent can't respawn a child we already reaped.
+  const tree = [pid];
+  for (let i = 0; i < tree.length; i++) {
+    const out = spawnSync('pgrep', ['-P', String(tree[i])], { encoding: 'utf8' });
+    if (out.status !== 0 || !out.stdout) continue;
+    for (const line of out.stdout.trim().split('\n')) {
+      const child = Number(line);
+      if (Number.isInteger(child)) tree.push(child);
+    }
+  }
+  for (const target of tree.reverse()) {
+    try {
+      process.kill(target, 'SIGKILL');
+    } catch {
+      // Already exited (or reparented away) — nothing to do.
+    }
+  }
 }
 
 /**
@@ -415,6 +449,7 @@ export class TerminalService {
     const session = this.sessions.get(id);
     if (!session) return;
     if (session.outFlush) clearTimeout(session.outFlush);
+    killProcessTree(session.pty.pid); // kill the dev server et al. before the shell
     session.pty.kill();
     this.sessions.delete(id);
     this.completions.delete(id);
@@ -437,6 +472,7 @@ export class TerminalService {
   disposeAll(): void {
     for (const session of this.sessions.values()) {
       if (session.outFlush) clearTimeout(session.outFlush);
+      killProcessTree(session.pty.pid); // kill the dev server et al. before the shell
       session.pty.kill();
     }
     this.sessions.clear();
