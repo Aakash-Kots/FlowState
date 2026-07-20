@@ -43,6 +43,10 @@ const MAX_TOKENS = 800;
  * short one-shot Q&A, and this bounds KV-cache RAM to a few hundred MB. */
 const CONTEXT_SIZE = 4096;
 
+/** Unload the model after this long with no generation, reclaiming its RAM. The
+ * next ask reloads it from disk in ~1–2s. */
+const IDLE_UNLOAD_MS = 10 * 60 * 1000;
+
 /** Steers the model toward short, direct answers in the inline palette. */
 const SYSTEM_PROMPT =
   'You are Gemma, a concise, helpful assistant embedded in a developer tool. ' +
@@ -90,6 +94,8 @@ export class GemmaService extends EventEmitter {
   private readyPromise: Promise<void> | null = null;
   /** Serializes generation — one context sequence, one prompt at a time. */
   private queue: Promise<unknown> = Promise.resolve();
+  /** Fires IDLE_UNLOAD_MS after the last generation to free the model's RAM. */
+  private idleTimer: ReturnType<typeof setTimeout> | null = null;
 
   private status: ModelStatus = {
     state: LocalModelState.Absent,
@@ -116,8 +122,29 @@ export class GemmaService extends EventEmitter {
     this.emit(STATUS_EVENT, this.getStatus());
   }
 
+  private clearIdleTimer(): void {
+    if (this.idleTimer) {
+      clearTimeout(this.idleTimer);
+      this.idleTimer = null;
+    }
+  }
+
+  /** (Re)arm the idle timer; unrefed so it never keeps the process alive. */
+  private scheduleIdleUnload(): void {
+    this.clearIdleTimer();
+    this.idleTimer = setTimeout(() => {
+      this.idleTimer = null;
+      if (this.isReady()) {
+        console.log('[gemma] unloading model after idle');
+        void this.dispose();
+      }
+    }, IDLE_UNLOAD_MS);
+    this.idleTimer.unref?.();
+  }
+
   /** Download + load the RAM-appropriate Gemma tier. Idempotent, single-flight. */
   ensureReady(): Promise<void> {
+    this.clearIdleTimer(); // a fresh request cancels a pending idle unload
     if (this.isReady()) return Promise.resolve();
     this.readyPromise ??= this.load().catch((err) => {
       this.readyPromise = null;
@@ -194,6 +221,7 @@ export class GemmaService extends EventEmitter {
         return text;
       } finally {
         session.dispose({ disposeSequence: true });
+        this.scheduleIdleUnload(); // start the idle countdown after each answer
       }
     };
     const result = this.queue.then(run, run);
@@ -234,6 +262,7 @@ export class GemmaService extends EventEmitter {
   }
 
   async dispose(): Promise<void> {
+    this.clearIdleTimer();
     try {
       await this.context?.dispose();
       await this.model?.dispose();
