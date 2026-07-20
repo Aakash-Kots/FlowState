@@ -27,6 +27,10 @@ export const EXIT_PLAN_MODE_TOOL = 'ExitPlanMode';
  * flattened chat items. */
 export const ASK_USER_QUESTION_TOOL = 'AskUserQuestion';
 
+/** Raw SDK tool name for the todo checklist. Its `input.todos` drives both the
+ * inline transcript row and the pinned task list above the composer. */
+export const TODO_WRITE_TOOL = 'TodoWrite';
+
 /** Raw SDK tool name → lucide icon for its row (and the collapsed tool-group
  * summary). Keyed by the same names as `TOOL_COLORS` / `TOOL_ROWS`; unlisted /
  * `mcp__*` tools are handled by `iconForTool`. This is the single source of

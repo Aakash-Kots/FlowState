@@ -44,6 +44,7 @@ import { ComposerEditor, type ComposerEditorHandle } from './ComposerEditor';
 import { InlinePrompt } from './InlinePrompt';
 import { InputToolbar } from './InputToolbar';
 import { SlashMenu } from './SlashMenu';
+import { TaskTracker } from './TaskTracker';
 
 /**
  * The floating prompt bar: a rounded card overlaid on the bottom of the
@@ -373,6 +374,7 @@ export function InputBar({ disabled }: { disabled: boolean }) {
                   </Button>
                 </div>
               )}
+              <TaskTracker />
               <div className="px-2.5 py-2">
                 <ComposerEditor
                   ref={editorRef}
