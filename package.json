@@ -11,7 +11,9 @@
     "node-pty",
     "better-sqlite3",
     "electron",
-    "esbuild"
+    "esbuild",
+    "node-llama-cpp",
+    "@node-llama-cpp/mac-arm64-metal"
   ],
   "scripts": {
     "dev": "bun scripts/dev.mjs",

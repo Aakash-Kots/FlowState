@@ -102,6 +102,17 @@ const ISSUE_BY_ID_QUERY = `
   }
 `;
 
+// Semantic-index corpus: a team's issues with their `description` bodies (the
+// full ISSUE_FIELDS selection), all states, so search can match meaning in the
+// body — not just the title. Same 100-row cap as the browse list.
+const TEAM_ISSUES_INDEX_QUERY = `
+  query TeamIssuesIndex($first: Int!, $filter: IssueFilter) {
+    issues(first: $first, filter: $filter, orderBy: updatedAt) {
+      nodes { ${ISSUE_FIELDS} }
+    }
+  }
+`;
+
 const SUB_ISSUES_QUERY = `
   query SubIssues($id: String!, $first: Int!) {
     issue(id: $id) {
@@ -352,6 +363,20 @@ export class LinearService {
       { issues: { nodes: IssueNode[] } },
       { first: number; filter: Record<string, unknown> }
     >(ISSUES_QUERY, { first: 100, filter });
+    return (data?.issues.nodes ?? []).map(toLinearIssue);
+  }
+
+  /**
+   * A team's issues with description bodies — the corpus the local semantic index
+   * embeds. Includes every state (finished tickets are worth searching too) and
+   * carries the full body so search matches meaning, not just the title.
+   */
+  async teamIssuesForIndex(teamId: string): Promise<LinearIssue[]> {
+    const filter = { team: { id: { eq: teamId } } };
+    const { data } = await this.client().client.rawRequest<
+      { issues: { nodes: IssueNode[] } },
+      { first: number; filter: Record<string, unknown> }
+    >(TEAM_ISSUES_INDEX_QUERY, { first: 100, filter });
     return (data?.issues.nodes ?? []).map(toLinearIssue);
   }
 

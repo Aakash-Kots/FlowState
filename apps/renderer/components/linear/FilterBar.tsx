@@ -1,6 +1,7 @@
 'use client';
 
-import { Check, ChevronDown, Search } from 'lucide-react';
+import { Check, ChevronDown, Loader2, Search, Sparkles } from 'lucide-react';
+import { LocalModelState } from '@flowstate/shared';
 import {
   ensureWorkflowStates,
   refreshUsers,
@@ -37,12 +38,23 @@ export function FilterBar() {
   const teams = useLinear((s) => s.teams);
   const selectedTeamId = useLinear((s) => s.selectedTeamId);
   const searchQuery = useLinear((s) => s.searchQuery);
+  const modelStatus = useLinear((s) => s.modelStatus);
+  const semanticActive = useLinear((s) => s.semanticActive);
   const users = useLinear((s) => s.users);
   const filterAssigneeId = useLinear((s) => s.filterAssigneeId);
   const filterStateIds = useLinear((s) => s.filterStateIds);
   const filterPriorities = useLinear((s) => s.filterPriorities);
   const includeCompleted = useLinear((s) => s.includeCompleted);
   const states = useLinear((s) => (selectedTeamId ? s.workflowStatesByTeam[selectedTeamId] ?? [] : []));
+
+  // While the on-device model downloads/loads, show a prep hint in the search
+  // box; once it's serving, a subtle "Smart" tag marks semantic-ranked results.
+  const preparing =
+    modelStatus?.state === LocalModelState.Downloading || modelStatus?.state === LocalModelState.Loading;
+  const prepLabel =
+    modelStatus?.state === LocalModelState.Downloading
+      ? `Preparing smart search… ${Math.round((modelStatus.downloadProgress ?? 0) * 100)}%`
+      : 'Loading smart search…';
 
   const selectedTeam = teams.find((t) => t.id === selectedTeamId) ?? null;
   const selectedState = states.find((st) => st.id === filterStateIds[0]) ?? null;
@@ -59,8 +71,27 @@ export function FilterBar() {
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search issues…"
           spellCheck={false}
-          className="h-8 w-full rounded-md border border-border bg-background pl-8 pr-2 text-sm text-neutral-100 placeholder:text-muted-foreground focus:border-primary/50 focus:outline-none"
+          className={cn(
+            'h-8 w-full rounded-md border border-border bg-background pl-8 text-sm text-neutral-100 placeholder:text-muted-foreground focus:border-primary/50 focus:outline-none',
+            preparing ? 'pr-44' : semanticActive ? 'pr-16' : 'pr-2',
+          )}
         />
+        {preparing ? (
+          <span className="pointer-events-none absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1 text-[11px] text-muted-foreground">
+            <Loader2 className="size-3 animate-spin" />
+            {prepLabel}
+          </span>
+        ) : (
+          semanticActive && (
+            <span
+              className="pointer-events-none absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1 text-[11px] text-primary"
+              title="Results ranked by meaning (on-device)"
+            >
+              <Sparkles className="size-3" />
+              Smart
+            </span>
+          )
+        )}
       </div>
 
       {/* Team */}

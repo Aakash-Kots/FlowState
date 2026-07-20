@@ -10,6 +10,7 @@ import { notesRouter } from './notes';
 import { onboardingRouter } from './onboarding';
 import { pinsRouter } from './pins';
 import { projectsRouter } from './projects';
+import { searchRouter } from './search';
 import { settingsRouter } from './settings';
 import { shortcutsRouter } from './shortcuts';
 import { skillsRouter } from './skills';
@@ -35,6 +36,7 @@ export const appRouter = router({
   skills: skillsRouter,
   claude: claudeRouter,
   linear: linearRouter,
+  search: searchRouter,
   spotify: spotifyRouter,
   system: systemRouter,
   shortcuts: shortcutsRouter,
