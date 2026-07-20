@@ -21,6 +21,7 @@ import {
 import { WorkspaceView } from './enums/view';
 import { useOnboarding } from './onboarding';
 import { fuzzyScore } from './search';
+import { useSettings } from './settings';
 import { trpc } from './trpc';
 import { setViewMode, useWorkspace } from './workspace';
 
@@ -56,6 +57,8 @@ type LinearStoreState = {
    */
   semanticScores: Map<string, number>;
   semanticActive: boolean;
+  /** True while a semantic query is in flight (drives the "Searching…" spinner). */
+  semanticSearching: boolean;
   /** Latest embedding-model lifecycle state, driving the search box's prep hint. */
   modelStatus: ModelStatus | null;
   /** The issue open in the detail panel. */
@@ -106,6 +109,7 @@ const INITIAL: LinearStoreState = {
   issuesError: null,
   semanticScores: new Map(),
   semanticActive: false,
+  semanticSearching: false,
   modelStatus: null,
   selectedIssueId: null,
   workflowStatesByTeam: {},
@@ -320,7 +324,7 @@ export async function refreshIssues(merge = false): Promise<void> {
  * changes (cached scores are keyed to the old team's tickets). */
 export function clearSemantic(): void {
   pendingSemanticQuery = null;
-  useLinear.setState({ semanticScores: new Map(), semanticActive: false });
+  useLinear.setState({ semanticScores: new Map(), semanticActive: false, semanticSearching: false });
 }
 
 /** Ensure the selected team's tickets are embedded into the local search index.
@@ -341,39 +345,45 @@ export function reindexSelectedTeam(): void {
 export async function runSemanticSearch(): Promise<void> {
   const { searchQuery, selectedTeamId } = useLinear.getState();
   const query = searchQuery.trim();
-  if (!query || !selectedTeamId || !shouldRunSemantic(query)) {
+  if (!query || !selectedTeamId || !shouldRunSemantic(query) || !useSettings.getState().semanticSearchEnabled) {
     clearSemantic();
     return;
   }
   const token = ++semanticReq;
-  let result;
+  useLinear.setState({ semanticSearching: true });
   try {
-    result = await trpc().search.semantic.query({ query, teamId: selectedTeamId, limit: SEMANTIC_LIMIT });
-  } catch {
-    return;
-  }
-  if (token !== semanticReq) return;
-  if (!result.modelReady) {
-    pendingSemanticQuery = query; // re-run when the model finishes loading
-    return;
-  }
-  pendingSemanticQuery = null;
-
-  // Hydrate any hit missing from the loaded pool (e.g. a completed ticket) so it
-  // can actually render in the list.
-  const known = new Set(useLinear.getState().issues.map((i) => i.id));
-  const missing = result.hits.filter((h) => !known.has(h.issueId)).map((h) => h.issueId);
-  if (missing.length > 0) {
-    const fetched = await Promise.all(missing.map((id) => trpc().linear.issue.query({ id }).catch(() => null)));
+    let result;
+    try {
+      result = await trpc().search.semantic.query({ query, teamId: selectedTeamId, limit: SEMANTIC_LIMIT });
+    } catch {
+      return; // degrade silently to literal search
+    }
     if (token !== semanticReq) return;
-    const valid = fetched.filter((i): i is LinearIssue => i !== null);
-    if (valid.length > 0) useLinear.setState((s) => ({ issues: mergeIssues(s.issues, valid) }));
-  }
+    if (!result.modelReady) {
+      pendingSemanticQuery = query; // re-run once the model finishes loading
+      return;
+    }
+    pendingSemanticQuery = null;
 
-  useLinear.setState({
-    semanticScores: new Map(result.hits.map((h) => [h.issueId, h.score])),
-    semanticActive: true,
-  });
+    // Hydrate any hit missing from the loaded pool (e.g. a completed ticket) so
+    // it can actually render in the list.
+    const known = new Set(useLinear.getState().issues.map((i) => i.id));
+    const missing = result.hits.filter((h) => !known.has(h.issueId)).map((h) => h.issueId);
+    if (missing.length > 0) {
+      const fetched = await Promise.all(missing.map((id) => trpc().linear.issue.query({ id }).catch(() => null)));
+      if (token !== semanticReq) return;
+      const valid = fetched.filter((i): i is LinearIssue => i !== null);
+      if (valid.length > 0) useLinear.setState((s) => ({ issues: mergeIssues(s.issues, valid) }));
+    }
+
+    useLinear.setState({
+      semanticScores: new Map(result.hits.map((h) => [h.issueId, h.score])),
+      semanticActive: true,
+    });
+  } finally {
+    // Only the latest query clears the spinner (a superseded one already handed off).
+    if (token === semanticReq) useLinear.setState({ semanticSearching: false });
+  }
 }
 
 /**

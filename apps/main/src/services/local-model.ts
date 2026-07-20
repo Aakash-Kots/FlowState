@@ -15,12 +15,13 @@
  * renderer over a tRPC subscription (`search.onModelProgress`).
  */
 import { EventEmitter } from 'node:events';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, readdir, stat, unlink } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { totalmem } from 'node:os';
 import { join } from 'node:path';
 import { app } from 'electron';
-import { LocalModelState, type ModelStatus } from '@flowstate/shared';
+import { LocalModelState, type ModelDiskInfo, type ModelStatus } from '@flowstate/shared';
+import { getPreferSmallModel } from '../store/settings';
 import {
   EMBED_QUERY_PREFIX,
   LOCAL_MODELS,
@@ -65,12 +66,13 @@ function modelsDir(): string {
 
 /**
  * Pick the quantization + Matryoshka width that fits the machine. More RAM →
- * the higher-fidelity Q8 weights and the full 768-dim vector; constrained → the
- * QAT Q4 weights and a 256-dim vector (faster cosine, less storage, small recall
- * cost). GPU present → let node-llama-cpp offload as many layers as fit.
+ * the higher-fidelity Q8 weights and the full 768-dim vector; constrained (or
+ * when the user opts for the smaller model) → the QAT Q4 weights and a 256-dim
+ * vector (faster cosine, less storage, small recall cost). GPU present → let
+ * node-llama-cpp offload as many layers as fit.
  */
-function selectSpec(hardware: HardwareProfile): ModelSpec {
-  const comfortable = hardware.totalRamBytes >= RAM_COMFORTABLE_BYTES;
+function selectSpec(hardware: HardwareProfile, preferSmall: boolean): ModelSpec {
+  const comfortable = !preferSmall && hardware.totalRamBytes >= RAM_COMFORTABLE_BYTES;
   return {
     modelId: SEARCH_EMBEDDING_MODEL,
     quant: comfortable ? ModelQuant.Q8_0 : ModelQuant.Q4_0,
@@ -184,7 +186,7 @@ export class LocalModelService extends EventEmitter {
       freeVramBytes: vram.free,
       gpu: this.llama.gpu,
     };
-    const spec = selectSpec(hardware);
+    const spec = selectSpec(hardware, getPreferSmallModel());
     const source = sourceForSpec(spec);
     this.spec = spec;
     this.setStatus({ modelId: spec.modelId, error: null });
@@ -238,6 +240,43 @@ export class LocalModelService extends EventEmitter {
     // Keep the chain alive but don't let a rejection poison the next caller.
     this.queue = result.catch(() => undefined);
     return result;
+  }
+
+  /** On-disk size of the downloaded weights (all `.gguf` files in the cache). */
+  async getDiskInfo(): Promise<ModelDiskInfo> {
+    try {
+      const dir = modelsDir();
+      const files = await readdir(dir);
+      let bytes = 0;
+      for (const file of files) {
+        if (file.endsWith('.gguf')) bytes += (await stat(join(dir, file))).size;
+      }
+      return { downloaded: bytes > 0, bytes };
+    } catch {
+      return { downloaded: false, bytes: 0 };
+    }
+  }
+
+  /** Unload and delete the downloaded weights, reclaiming the disk. A later
+   * search re-downloads on demand. */
+  async deleteModel(): Promise<ModelDiskInfo> {
+    await this.dispose();
+    try {
+      const dir = modelsDir();
+      const files = await readdir(dir);
+      await Promise.all(
+        files.filter((f) => f.endsWith('.gguf')).map((f) => unlink(join(dir, f)).catch(() => undefined)),
+      );
+    } catch {
+      // Cache dir may not exist yet — nothing to delete.
+    }
+    return this.getDiskInfo();
+  }
+
+  /** Unload the model so the next embed re-selects a spec — used when the
+   * small-model preference changes (the chosen quant/width differs). */
+  async reload(): Promise<void> {
+    await this.dispose();
   }
 
   /** Dispose the loaded model/context (called on app quit). */

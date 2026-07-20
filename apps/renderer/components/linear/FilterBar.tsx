@@ -40,6 +40,7 @@ export function FilterBar() {
   const searchQuery = useLinear((s) => s.searchQuery);
   const modelStatus = useLinear((s) => s.modelStatus);
   const semanticActive = useLinear((s) => s.semanticActive);
+  const semanticSearching = useLinear((s) => s.semanticSearching);
   const users = useLinear((s) => s.users);
   const filterAssigneeId = useLinear((s) => s.filterAssigneeId);
   const filterStateIds = useLinear((s) => s.filterStateIds);
@@ -73,13 +74,18 @@ export function FilterBar() {
           spellCheck={false}
           className={cn(
             'h-8 w-full rounded-md border border-border bg-background pl-8 text-sm text-neutral-100 placeholder:text-muted-foreground focus:border-primary/50 focus:outline-none',
-            preparing ? 'pr-44' : semanticActive ? 'pr-16' : 'pr-2',
+            preparing ? 'pr-44' : semanticSearching ? 'pr-24' : semanticActive ? 'pr-16' : 'pr-2',
           )}
         />
         {preparing ? (
           <span className="pointer-events-none absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1 text-[11px] text-muted-foreground">
             <Loader2 className="size-3 animate-spin" />
             {prepLabel}
+          </span>
+        ) : semanticSearching ? (
+          <span className="pointer-events-none absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1 text-[11px] text-muted-foreground">
+            <Loader2 className="size-3 animate-spin" />
+            Searching…
           </span>
         ) : (
           semanticActive && (

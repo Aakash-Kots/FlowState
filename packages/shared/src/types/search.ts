@@ -58,3 +58,20 @@ export type ModelStatus = {
   modelId: string;
   error: string | null;
 };
+
+/**
+ * User controls for semantic search. `enabled` off fully disables it (no
+ * download, no embedding — search falls back to literal). `preferSmallModel`
+ * forces the smaller Q4 weights + a narrower vector regardless of RAM, trading a
+ * little recall for ~80MB less disk and lower memory.
+ */
+export type SearchPrefs = {
+  enabled: boolean;
+  preferSmallModel: boolean;
+};
+
+/** On-disk footprint of the downloaded model weights, for the settings UI. */
+export type ModelDiskInfo = {
+  downloaded: boolean;
+  bytes: number;
+};

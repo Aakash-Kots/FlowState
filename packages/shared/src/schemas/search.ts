@@ -6,9 +6,11 @@
 import { z } from 'zod';
 import { LocalModelState } from '../enums/search';
 import type {
+  ModelDiskInfo,
   ModelStatus,
   ReindexInput,
   ReindexResult,
+  SearchPrefs,
   SemanticHit,
   SemanticSearchInput,
   SemanticSearchResult,
@@ -46,4 +48,14 @@ export const modelStatusSchema: z.ZodType<ModelStatus> = z.object({
   downloadProgress: z.number().nullable(),
   modelId: z.string(),
   error: z.string().nullable(),
+});
+
+export const searchPrefsSchema: z.ZodType<SearchPrefs> = z.object({
+  enabled: z.boolean(),
+  preferSmallModel: z.boolean(),
+});
+
+export const modelDiskInfoSchema: z.ZodType<ModelDiskInfo> = z.object({
+  downloaded: z.boolean(),
+  bytes: z.number().int().nonnegative(),
 });

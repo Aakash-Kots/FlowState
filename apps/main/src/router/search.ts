@@ -8,18 +8,29 @@
  */
 import { observable } from '@trpc/server/observable';
 import {
+  type ModelDiskInfo,
   type ModelStatus,
   type ReindexResult,
+  type SearchPrefs,
   type SemanticSearchResult,
+  modelDiskInfoSchema,
   modelStatusSchema,
   reindexInputSchema,
   reindexResultSchema,
+  searchPrefsSchema,
   semanticSearchInputSchema,
   semanticSearchResultSchema,
 } from '@flowstate/shared';
 import { TRPCError } from '@trpc/server';
+import { z } from 'zod';
 import { localModelService } from '../services/local-model';
 import { searchService } from '../services/search';
+import {
+  getPreferSmallModel,
+  getSemanticSearchEnabled,
+  setPreferSmallModel,
+  setSemanticSearchEnabled,
+} from '../store/settings';
 import { publicProcedure, router } from '../trpc';
 
 /** Wrap a search call, surfacing its message as an INTERNAL_SERVER_ERROR. */
@@ -54,5 +65,33 @@ export const searchRouter = router({
       emit.next(localModelService.getStatus());
       return localModelService.onStatus((status) => emit.next(status));
     }),
+  ),
+
+  /** User controls for semantic search (enable + small-model preference). */
+  prefs: publicProcedure.query((): SearchPrefs =>
+    searchPrefsSchema.parse({ enabled: getSemanticSearchEnabled(), preferSmallModel: getPreferSmallModel() }),
+  ),
+
+  setEnabled: publicProcedure.input(z.object({ enabled: z.boolean() })).mutation(({ input }) => {
+    setSemanticSearchEnabled(input.enabled);
+    // Turning it off frees memory immediately; the weights stay on disk until
+    // the user deletes them explicitly.
+    if (!input.enabled) void localModelService.reload();
+  }),
+
+  setPreferSmallModel: publicProcedure.input(z.object({ prefer: z.boolean() })).mutation(({ input }) => {
+    setPreferSmallModel(input.prefer);
+    // The chosen quant/width changed — unload so the next search re-selects.
+    void localModelService.reload();
+  }),
+
+  /** On-disk footprint of the downloaded weights (for the settings UI). */
+  modelInfo: publicProcedure.query((): Promise<ModelDiskInfo> =>
+    guard(async () => modelDiskInfoSchema.parse(await localModelService.getDiskInfo()), 'Failed to read model info.'),
+  ),
+
+  /** Delete the downloaded weights, reclaiming the disk. Returns the new (empty) info. */
+  deleteModel: publicProcedure.mutation((): Promise<ModelDiskInfo> =>
+    guard(async () => modelDiskInfoSchema.parse(await localModelService.deleteModel()), 'Failed to delete model.'),
   ),
 });

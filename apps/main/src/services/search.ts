@@ -32,6 +32,7 @@ import {
   pruneIssueEmbeddings,
   upsertIssueEmbeddings,
 } from '../store/embeddings';
+import { getSemanticSearchEnabled } from '../store/settings';
 import { linearService } from './linear';
 import { localModelService } from './local-model';
 
@@ -82,8 +83,10 @@ export class SearchService {
   /** In-flight reindex per team, so concurrent triggers coalesce. */
   private reindexing = new Map<string, Promise<ReindexResult>>();
 
-  /** (Re)embed a team's tickets into the local index. Single-flight per team. */
+  /** (Re)embed a team's tickets into the local index. Single-flight per team.
+   * No-op when semantic search is disabled (don't download/embed). */
   reindexTeam(teamId: string): Promise<ReindexResult> {
+    if (!getSemanticSearchEnabled()) return Promise.resolve({ embedded: 0, total: 0 });
     const existing = this.reindexing.get(teamId);
     if (existing) return existing;
     const run = this.doReindex(teamId).finally(() => this.reindexing.delete(teamId));
@@ -142,7 +145,7 @@ export class SearchService {
   async semantic(input: SemanticSearchInput): Promise<SemanticSearchResult> {
     const query = input.query.trim();
     const teamId = input.teamId;
-    if (!query) return { hits: [], modelReady: localModelService.isReady() };
+    if (!query || !getSemanticSearchEnabled()) return { hits: [], modelReady: false };
 
     if (!localModelService.isReady()) {
       // Trigger the one-time download/load; the UI waits on the progress feed and

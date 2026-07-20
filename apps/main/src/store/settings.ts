@@ -39,6 +39,8 @@ const SKILLS_PANEL_OPEN_KEY = 'skillsPanel.open';
 const TERMINAL_PANEL_FRACTION_KEY = 'terminalPanel.fraction';
 const WORKSPACE_RECENT_KEY = 'workspace.recent';
 const RECENT_FILES_KEY = 'files.recent';
+const SEMANTIC_ENABLED_KEY = 'search.semanticEnabled';
+const SEMANTIC_SMALL_MODEL_KEY = 'search.preferSmallModel';
 
 /** How many recently-active worktrees to remember for reload restoration. */
 const MAX_RECENT_WORKSPACES = 10;
@@ -83,6 +85,26 @@ export function setSetting<T>(key: string, value: T): void {
     .values({ key, value: serialized })
     .onConflictDoUpdate({ target: settings.key, set: { value: serialized } })
     .run();
+}
+
+/** Whether natural-language (semantic) ticket search is on (default on). Off
+ * fully disables it: no model download, no embedding — search stays literal. */
+export function getSemanticSearchEnabled(): boolean {
+  return getSetting<boolean>(SEMANTIC_ENABLED_KEY) ?? true;
+}
+
+export function setSemanticSearchEnabled(enabled: boolean): void {
+  setSetting(SEMANTIC_ENABLED_KEY, enabled);
+}
+
+/** Whether to force the smaller Q4 embedding weights regardless of RAM (default
+ * off) — ~80MB less disk + lower memory, a little less recall. */
+export function getPreferSmallModel(): boolean {
+  return getSetting<boolean>(SEMANTIC_SMALL_MODEL_KEY) ?? false;
+}
+
+export function setPreferSmallModel(prefer: boolean): void {
+  setSetting(SEMANTIC_SMALL_MODEL_KEY, prefer);
 }
 
 export function getWindowBounds(): WindowBounds | null {
