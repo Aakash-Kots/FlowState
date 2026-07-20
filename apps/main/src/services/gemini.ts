@@ -198,8 +198,11 @@ export class GeminiService extends EventEmitter {
     for (let turn = 0; turn < MAX_TURNS; turn++) {
       const stream = await ai.models.generateContentStream({ model: GEMINI_CHAT_MODEL, contents, config });
 
+      // Accumulate the model turn's raw parts verbatim — they carry the
+      // `thoughtSignature` Gemini 3.x requires echoed back on the next request.
+      // Deriving calls from `chunk.functionCalls` instead would strip it.
       let text = '';
-      const calls: FunctionCall[] = [];
+      const modelParts: Part[] = [];
       for await (const chunk of stream) {
         if (signal?.aborted) return finalText;
         const piece = chunk.text;
@@ -207,17 +210,15 @@ export class GeminiService extends EventEmitter {
           text += piece;
           handlers.onToken(piece);
         }
-        const fns = chunk.functionCalls;
-        if (fns?.length) calls.push(...fns);
+        const parts = chunk.candidates?.[0]?.content?.parts;
+        if (parts?.length) modelParts.push(...parts);
       }
       finalText = text;
 
-      // Record the model's turn (text + any tool calls) so the follow-up request
+      // Record the model's turn (signed parts intact) so the follow-up request
       // carries the full conversation.
-      const modelParts: Part[] = [];
-      if (text) modelParts.push({ text });
-      for (const call of calls) modelParts.push({ functionCall: call });
       if (modelParts.length) contents.push({ role: 'model', parts: modelParts });
+      const calls: FunctionCall[] = modelParts.flatMap((p) => (p.functionCall ? [p.functionCall] : []));
 
       if (calls.length === 0) return finalText;
 
