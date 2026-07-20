@@ -14,9 +14,11 @@ import {
   refreshTeams,
   refreshUsers,
   setCreateTicketOpen,
+  surfacedTeams,
   useLinear,
 } from '@/lib/linear';
 import { openCreateWorktreeForIssue, useCurrentProjectId } from '@/lib/projects';
+import { useSettings } from '@/lib/settings';
 import { Button } from '@/components/ui/Button';
 import { cn } from '@/components/ui/cn';
 import { Combobox } from '@/components/ui/combobox';
@@ -46,7 +48,9 @@ export function CreateTicketModal() {
   const open = useLinear((s) => s.createTicketOpen);
   const creating = useLinear((s) => s.creating);
   const error = useLinear((s) => s.createError);
-  const teams = useLinear((s) => s.teams);
+  const allTeams = useLinear((s) => s.teams);
+  const surfacedTeamIds = useSettings((s) => s.surfacedTeamIds);
+  const teams = surfacedTeams(allTeams, surfacedTeamIds);
   const users = useLinear((s) => s.users);
   const viewer = useLinear((s) => s.viewer);
   const projects = useLinear((s) => s.projects);
@@ -87,7 +91,15 @@ export function CreateTicketModal() {
     void refreshTeams();
     void refreshUsers();
     void ensureViewer();
-    setTeamId(useLinear.getState().teams[0]?.id ?? '');
+    // Default to the configured team when it's still surfaced, else the first
+    // surfaced team.
+    const { surfacedTeamIds: surfaced, defaultTeamId } = useSettings.getState();
+    const currentTeams = surfacedTeams(useLinear.getState().teams, surfaced);
+    const preferred =
+      defaultTeamId && currentTeams.some((t) => t.id === defaultTeamId)
+        ? defaultTeamId
+        : (currentTeams[0]?.id ?? '');
+    setTeamId(preferred);
   }, [open]);
 
   // Load the (team-scoped) status / project / label options when the team changes.

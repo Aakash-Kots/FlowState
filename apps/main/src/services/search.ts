@@ -32,7 +32,7 @@ import {
   pruneIssueEmbeddings,
   upsertIssueEmbeddings,
 } from '../store/embeddings';
-import { getSemanticSearchEnabled } from '../store/settings';
+import { getSemanticSearchEnabled, getSurfacedTeamIds } from '../store/settings';
 import { linearService } from './linear';
 import { localModelService } from './local-model';
 
@@ -99,8 +99,10 @@ export class SearchService {
    * thrashing the single embedding context. Best-effort per team. */
   async reindexAllTeams(): Promise<void> {
     if (!getSemanticSearchEnabled()) return;
+    const surfaced = getSurfacedTeamIds();
     const teams = await linearService.teams().catch(() => []);
-    for (const team of teams) {
+    const scoped = surfaced.length ? teams.filter((t) => surfaced.includes(t.id)) : teams;
+    for (const team of scoped) {
       await this.reindexTeam(team.id).catch(() => undefined);
     }
   }

@@ -170,6 +170,11 @@ export function issueToRef(issue: LinearIssue): LinearIssueRef {
   };
 }
 
+/** The teams to show given the surfaced-teams setting (empty = every team). */
+export function surfacedTeams(teams: LinearTeam[], surfacedIds: string[]): LinearTeam[] {
+  return surfacedIds.length ? teams.filter((t) => surfacedIds.includes(t.id)) : teams;
+}
+
 /** Group linked worktrees by the issue they're attached to. */
 export function worktreesByIssue(linked: LinkedWorktree[]): Map<string, LinkedWorktree[]> {
   const map = new Map<string, LinkedWorktree[]>();
@@ -299,10 +304,13 @@ export async function refreshIssues(merge = false): Promise<void> {
   const { selectedTeamId, searchQuery, filterAssigneeId, filterStateIds, filterPriorities, includeCompleted } =
     useLinear.getState();
   const token = ++issuesReq;
+  // With no single team selected, scope to the surfaced set (empty = all teams).
+  const surfaced = useSettings.getState().surfacedTeamIds;
   useLinear.setState({ issuesLoading: true, issuesError: null });
   try {
     const results = await trpc().linear.issues.query({
       teamId: selectedTeamId ?? undefined,
+      teamIds: selectedTeamId ? undefined : surfaced.length ? surfaced : undefined,
       query: searchQuery.trim() || undefined,
       assigneeId: filterAssigneeId ?? undefined,
       stateIds: filterStateIds.length ? filterStateIds : undefined,
@@ -406,9 +414,11 @@ export async function refreshMyWork(): Promise<void> {
   await ensureViewer();
   const viewer = useLinear.getState().viewer;
   if (!viewer) return;
+  const surfaced = useSettings.getState().surfacedTeamIds;
   try {
     const myWorkIssues = await trpc().linear.issues.query({
       assigneeId: viewer.id,
+      teamIds: surfaced.length ? surfaced : undefined,
       includeCompleted: true,
     });
     useLinear.setState({ myWorkIssues });

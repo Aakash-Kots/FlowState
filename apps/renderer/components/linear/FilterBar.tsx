@@ -11,8 +11,10 @@ import {
   setIncludeCompleted,
   setSearchQuery,
   setSelectedTeam,
+  surfacedTeams,
   useLinear,
 } from '@/lib/linear';
+import { useSettings } from '@/lib/settings';
 import { Combobox } from '../ui/combobox';
 import { cn } from '../ui/cn';
 import { Avatar, StateDot } from './atoms';
@@ -35,7 +37,9 @@ const TRIGGER =
  * Every change refetches the browser list via the store setters.
  */
 export function FilterBar() {
-  const teams = useLinear((s) => s.teams);
+  const allTeams = useLinear((s) => s.teams);
+  const surfacedTeamIds = useSettings((s) => s.surfacedTeamIds);
+  const teams = surfacedTeams(allTeams, surfacedTeamIds);
   const selectedTeamId = useLinear((s) => s.selectedTeamId);
   const searchQuery = useLinear((s) => s.searchQuery);
   const modelStatus = useLinear((s) => s.modelStatus);
@@ -57,7 +61,7 @@ export function FilterBar() {
       ? `Preparing smart search… ${Math.round((modelStatus.downloadProgress ?? 0) * 100)}%`
       : 'Loading smart search…';
 
-  const selectedTeam = teams.find((t) => t.id === selectedTeamId) ?? null;
+  const selectedTeam = allTeams.find((t) => t.id === selectedTeamId) ?? null;
   const selectedState = states.find((st) => st.id === filterStateIds[0]) ?? null;
   const selectedAssignee = users.find((u) => u.id === filterAssigneeId) ?? null;
   const selectedPriority = filterPriorities.length ? filterPriorities[0] : null;

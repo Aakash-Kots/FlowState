@@ -3,17 +3,21 @@ import { ArchiveRetention, CodeTheme, FontSize } from '@flowstate/shared';
 import {
   getArchiveRetention,
   getCodeTheme,
+  getDefaultTeamId,
   getFontSize,
   getSkillsPanelOpen,
   getSkillsPanelWidth,
   getSoundEnabled,
+  getSurfacedTeamIds,
   getTerminalPanelFraction,
   setArchiveRetention,
   setCodeTheme,
+  setDefaultTeamId,
   setFontSize,
   setSkillsPanelOpen,
   setSkillsPanelWidth,
   setSoundEnabled,
+  setSurfacedTeamIds,
   setTerminalPanelFraction,
 } from '../store/settings';
 import { publicProcedure, router } from '../trpc';
@@ -33,6 +37,8 @@ export const settingsRouter = router({
     skillsPanelWidth: getSkillsPanelWidth(),
     skillsPanelOpen: getSkillsPanelOpen(),
     terminalPanelFraction: getTerminalPanelFraction(),
+    surfacedTeamIds: getSurfacedTeamIds(),
+    defaultTeamId: getDefaultTeamId(),
   })),
 
   setSoundEnabled: publicProcedure
@@ -75,5 +81,17 @@ export const settingsRouter = router({
     .input(z.object({ fraction: z.number() }))
     .mutation(({ input }) => {
       setTerminalPanelFraction(input.fraction);
+    }),
+
+  setSurfacedTeamIds: publicProcedure
+    .input(z.object({ teamIds: z.array(z.string()) }))
+    .mutation(({ input }) => {
+      setSurfacedTeamIds(input.teamIds);
+    }),
+
+  setDefaultTeam: publicProcedure
+    .input(z.object({ teamId: z.string().nullable() }))
+    .mutation(({ input }) => {
+      setDefaultTeamId(input.teamId);
     }),
 });

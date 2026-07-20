@@ -38,6 +38,10 @@ type SettingsState = {
   semanticSearchEnabled: boolean;
   /** Whether to force the smaller Q4 embedding model regardless of RAM. */
   preferSmallModel: boolean;
+  /** Linear team ids to surface across the app; empty means all teams. */
+  surfacedTeamIds: string[];
+  /** Team preselected for new tickets (null = none chosen → first surfaced). */
+  defaultTeamId: string | null;
 };
 
 ///////////////
@@ -58,6 +62,8 @@ const INITIAL: SettingsState = {
   terminalPanelFraction: 0.5,
   semanticSearchEnabled: true,
   preferSmallModel: false,
+  surfacedTeamIds: [],
+  defaultTeamId: null,
 };
 
 export const useSettings = create<SettingsState>(() => INITIAL);
@@ -108,6 +114,8 @@ export function useSettingsSync(): void {
           skillsPanelWidth,
           skillsPanelOpen,
           terminalPanelFraction,
+          surfacedTeamIds,
+          defaultTeamId,
         }) => {
           useSettings.setState({
             hydrated: true,
@@ -118,6 +126,8 @@ export function useSettingsSync(): void {
             skillsPanelWidth,
             skillsPanelOpen,
             terminalPanelFraction,
+            surfacedTeamIds,
+            defaultTeamId,
           });
           applyCodeTheme(codeTheme);
           applyFontSize(fontSize);
@@ -145,6 +155,22 @@ export function setSemanticSearchEnabled(enabled: boolean): void {
 export function setPreferSmallModel(prefer: boolean): void {
   useSettings.setState({ preferSmallModel: prefer });
   void trpc().search.setPreferSmallModel.mutate({ prefer });
+}
+
+/**
+ * Choose which Linear teams to surface (optimistic + persisted). Callers that
+ * need the issue lists / index to reflect the change should trigger the Linear
+ * refetch themselves — this store stays free of `@/lib/linear` to avoid a cycle.
+ */
+export function setSurfacedTeamIds(teamIds: string[]): void {
+  useSettings.setState({ surfacedTeamIds: teamIds });
+  void trpc().settings.setSurfacedTeamIds.mutate({ teamIds });
+}
+
+/** Choose the team preselected for new tickets (optimistic + persisted). */
+export function setDefaultTeam(teamId: string | null): void {
+  useSettings.setState({ defaultTeamId: teamId });
+  void trpc().settings.setDefaultTeam.mutate({ teamId });
 }
 
 /** Toggle the completion sound (optimistic; persisted in the main process). */

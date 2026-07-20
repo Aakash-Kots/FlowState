@@ -106,6 +106,7 @@ export const linkedWorktreeSchema: z.ZodType<LinkedWorktree> = z.object({
 
 export const listLinearIssuesInputSchema: z.ZodType<ListLinearIssuesInput> = z.object({
   teamId: z.string().optional(),
+  teamIds: z.array(z.string()).optional(),
   query: z.string().optional(),
   includeCompleted: z.boolean().optional(),
   assigneeId: z.string().optional(),

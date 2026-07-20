@@ -16,6 +16,7 @@ import {
 import { cn } from '../ui/cn';
 import { ArchiveRetentionCard } from './ArchiveRetentionCard';
 import { CodeThemeCard } from './CodeThemeCard';
+import { LinearTeamsCard } from './LinearTeamsCard';
 import { Section, SettingRow } from './SettingsLayout';
 import { SmartSearchModelCard } from './SmartSearchModelCard';
 
@@ -226,6 +227,15 @@ export function SettingsPage() {
               title="On-device assistant"
               description="Double-tap Space anywhere to ask a local Gemma 3 model and get a streamed answer inline. The model size is chosen from your available memory; it downloads once on first use."
               control={<SmartSearchModelCard endpoint="gemma" />}
+            />
+          </Section>
+
+          <Section title="Linear">
+            <SettingRow
+              stack
+              title="Surfaced teams"
+              description="Choose which teams' issues appear across the app — the issue browser, team pickers, your assigned-work sections, and the on-device search index."
+              control={<LinearTeamsCard />}
             />
           </Section>
 
