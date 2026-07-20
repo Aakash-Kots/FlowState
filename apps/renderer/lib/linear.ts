@@ -335,6 +335,12 @@ export function reindexSelectedTeam(): void {
   void trpc().search.reindex.mutate({ teamId }).catch(() => {});
 }
 
+/** Index every team in the background so semantic search works before the user
+ * picks a team (and ⌘P spans the whole backlog). */
+export function reindexAllTeams(): void {
+  void trpc().search.reindexAll.mutate().catch(() => {});
+}
+
 /**
  * Run semantic search for the current query + selected team against the local
  * embedding model and blend the results into the browser list. While the model
@@ -345,7 +351,7 @@ export function reindexSelectedTeam(): void {
 export async function runSemanticSearch(): Promise<void> {
   const { searchQuery, selectedTeamId } = useLinear.getState();
   const query = searchQuery.trim();
-  if (!query || !selectedTeamId || !shouldRunSemantic(query) || !useSettings.getState().semanticSearchEnabled) {
+  if (!query || !shouldRunSemantic(query) || !useSettings.getState().semanticSearchEnabled) {
     clearSemantic();
     return;
   }
@@ -354,7 +360,12 @@ export async function runSemanticSearch(): Promise<void> {
   try {
     let result;
     try {
-      result = await trpc().search.semantic.query({ query, teamId: selectedTeamId, limit: SEMANTIC_LIMIT });
+      // No team selected → search the whole indexed backlog (teamId undefined).
+      result = await trpc().search.semantic.query({
+        query,
+        teamId: selectedTeamId ?? undefined,
+        limit: SEMANTIC_LIMIT,
+      });
     } catch {
       return; // degrade silently to literal search
     }
@@ -658,7 +669,7 @@ export function useLinearSync(): void {
     void refreshUsers();
     void refreshProjects();
     void refreshLabels();
-    reindexSelectedTeam(); // warm the local semantic index for the active team
+    reindexAllTeams(); // warm the local semantic index across every team
   }, [workspaceId, linearConnected]);
 
   // Track the embedding model's download/load state for the search box's prep

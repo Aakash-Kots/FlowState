@@ -56,6 +56,12 @@ export const searchRouter = router({
     guard(async () => reindexResultSchema.parse(await searchService.reindexTeam(input.teamId)), 'Reindex failed.'),
   ),
 
+  /** Index every team in the background so search works before a team is picked
+   * (and ⌘P spans the whole backlog). Fire-and-forget. */
+  reindexAll: publicProcedure.mutation(() => {
+    void searchService.reindexAllTeams();
+  }),
+
   /** The embedding model's current download/load state (polled on mount). */
   modelStatus: publicProcedure.query((): ModelStatus => modelStatusSchema.parse(localModelService.getStatus())),
 

@@ -94,6 +94,17 @@ export class SearchService {
     return run;
   }
 
+  /** Index every team the account can see, so semantic search works before the
+   * user picks a team (and ⌘P spans the whole backlog). Sequential to avoid
+   * thrashing the single embedding context. Best-effort per team. */
+  async reindexAllTeams(): Promise<void> {
+    if (!getSemanticSearchEnabled()) return;
+    const teams = await linearService.teams().catch(() => []);
+    for (const team of teams) {
+      await this.reindexTeam(team.id).catch(() => undefined);
+    }
+  }
+
   private async doReindex(teamId: string): Promise<ReindexResult> {
     const issues = await linearService.teamIssuesForIndex(teamId);
     const total = issues.length;
@@ -125,6 +136,7 @@ export class SearchService {
         });
       }
       upsertIssueEmbeddings(rows);
+      console.log(`[search] embedded ${stale.length}/${total} tickets for team ${teamId}`);
     }
 
     // Drop tickets that left the team's live set (closed/moved out of the window).
@@ -162,6 +174,7 @@ export class SearchService {
       return { hits: [], modelReady: true };
     }
 
+    const t0 = Date.now();
     const [queryVec] = await localModelService.embed([query], EmbedRole.Query);
     if (!queryVec) return { hits: [], modelReady: true };
     const limit = input.limit ?? DEFAULT_LIMIT;
@@ -170,6 +183,10 @@ export class SearchService {
       .filter((h) => h.score >= MIN_SCORE)
       .sort((a, b) => b.score - a.score)
       .slice(0, limit);
+    console.log(
+      `[search] "${query.slice(0, 40)}" → ${hits.length} hits over ${rows.length} tickets in ${Date.now() - t0}ms` +
+        (hits[0] ? ` (top ${hits[0].identifier} @ ${hits[0].score.toFixed(3)})` : ''),
+    );
     return { hits, modelReady: true };
   }
 }

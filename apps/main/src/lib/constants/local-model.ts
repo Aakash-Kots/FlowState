@@ -11,8 +11,28 @@ import type { LocalModelDef } from '../types/local-model';
 
 const HF = 'https://huggingface.co';
 
-/** Registry of runnable models. Seeded with EmbeddingGemma; generative Gemma
- * tiers (1B/4B/…) are added as further `LocalModelDef`s keyed off RAM later. */
+/** One generative Gemma tier: an ungated Q4_K_M GGUF and its rough size. */
+const gemmaTier = (
+  id: LocalModelId,
+  slug: string,
+  approxBytes: number,
+): LocalModelDef => ({
+  id,
+  kind: LocalModelKind.Generative,
+  nativeDim: 0, // not an embedding model
+  quants: [
+    {
+      quant: ModelQuant.Q4_K_M,
+      repo: `ggml-org/${slug}-GGUF`,
+      file: `${slug}-Q4_K_M.gguf`,
+      url: `${HF}/ggml-org/${slug}-GGUF/resolve/main/${slug}-Q4_K_M.gguf`,
+      approxBytes,
+    },
+  ],
+});
+
+/** Registry of runnable models: EmbeddingGemma for search + generative Gemma 3
+ * tiers for the Ask palette (one picked by RAM — see `selectGenerativeModel`). */
 export const LOCAL_MODELS: Record<LocalModelId, LocalModelDef> = {
   [LocalModelId.EmbeddingGemma300m]: {
     id: LocalModelId.EmbeddingGemma300m,
@@ -35,7 +55,22 @@ export const LOCAL_MODELS: Record<LocalModelId, LocalModelDef> = {
       },
     ],
   },
+  [LocalModelId.Gemma3_1b]: gemmaTier(LocalModelId.Gemma3_1b, 'gemma-3-1b-it', 810 * 1024 * 1024),
+  [LocalModelId.Gemma3_4b]: gemmaTier(LocalModelId.Gemma3_4b, 'gemma-3-4b-it', 2600 * 1024 * 1024),
+  [LocalModelId.Gemma3_12b]: gemmaTier(LocalModelId.Gemma3_12b, 'gemma-3-12b-it', 7300 * 1024 * 1024),
 };
+
+/** RAM thresholds (bytes) for the generative-model tier picker. */
+const GEMMA_RAM_LARGE = 32 * 1024 * 1024 * 1024;
+const GEMMA_RAM_MEDIUM = 12 * 1024 * 1024 * 1024;
+
+/** Pick the largest Gemma 3 tier that comfortably fits total RAM: 12B on a big
+ * machine, 4B on a typical laptop, 1B when memory is tight. */
+export function selectGenerativeModel(totalRamBytes: number): LocalModelId {
+  if (totalRamBytes >= GEMMA_RAM_LARGE) return LocalModelId.Gemma3_12b;
+  if (totalRamBytes >= GEMMA_RAM_MEDIUM) return LocalModelId.Gemma3_4b;
+  return LocalModelId.Gemma3_1b;
+}
 
 /** The model semantic search runs on. Kept as a named constant so the search
  * service and router don't hard-code the id. */

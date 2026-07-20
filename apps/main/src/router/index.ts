@@ -3,6 +3,7 @@ import { analyticsRouter } from './analytics';
 import { appRouter as appMeta } from './app';
 import { claudeRouter } from './claude';
 import { filesRouter } from './files';
+import { gemmaRouter } from './gemma';
 import { gitRouter } from './git';
 import { githubRouter } from './github';
 import { linearRouter } from './linear';
@@ -37,6 +38,7 @@ export const appRouter = router({
   claude: claudeRouter,
   linear: linearRouter,
   search: searchRouter,
+  gemma: gemmaRouter,
   spotify: spotifyRouter,
   system: systemRouter,
   shortcuts: shortcutsRouter,

@@ -21,28 +21,35 @@ function formatBytes(bytes: number): string {
 ////////////
 
 /**
- * The on-device embedding-model row: shows how much disk the downloaded weights
- * use and a Delete button to reclaim it. The weights re-download on demand the
- * next time the user runs a natural-language search.
+ * An on-device model row: shows how much disk the downloaded weights use and a
+ * Delete button to reclaim it. `endpoint` selects which model (the search
+ * embedding model or the Ask-Gemma generative model). Weights re-download on
+ * demand the next time the feature is used.
  */
-export function SmartSearchModelCard() {
+export function SmartSearchModelCard({ endpoint }: { endpoint: 'search' | 'gemma' }) {
   const [info, setInfo] = useState<ModelDiskInfo | null>(null);
   const [deleting, setDeleting] = useState(false);
 
+  const queryInfo = (): Promise<ModelDiskInfo> =>
+    endpoint === 'gemma' ? trpc().gemma.modelInfo.query() : trpc().search.modelInfo.query();
+  const deleteModel = (): Promise<ModelDiskInfo> =>
+    endpoint === 'gemma' ? trpc().gemma.deleteModel.mutate() : trpc().search.deleteModel.mutate();
+  const notDownloadedHint = endpoint === 'gemma' ? '~2.5 GB' : '~300 MB';
+
   const refresh = () =>
-    trpc()
-      .search.modelInfo.query()
+    queryInfo()
       .then(setInfo)
       .catch(() => setInfo({ downloaded: false, bytes: 0 }));
 
   useEffect(() => {
     void refresh();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [endpoint]);
 
   const onDelete = async () => {
     setDeleting(true);
     try {
-      setInfo(await trpc().search.deleteModel.mutate());
+      setInfo(await deleteModel());
     } catch {
       await refresh();
     } finally {
@@ -62,7 +69,7 @@ export function SmartSearchModelCard() {
           </>
         ) : (
           <span className="text-muted-foreground">
-            Not downloaded — fetched once (~300&nbsp;MB) the first time you search.
+            Not downloaded — fetched once ({notDownloadedHint}) the first time you use it.
           </span>
         )}
       </p>
