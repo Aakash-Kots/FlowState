@@ -38,6 +38,11 @@ const STATUS_EVENT = 'status';
 /** Cap generated length so a runaway answer can't stall the palette. */
 const MAX_TOKENS = 800;
 
+/** Context window. Pinned small (rather than node-llama-cpp's memory-hungry
+ * "auto", which sizes to the model's full trained context) — the palette does
+ * short one-shot Q&A, and this bounds KV-cache RAM to a few hundred MB. */
+const CONTEXT_SIZE = 4096;
+
 /** Steers the model toward short, direct answers in the inline palette. */
 const SYSTEM_PROMPT =
   'You are Gemma, a concise, helpful assistant embedded in a developer tool. ' +
@@ -152,7 +157,7 @@ export class GemmaService extends EventEmitter {
     this.setStatus({ state: LocalModelState.Loading, downloadProgress: null });
     const t0 = Date.now();
     this.model = await this.llama.loadModel({ modelPath, gpuLayers: this.llama.gpu ? 'auto' : 0 });
-    this.context = await this.model.createContext();
+    this.context = await this.model.createContext({ contextSize: CONTEXT_SIZE });
     console.log(`[gemma] loaded ${modelId} in ${Date.now() - t0}ms (gpu=${this.llama.gpu})`);
     this.setStatus({ state: LocalModelState.Ready, error: null });
   }
