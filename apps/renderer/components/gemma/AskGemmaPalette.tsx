@@ -2,9 +2,9 @@
 
 import { useEffect, useRef, useState } from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
-import { Loader2, Sparkles } from 'lucide-react';
+import { Check, Loader2, Sparkles, Wrench, X } from 'lucide-react';
 import { LocalModelState } from '@flowstate/shared';
-import { askGemma, closeAskGemma, resetAsk, useGemma } from '@/lib/gemma';
+import { askGemma, closeAskGemma, resetAsk, respondGemmaTool, useGemma } from '@/lib/gemma';
 import { Markdown } from '../chat/Markdown';
 
 /**
@@ -19,6 +19,7 @@ export function AskGemmaPalette() {
   const response = useGemma((s) => s.response);
   const streaming = useGemma((s) => s.streaming);
   const error = useGemma((s) => s.error);
+  const tools = useGemma((s) => s.tools);
   const modelStatus = useGemma((s) => s.modelStatus);
 
   const [text, setText] = useState('');
@@ -99,7 +100,17 @@ export function AskGemmaPalette() {
                     </div>
                   ) : (
                     streaming &&
-                    !preparing && <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                    !preparing &&
+                    tools.length === 0 && (
+                      <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                    )
+                  )}
+                  {tools.length > 0 && (
+                    <div className="mt-3 space-y-2">
+                      {tools.map((tool) => (
+                        <ToolCardView key={tool.id} tool={tool} />
+                      ))}
+                    </div>
                   )}
                 </>
               )}
@@ -121,5 +132,52 @@ export function AskGemmaPalette() {
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>
+  );
+}
+
+type ToolCard = ReturnType<typeof useGemma.getState>['tools'][number];
+
+/** One tool call: a confirmation card with Approve/Deny while pending, then a
+ * status + result line once it runs (or is denied). */
+function ToolCardView({ tool }: { tool: ToolCard }) {
+  const pending = tool.status === 'pending';
+  return (
+    <div className="rounded-lg border border-border bg-muted/30 px-3 py-2">
+      <div className="flex items-center gap-2 text-sm text-neutral-200">
+        {tool.status === 'running' ? (
+          <Loader2 className="size-3.5 shrink-0 animate-spin text-primary" />
+        ) : tool.status === 'done' ? (
+          <Check className="size-3.5 shrink-0 text-success" />
+        ) : tool.status === 'error' || tool.status === 'denied' ? (
+          <X className="size-3.5 shrink-0 text-danger" />
+        ) : (
+          <Wrench className="size-3.5 shrink-0 text-primary" />
+        )}
+        <span className="flex-1 truncate">{tool.title}</span>
+      </div>
+
+      {pending && (
+        <div className="mt-2 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => respondGemmaTool(tool.id, true)}
+            className="rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+          >
+            Approve
+          </button>
+          <button
+            type="button"
+            onClick={() => respondGemmaTool(tool.id, false)}
+            className="rounded-md border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+          >
+            Deny
+          </button>
+        </div>
+      )}
+
+      {tool.result && !pending && (
+        <p className="mt-1.5 whitespace-pre-wrap text-xs text-muted-foreground">{tool.result}</p>
+      )}
+    </div>
   );
 }

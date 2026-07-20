@@ -24,11 +24,13 @@ export enum LocalModelKind {
 
 /** GGUF quantization levels we ship download sources for. Picked by available
  * RAM: Q4 (smallest, QAT-trained so quality holds) on constrained machines, Q8
- * when there's headroom. Generative Gemma ships as Q4_K_M (the quality/size
- * sweet spot for local chat). */
+ * when there's headroom. Generative Gemma prefers Q4_K_M (the quality/size sweet
+ * spot for local chat) and falls back to the smaller Q3_K_M for the 12B tier on
+ * machines that can't fit Q4 — see `selectGenerativeSpec`. */
 export enum ModelQuant {
   Q4_0 = 'Q4_0',
   Q8_0 = 'Q8_0',
+  Q3_K_M = 'Q3_K_M',
   Q4_K_M = 'Q4_K_M',
 }
 
