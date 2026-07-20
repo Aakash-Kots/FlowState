@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { create } from 'zustand';
 import {
   DEFAULT_WORKSPACE_ID,
+  type ChatImageInput,
   type GithubRepo,
   type GithubViewer,
   type LinearIssueRef,
@@ -314,6 +315,7 @@ export function setCreateOpen(open: boolean): void {
 export async function createWorktree(input: {
   baseRef?: string;
   initialPrompt?: string;
+  initialImages?: ChatImageInput[];
   permissionMode?: PermissionMode;
   linearIssue?: LinearIssueRef | null;
   branch?: string;
@@ -326,6 +328,7 @@ export async function createWorktree(input: {
       projectId,
       baseRef: input.baseRef?.trim() || undefined,
       initialPrompt: input.initialPrompt?.trim() || undefined,
+      initialImages: input.initialImages?.length ? input.initialImages : undefined,
       permissionMode: input.permissionMode,
       linearIssue: input.linearIssue ?? undefined,
       branch: input.branch?.trim() || undefined,

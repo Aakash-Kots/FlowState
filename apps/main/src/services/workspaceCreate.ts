@@ -201,7 +201,8 @@ export async function createWorkspace(
     // 5. Kick off the first session with the linked ticket's context (and the
     //    user's prompt, if any) so Claude knows what it's working on.
     const seed = await composeSeed(input.linearIssue, input.initialPrompt?.trim() ?? '');
-    if (seed) claudeService.send(tab.id, seed);
+    const images = input.initialImages ?? [];
+    if (seed || images.length) claudeService.send(tab.id, seed, images);
 
     return { workspace, tab };
   } catch (err) {

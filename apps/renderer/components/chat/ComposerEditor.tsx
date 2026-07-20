@@ -302,6 +302,20 @@ export const ComposerEditor = forwardRef<
     document.execCommand('insertText', false, text);
   };
 
+  // Allow images to be dropped straight onto the editor, mirroring the paste
+  // path. `onDragOver` must preventDefault for the drop to fire.
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    if (allowImages) e.preventDefault();
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    if (!allowImages) return;
+    const files = Array.from(e.dataTransfer.files).filter((f) => f.type.startsWith('image/'));
+    if (files.length === 0) return;
+    e.preventDefault();
+    void filesToImages(files).then(insertImagesAtCaret);
+  };
+
   //////////////
   // Mentions //
   //////////////
@@ -551,6 +565,8 @@ export const ComposerEditor = forwardRef<
         aria-multiline="true"
         onInput={handleInput}
         onPaste={handlePaste}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
         onKeyDown={handleKeyDown}
         onKeyUp={handleSelect}
         onMouseUp={handleSelect}
