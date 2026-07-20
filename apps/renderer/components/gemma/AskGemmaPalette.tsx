@@ -8,10 +8,10 @@ import { askGemma, closeAskGemma, resetAsk, respondGemmaTool, useGemma } from '@
 import { Markdown } from '../chat/Markdown';
 
 /**
- * The "Ask Gemma" palette — a centered prompt box that runs the on-device
- * generative model and streams the reply inline. Opened by double-tapping Space
- * (see `ShortcutProvider`). Enter sends; Shift+Enter adds a newline; Esc closes.
- * On first use it downloads the model, showing progress in place.
+ * The "Ask Gemini" palette — a centered prompt box that calls Google's Gemini
+ * API and streams the reply inline. Opened by double-tapping Space (see
+ * `ShortcutProvider`). Enter sends; Shift+Enter adds a newline; Esc closes.
+ * Requires a Gemini API key (set in Settings); prompts for one when absent.
  */
 export function AskGemmaPalette() {
   const open = useGemma((s) => s.open);
@@ -33,12 +33,8 @@ export function AskGemmaPalette() {
     return () => clearTimeout(id);
   }, [open]);
 
-  const preparing =
-    modelStatus?.state === LocalModelState.Downloading || modelStatus?.state === LocalModelState.Loading;
-  const prepLabel =
-    modelStatus?.state === LocalModelState.Downloading
-      ? `Downloading Gemma… ${Math.round((modelStatus.downloadProgress ?? 0) * 100)}%`
-      : 'Loading Gemma…';
+  // Absent status = no API key stored yet; prompt the user to add one.
+  const needsKey = modelStatus?.state === LocalModelState.Absent;
 
   const submit = () => {
     if (text.trim()) askGemma(text);
@@ -63,7 +59,7 @@ export function AskGemmaPalette() {
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/60 data-[state=open]:animate-in data-[state=open]:fade-in-0" />
         <DialogPrimitive.Content className="fixed left-1/2 top-[14%] z-50 flex max-h-[72vh] w-full max-w-2xl -translate-x-1/2 flex-col overflow-hidden rounded-xl border border-border bg-background shadow-2xl shadow-black/40 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95">
-          <DialogPrimitive.Title className="sr-only">Ask Gemma</DialogPrimitive.Title>
+          <DialogPrimitive.Title className="sr-only">Ask Gemini</DialogPrimitive.Title>
 
           {/* Prompt input */}
           <div className="flex items-start gap-2 border-b border-border px-3">
@@ -74,20 +70,19 @@ export function AskGemmaPalette() {
               value={text}
               onChange={(e) => setText(e.target.value)}
               onKeyDown={onKeyDown}
-              placeholder="Ask Gemma anything…"
+              placeholder="Ask Gemini anything…"
               spellCheck={false}
               className="max-h-40 flex-1 resize-none bg-transparent py-3 text-sm text-neutral-100 placeholder:text-muted-foreground focus:outline-none"
             />
           </div>
 
-          {/* Prep / streamed answer / error */}
-          {(answered || preparing || error) && (
+          {/* Needs-key hint / streamed answer / error */}
+          {(answered || needsKey || error) && (
             <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-              {preparing && (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Loader2 className="size-3.5 animate-spin" />
-                  {prepLabel}
-                </div>
+              {needsKey && !answered && (
+                <p className="text-sm text-muted-foreground">
+                  Add a Gemini API key in Settings to use Ask Gemini.
+                </p>
               )}
               {answered && (
                 <>
@@ -100,7 +95,6 @@ export function AskGemmaPalette() {
                     </div>
                   ) : (
                     streaming &&
-                    !preparing &&
                     tools.length === 0 && (
                       <Loader2 className="size-4 animate-spin text-muted-foreground" />
                     )
@@ -120,7 +114,7 @@ export function AskGemmaPalette() {
 
           {/* Footer */}
           <div className="flex items-center justify-between border-t border-border px-3 py-1.5 text-[11px] text-muted-foreground">
-            <span>On-device · Gemma&nbsp;3</span>
+            <span>Powered by Gemini</span>
             {answered ? (
               <button type="button" onClick={resetAsk} className="transition-colors hover:text-foreground">
                 Ask another

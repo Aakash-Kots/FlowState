@@ -1,23 +1,26 @@
 /**
- * The tool registry for the on-device Gemma loop, plus `buildToolFunctions`,
- * which adapts each tool into a node-llama-cpp function-calling handler.
+ * The tool registry for the Ask-Gemini loop, plus `TOOL_DECLARATIONS` (the
+ * Gemini `functionDeclarations` the model decodes against) and `buildDispatch`,
+ * which runs a model-requested call end-to-end: validate args → gate
+ * (confirm side-effecting ones) → execute → report.
  *
- * Each tool binds a GBNF-JSON param schema (constrains the model's arguments) to
- * a zod validator (re-checks them at the execution boundary) and an effect that
- * reuses the same singleton services the tRPC routers do (`linearService`,
- * `createWorkspace`). Side-effecting tools are gated: the handler asks the host
- * (`hooks.gate`) for confirmation and only runs on approval, so an accidental or
- * hallucinated call can never create a ticket or worktree without the user's OK.
+ * Each tool binds a JSON-Schema param shape (constrains the model's arguments)
+ * to a zod validator (re-checks them at the execution boundary) and an effect
+ * that reuses the same singleton services the tRPC routers do (`linearService`,
+ * `createWorkspace`). Side-effecting tools are gated: the dispatcher asks the
+ * host (`hooks.gate`) for confirmation and only runs on approval, so an
+ * accidental or hallucinated call can never create a ticket or worktree without
+ * the user's OK.
+ *
+ * Tickets created through the model are reworded first: `create_linear_ticket`
+ * and `link_ticket_to_worktree` run the model's raw title/body through
+ * `ctx.refineTicket` (a one-shot Gemini rewrite) so the ticket reads
+ * professionally instead of echoing the user's phrasing verbatim.
  *
  * Tools return a short human-readable summary string; that string is both fed
  * back to the model (so it can continue the turn) and streamed to the palette as
  * the tool-result line.
  */
-import type {
-  ChatSessionModelFunction,
-  ChatSessionModelFunctions,
-  GbnfJsonSchema,
-} from 'node-llama-cpp';
 import { z } from 'zod';
 import {
   createLinearIssueInputSchema,
@@ -26,16 +29,13 @@ import {
   type LinearIssueRef,
 } from '@flowstate/shared';
 import { LocalToolName } from '../lib/enums/local-tools';
-import type { LocalTool, ToolContext } from '../lib/types/local-tools';
+import type { LocalTool, RefinedTicket, ToolContext } from '../lib/types/local-tools';
 import { linearService } from './linear';
 import { createWorkspace } from './workspaceCreate';
 
 ///////////
 // Types //
 ///////////
-
-type Lib = typeof import('node-llama-cpp');
-type DefineFn = Lib['defineChatSessionFunction'];
 
 /** The host's answer to a gated tool call: whether it may run, and (when the
  * user edited the confirmation card) the args to run with. */
@@ -44,31 +44,28 @@ export type ToolDecision = {
   args?: Record<string, unknown>;
 };
 
-/** Callbacks the tool loop uses to talk to the host (GemmaService): mint a call
- * id, gate a call (confirm side-effecting ones), and report the outcome. */
+/** Callbacks the dispatcher uses to talk to the host (GeminiService): mint a
+ * call id, gate a call (confirm side-effecting ones), and report the outcome. */
 export type ToolHooks = {
   nextId: () => string;
   gate: (call: GemmaToolCall) => Promise<ToolDecision>;
   onResult: (result: GemmaToolResult) => void;
 };
 
+/** A JSON Schema string property (optional ones are simply omitted from
+ * `required`, unlike GBNF which needs a nullable union). */
+const stringProp = (description: string): Record<string, unknown> => ({ type: 'string', description });
+
 /////////////
 // Helpers //
 /////////////
-
-/** A nullable-string GBNF field — the model emits `null` to omit it (GBNF has no
- * optional properties; every listed key is required). */
-const optionalString = (description: string): GbnfJsonSchema => ({
-  type: ['string', 'null'],
-  description,
-});
 
 /** Tie a tool's arg type to its zod schema + handlers; the `as Args` casts are
  * safe because the loop always `parse`s (producing Args) before summarize/execute. */
 function defineTool<Args>(config: {
   name: LocalToolName;
   description: string;
-  params: GbnfJsonSchema;
+  params: Record<string, unknown>;
   sideEffecting: boolean;
   zodSchema: z.ZodType<Args>;
   summarize: (args: Args) => string;
@@ -79,7 +76,7 @@ function defineTool<Args>(config: {
     description: config.description,
     params: config.params,
     sideEffecting: config.sideEffecting,
-    parse: (raw) => config.zodSchema.parse(raw),
+    parse: (raw) => config.zodSchema.parse(raw ?? {}),
     summarize: (args) => config.summarize(args as Args),
     execute: (args, ctx) => config.execute(args as Args, ctx),
   };
@@ -90,6 +87,17 @@ const clean = (value: string | null | undefined): string | undefined => {
   const trimmed = value?.trim();
   return trimmed ? trimmed : undefined;
 };
+
+/** Reword a ticket via `ctx.refineTicket` when available; fall back to the raw
+ * title/description otherwise so ticket creation never depends on the rewrite. */
+async function refined(
+  ctx: ToolContext,
+  title: string,
+  description: string | undefined,
+): Promise<RefinedTicket> {
+  if (!ctx.refineTicket) return { title, description: description ?? '' };
+  return ctx.refineTicket({ title, description });
+}
 
 //////////////////////////
 // Tool implementations //
@@ -116,7 +124,8 @@ const listWorkflowStates = defineTool({
     "List a Linear team's workflow states (e.g. Todo, In Progress, Done) with their ids, for setting a ticket's state.",
   params: {
     type: 'object',
-    properties: { teamId: { type: 'string', description: 'The Linear team id.' } },
+    properties: { teamId: stringProp('The Linear team id.') },
+    required: ['teamId'],
   },
   sideEffecting: false,
   zodSchema: z.object({ teamId: z.string().min(1) }),
@@ -131,10 +140,11 @@ const listWorkflowStates = defineTool({
 const searchLinearIssues = defineTool({
   name: LocalToolName.SearchLinearIssues,
   description:
-    'Search the user\'s Linear issues by text. Returns matching tickets with their identifiers and ids. Read-only.',
+    "Search the user's Linear issues by text. Returns matching tickets with their identifiers and ids. Read-only.",
   params: {
     type: 'object',
-    properties: { query: { type: 'string', description: 'Text to search issue titles for.' } },
+    properties: { query: stringProp('Text to search issue titles for.') },
+    required: ['query'],
   },
   sideEffecting: false,
   zodSchema: z.object({ query: z.string().min(1) }),
@@ -152,14 +162,15 @@ const searchLinearIssues = defineTool({
 const createLinearTicket = defineTool({
   name: LocalToolName.CreateLinearTicket,
   description:
-    'Create a Linear ticket. Requires a teamId (get one from list_linear_teams first). Requires user confirmation.',
+    'Create a Linear ticket. Requires a teamId (get one from list_linear_teams first). Provide the title and description in the user\'s own words — they are automatically reworded into a clear, professional ticket before creation. Requires user confirmation.',
   params: {
     type: 'object',
     properties: {
-      teamId: { type: 'string', description: 'The Linear team id to create the ticket in.' },
-      title: { type: 'string', description: 'The ticket title.' },
-      description: optionalString('Optional markdown body, or null.'),
+      teamId: stringProp('The Linear team id to create the ticket in.'),
+      title: stringProp('The ticket title, in the user\'s words.'),
+      description: stringProp('Optional details/context for the ticket body.'),
     },
+    required: ['teamId', 'title'],
   },
   sideEffecting: true,
   zodSchema: z.object({
@@ -168,11 +179,12 @@ const createLinearTicket = defineTool({
     description: z.string().nullish(),
   }),
   summarize: (args) => `Create Linear ticket "${args.title}"`,
-  execute: async (args) => {
+  execute: async (args, ctx) => {
+    const ticket = await refined(ctx, args.title, clean(args.description));
     const input = createLinearIssueInputSchema.parse({
       teamId: args.teamId,
-      title: args.title,
-      description: clean(args.description),
+      title: ticket.title,
+      description: clean(ticket.description),
     });
     const issue = await linearService.createIssue(input);
     return `Created ${issue.identifier}: ${issue.title} — ${issue.url}`;
@@ -186,8 +198,8 @@ const createWorktreeTool = defineTool({
   params: {
     type: 'object',
     properties: {
-      projectId: optionalString('Project id to create the worktree in, or null for the active project.'),
-      initialPrompt: optionalString('Optional first instruction to seed the Claude session with, or null.'),
+      projectId: stringProp('Project id to create the worktree in. Omit for the active project.'),
+      initialPrompt: stringProp('Optional first instruction to seed the Claude session with.'),
     },
   },
   sideEffecting: true,
@@ -210,15 +222,16 @@ const createWorktreeTool = defineTool({
 const linkTicketToWorktree = defineTool({
   name: LocalToolName.LinkTicketToWorktree,
   description:
-    'Create a Linear ticket AND a worktree linked to it in one step — the ticket context seeds the new Claude session. Requires a teamId. Defaults to the active project. Requires user confirmation.',
+    "Create a Linear ticket AND a worktree linked to it in one step — the ticket context seeds the new Claude session. Requires a teamId. Provide the title/description in the user's words; they are reworded into a professional ticket first. Defaults to the active project. Requires user confirmation.",
   params: {
     type: 'object',
     properties: {
-      teamId: { type: 'string', description: 'The Linear team id to create the ticket in.' },
-      title: { type: 'string', description: 'The ticket title.' },
-      description: optionalString('Optional markdown body, or null.'),
-      projectId: optionalString('Project id for the worktree, or null for the active project.'),
+      teamId: stringProp('The Linear team id to create the ticket in.'),
+      title: stringProp('The ticket title, in the user\'s words.'),
+      description: stringProp('Optional details/context for the ticket body.'),
+      projectId: stringProp('Project id for the worktree. Omit for the active project.'),
     },
+    required: ['teamId', 'title'],
   },
   sideEffecting: true,
   zodSchema: z.object({
@@ -231,10 +244,11 @@ const linkTicketToWorktree = defineTool({
   execute: async (args, ctx) => {
     const projectId = clean(args.projectId) ?? ctx.activeProjectId ?? null;
     if (!projectId) throw new Error('No project specified and no active project to default to.');
+    const ticket = await refined(ctx, args.title, clean(args.description));
     const input = createLinearIssueInputSchema.parse({
       teamId: args.teamId,
-      title: args.title,
-      description: clean(args.description),
+      title: ticket.title,
+      description: clean(ticket.description),
     });
     const issue = await linearService.createIssue(input);
     const ref: LinearIssueRef = {
@@ -264,67 +278,65 @@ export const LOCAL_TOOLS: LocalTool[] = [
   linkTicketToWorktree,
 ];
 
+/** The Gemini function declarations for every tool (name + description + JSON
+ * Schema params), passed as `config.tools[0].functionDeclarations`. */
+export const TOOL_DECLARATIONS = LOCAL_TOOLS.map((tool) => ({
+  name: tool.name,
+  description: tool.description,
+  parametersJsonSchema: tool.params,
+}));
+
 /**
- * Adapt the registry into node-llama-cpp function-calling handlers bound to this
- * turn's `ctx` and `hooks`. Each handler validates the model's args, gates the
- * call (auto-approving read-only tools), runs the effect, and returns a summary
- * string to the model — turning any failure into an error string the model can
- * recover from rather than throwing out of the generation.
+ * Build a dispatcher bound to this turn's `ctx` and `hooks`. `dispatch` runs one
+ * model-requested call: it validates the args, gates the call (auto-approving
+ * read-only tools), runs the effect, and returns a summary string to feed back
+ * to the model — turning any failure into an error string the model can recover
+ * from rather than throwing out of the generation loop.
  */
-export function buildToolFunctions(
-  define: DefineFn,
+export function buildDispatch(
   ctx: ToolContext,
   hooks: ToolHooks,
-): ChatSessionModelFunctions {
-  // We drive each handler manually, so `define`'s param/return inference buys us
-  // nothing and its `const Params` generic rejects our runtime-built schemas —
-  // narrow it to a plain, non-generic factory.
-  const defineFn = define as unknown as (config: {
-    description: string;
-    params: GbnfJsonSchema;
-    handler: (args: unknown) => Promise<string>;
-  }) => ChatSessionModelFunction;
+): (name: string, rawArgs: unknown) => Promise<string> {
+  const byName = new Map(LOCAL_TOOLS.map((t) => [t.name as string, t]));
 
-  const functions: Record<string, ChatSessionModelFunction> = {};
-  for (const tool of LOCAL_TOOLS) {
-    functions[tool.name] = defineFn({
-      description: tool.description,
-      params: tool.params,
-      handler: async (rawArgs: unknown): Promise<string> => {
-        const id = hooks.nextId();
-        let args: unknown;
-        try {
-          args = tool.parse(rawArgs);
-        } catch (err) {
-          const message = err instanceof Error ? err.message : 'Invalid arguments.';
-          hooks.onResult({ id, name: tool.name, ok: false, summary: `Rejected: ${message}` });
-          return `Error: ${message}. Fix the arguments and try again.`;
-        }
+  return async (name, rawArgs) => {
+    const id = hooks.nextId();
+    const tool = byName.get(name);
+    if (!tool) {
+      hooks.onResult({ id, name, ok: false, summary: `Unknown tool "${name}".` });
+      return `Error: no tool named "${name}".`;
+    }
 
-        const call: GemmaToolCall = {
-          id,
-          name: tool.name,
-          title: tool.summarize(args),
-          args: (args ?? {}) as Record<string, unknown>,
-          needsConfirmation: tool.sideEffecting,
-        };
-        const decision = await hooks.gate(call);
-        if (!decision.approved) {
-          hooks.onResult({ id, name: tool.name, ok: false, summary: 'Denied by the user.' });
-          return 'The user denied this action. Do not retry it — ask how they would like to proceed.';
-        }
+    let args: unknown;
+    try {
+      args = tool.parse(rawArgs);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Invalid arguments.';
+      hooks.onResult({ id, name: tool.name, ok: false, summary: `Rejected: ${message}` });
+      return `Error: ${message}. Fix the arguments and try again.`;
+    }
 
-        try {
-          const summary = await tool.execute(decision.args ?? args, ctx);
-          hooks.onResult({ id, name: tool.name, ok: true, summary });
-          return summary;
-        } catch (err) {
-          const message = err instanceof Error ? err.message : 'The tool failed.';
-          hooks.onResult({ id, name: tool.name, ok: false, summary: message });
-          return `Error: ${message}`;
-        }
-      },
-    });
-  }
-  return functions;
+    const call: GemmaToolCall = {
+      id,
+      name: tool.name,
+      title: tool.summarize(args),
+      args: (args ?? {}) as Record<string, unknown>,
+      needsConfirmation: tool.sideEffecting,
+    };
+    const decision = await hooks.gate(call);
+    if (!decision.approved) {
+      hooks.onResult({ id, name: tool.name, ok: false, summary: 'Denied by the user.' });
+      return 'The user denied this action. Do not retry it — ask how they would like to proceed.';
+    }
+
+    try {
+      const summary = await tool.execute(decision.args ?? args, ctx);
+      hooks.onResult({ id, name: tool.name, ok: true, summary });
+      return summary;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'The tool failed.';
+      hooks.onResult({ id, name: tool.name, ok: false, summary: message });
+      return `Error: ${message}`;
+    }
+  };
 }

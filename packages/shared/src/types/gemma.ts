@@ -1,10 +1,10 @@
 /**
- * Types for the on-device generative assistant ("Ask Gemma"). The `gemma.ask`
+ * Types for the hosted generative assistant ("Ask Gemini"). The `gemma.ask`
  * subscription streams `GemmaStreamEvent`s to the palette; when the model wants
  * to run a side-effecting tool it emits a `ToolCall` and waits for the renderer
  * to answer via `gemma.respondTool`. Validation lives in `../schemas/gemma`.
  */
-import type { GemmaStreamKind, GemmaTierPreference } from '../enums/gemma';
+import type { GemmaStreamKind } from '../enums/gemma';
 
 /** What the palette knows about the user's current focus, passed into `ask` so
  * tools can default their target (e.g. create a worktree in the active project)
@@ -60,12 +60,9 @@ export type RespondGemmaToolInput = {
   editedArgs?: Record<string, unknown> | null;
 };
 
-/** User preferences for the Ask palette (surfaced in settings). */
-export type GemmaPrefs = {
-  tierPreference: GemmaTierPreference;
-};
-
-/** Input to `gemma.setTierPreference`. */
-export type SetGemmaTierInput = {
-  preference: GemmaTierPreference;
+/** Input to `gemma.transcribe`: a base64-encoded audio clip + its MIME type,
+ * transcribed to text by the Gemini API (the mic → speech-to-text button). */
+export type TranscribeAudioInput = {
+  audioBase64: string;
+  mimeType: string;
 };

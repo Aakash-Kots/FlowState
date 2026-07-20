@@ -8,7 +8,6 @@ import {
   ArchiveRetention,
   CodeTheme,
   FontSize,
-  GemmaTierPreference,
   type RecentWorkspaceEntry,
   recentWorkspacesSchema,
 } from '@flowstate/shared';
@@ -42,7 +41,6 @@ const WORKSPACE_RECENT_KEY = 'workspace.recent';
 const RECENT_FILES_KEY = 'files.recent';
 const SEMANTIC_ENABLED_KEY = 'search.semanticEnabled';
 const SEMANTIC_SMALL_MODEL_KEY = 'search.preferSmallModel';
-const GEMMA_TIER_KEY = 'gemma.tierPreference';
 const SURFACED_TEAM_IDS_KEY = 'linear.surfacedTeamIds';
 const DEFAULT_TEAM_ID_KEY = 'linear.defaultTeamId';
 
@@ -112,20 +110,6 @@ export function getPreferSmallModel(): boolean {
 
 export function setPreferSmallModel(prefer: boolean): void {
   setSetting(SEMANTIC_SMALL_MODEL_KEY, prefer);
-}
-
-/** Which generative Gemma tier the Ask palette runs (default Auto — pick the
- * largest tier/quant that fits RAM). A `Force*` value overrides the auto-picker. */
-export function getGemmaTierPreference(): GemmaTierPreference {
-  const stored = getSetting<GemmaTierPreference>(GEMMA_TIER_KEY);
-  // Guard against a stale/renamed value lingering in the KV store.
-  return stored && Object.values(GemmaTierPreference).includes(stored)
-    ? stored
-    : GemmaTierPreference.Auto;
-}
-
-export function setGemmaTierPreference(preference: GemmaTierPreference): void {
-  setSetting(GEMMA_TIER_KEY, preference);
 }
 
 /**

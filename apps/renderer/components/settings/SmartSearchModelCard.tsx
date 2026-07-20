@@ -21,35 +21,29 @@ function formatBytes(bytes: number): string {
 ////////////
 
 /**
- * An on-device model row: shows how much disk the downloaded weights use and a
- * Delete button to reclaim it. `endpoint` selects which model (the search
- * embedding model or the Ask-Gemma generative model). Weights re-download on
- * demand the next time the feature is used.
+ * The on-device search-embedding model row: shows how much disk the downloaded
+ * weights use and a Delete button to reclaim it. Weights re-download on demand
+ * the next time semantic search runs.
  */
-export function SmartSearchModelCard({ endpoint }: { endpoint: 'search' | 'gemma' }) {
+export function SmartSearchModelCard() {
   const [info, setInfo] = useState<ModelDiskInfo | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  const queryInfo = (): Promise<ModelDiskInfo> =>
-    endpoint === 'gemma' ? trpc().gemma.modelInfo.query() : trpc().search.modelInfo.query();
-  const deleteModel = (): Promise<ModelDiskInfo> =>
-    endpoint === 'gemma' ? trpc().gemma.deleteModel.mutate() : trpc().search.deleteModel.mutate();
-  const notDownloadedHint = endpoint === 'gemma' ? '~2.5 GB' : '~300 MB';
-
   const refresh = () =>
-    queryInfo()
+    trpc()
+      .search.modelInfo.query()
       .then(setInfo)
       .catch(() => setInfo({ downloaded: false, bytes: 0 }));
 
   useEffect(() => {
     void refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [endpoint]);
+  }, []);
 
   const onDelete = async () => {
     setDeleting(true);
     try {
-      setInfo(await deleteModel());
+      setInfo(await trpc().search.deleteModel.mutate());
     } catch {
       await refresh();
     } finally {
@@ -69,7 +63,7 @@ export function SmartSearchModelCard({ endpoint }: { endpoint: 'search' | 'gemma
           </>
         ) : (
           <span className="text-muted-foreground">
-            Not downloaded — fetched once ({notDownloadedHint}) the first time you use it.
+            Not downloaded — fetched once (~300 MB) the first time you use it.
           </span>
         )}
       </p>

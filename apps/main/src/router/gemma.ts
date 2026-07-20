@@ -1,40 +1,24 @@
 /**
- * Ask-Gemma control plane — a thin door over `gemmaService` (the on-device
+ * Ask-Gemini control plane — a thin door over `geminiService` (the hosted
  * generative model). `ask` streams a reply token-by-token over a subscription
  * (aborting generation if the client unsubscribes); `modelStatus` +
- * `onModelProgress` drive the palette's download/loading indicator; `modelInfo`
- * + `deleteModel` back the settings disk controls.
+ * `onModelProgress` drive the palette's ready/needs-API-key indicator;
+ * `transcribe` turns a recorded audio clip into text for the mic button.
  */
 import { observable } from '@trpc/server/observable';
 import {
   GemmaStreamKind,
-  type GemmaPrefs,
   type GemmaStreamEvent,
-  type ModelDiskInfo,
   type ModelStatus,
   gemmaAskInputSchema,
-  gemmaPrefsSchema,
-  modelDiskInfoSchema,
   modelStatusSchema,
   respondGemmaToolInputSchema,
-  setGemmaTierInputSchema,
+  transcribeAudioInputSchema,
 } from '@flowstate/shared';
 import { TRPCError } from '@trpc/server';
-import { gemmaService } from '../services/gemma';
+import { geminiService } from '../services/gemini';
 import { getWorkspace } from '../store';
-import { getGemmaTierPreference, setGemmaTierPreference } from '../store/settings';
 import { publicProcedure, router } from '../trpc';
-
-async function guard<T>(fn: () => Promise<T>, fallback: string): Promise<T> {
-  try {
-    return await fn();
-  } catch (err) {
-    throw new TRPCError({
-      code: 'INTERNAL_SERVER_ERROR',
-      message: err instanceof Error ? err.message : fallback,
-    });
-  }
-}
 
 export const gemmaRouter = router({
   /**
@@ -51,7 +35,7 @@ export const gemmaRouter = router({
       const activeProjectId =
         input.context?.activeProjectId ??
         (activeWorkspaceId ? (getWorkspace(activeWorkspaceId)?.projectId ?? null) : null);
-      gemmaService
+      geminiService
         .generate(
           input.prompt,
           { activeProjectId, activeWorkspaceId },
@@ -74,39 +58,30 @@ export const gemmaRouter = router({
 
   /** Answer a pending tool confirmation (approve/deny, optionally with edited args). */
   respondTool: publicProcedure.input(respondGemmaToolInputSchema).mutation(({ input }) => {
-    gemmaService.respondTool(input);
+    geminiService.respondTool(input);
   }),
 
-  /** The user's generative-tier preference (Auto or a forced tier). */
-  prefs: publicProcedure.query((): GemmaPrefs =>
-    gemmaPrefsSchema.parse({ tierPreference: getGemmaTierPreference() }),
-  ),
-
-  /** Override which Gemma tier the palette runs; unloads so the next ask reloads
-   * the chosen tier/quant. */
-  setTierPreference: publicProcedure.input(setGemmaTierInputSchema).mutation(({ input }) => {
-    setGemmaTierPreference(input.preference);
-    void gemmaService.reload();
+  /** Transcribe a recorded audio clip to text (the mic → speech-to-text button). */
+  transcribe: publicProcedure.input(transcribeAudioInputSchema).mutation(async ({ input }) => {
+    try {
+      return await geminiService.transcribe(input.audioBase64, input.mimeType);
+    } catch (err) {
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: err instanceof Error ? err.message : 'Transcription failed.',
+      });
+    }
   }),
 
-  /** The generative model's download/load state (polled on palette open). */
-  modelStatus: publicProcedure.query((): ModelStatus => modelStatusSchema.parse(gemmaService.getStatus())),
+  /** Whether an API key is set (Ready) or not (Absent) — polled on palette open. */
+  modelStatus: publicProcedure.query((): ModelStatus => modelStatusSchema.parse(geminiService.getStatus())),
 
-  /** Live model-state stream: seeds with the current status, then pushes changes. */
+  /** Live status stream: seeds with the current status, then pushes changes
+   * (e.g. when the API key is saved or cleared in settings). */
   onModelProgress: publicProcedure.subscription(() =>
     observable<ModelStatus>((emit) => {
-      emit.next(gemmaService.getStatus());
-      return gemmaService.onStatus((status) => emit.next(status));
+      emit.next(geminiService.getStatus());
+      return geminiService.onStatus((status) => emit.next(status));
     }),
-  ),
-
-  /** On-disk footprint of the generative weights (for the settings UI). */
-  modelInfo: publicProcedure.query((): Promise<ModelDiskInfo> =>
-    guard(async () => modelDiskInfoSchema.parse(await gemmaService.getDiskInfo()), 'Failed to read model info.'),
-  ),
-
-  /** Delete the downloaded generative weights, reclaiming the disk. */
-  deleteModel: publicProcedure.mutation((): Promise<ModelDiskInfo> =>
-    guard(async () => modelDiskInfoSchema.parse(await gemmaService.deleteModel()), 'Failed to delete model.'),
   ),
 });

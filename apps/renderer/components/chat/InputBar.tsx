@@ -229,6 +229,16 @@ export function InputBar({ disabled }: { disabled: boolean }) {
     clearComposerDraft(tabId);
   };
 
+  // Insert a mic transcript at the caret, then re-sync the mirrored text + draft.
+  const onTranscribe = (transcript: string) => {
+    editorRef.current?.insertText(transcript);
+    const draft = editorRef.current?.getDraft() ?? { text: '', images: [] };
+    setText(draft.text);
+    setHasImages(draft.images.length > 0);
+    setMenuDismissed(true);
+    setComposerDraft(tabId, draft);
+  };
+
   const submit = () => {
     const draft = editorRef.current?.getDraft() ?? { text: '', images: [] };
     const trimmed = draft.text.trim();
@@ -406,6 +416,7 @@ export function InputBar({ disabled }: { disabled: boolean }) {
               <InputToolbar
                 disabled={disabled}
                 onAttachImage={() => fileInputRef.current?.click()}
+                onTranscribe={onTranscribe}
                 trailing={
                   busy && !pendingPlan ? (
                     <IconButton

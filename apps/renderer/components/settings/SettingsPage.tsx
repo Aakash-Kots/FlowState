@@ -16,6 +16,7 @@ import {
 import { cn } from '../ui/cn';
 import { ArchiveRetentionCard } from './ArchiveRetentionCard';
 import { CodeThemeCard } from './CodeThemeCard';
+import { GeminiApiKeyCard } from './GeminiApiKeyCard';
 import { LinearTeamsCard } from './LinearTeamsCard';
 import { Section, SettingRow } from './SettingsLayout';
 import { SmartSearchModelCard } from './SmartSearchModelCard';
@@ -217,16 +218,16 @@ export function SettingsPage() {
               stack
               title="On-device model"
               description="The EmbeddingGemma weights are downloaded once and shared across every workspace. Delete to reclaim the space; it re-downloads next time you search."
-              control={<SmartSearchModelCard endpoint="search" />}
+              control={<SmartSearchModelCard />}
             />
           </Section>
 
-          <Section title="Ask Gemma">
+          <Section title="Ask Gemini">
             <SettingRow
               stack
-              title="On-device assistant"
-              description="Double-tap Space anywhere to ask a local Gemma 3 model and get a streamed answer inline. The model size is chosen from your available memory; it downloads once on first use."
-              control={<SmartSearchModelCard endpoint="gemma" />}
+              title="Gemini API key"
+              description="Double-tap Space anywhere to ask Google's Gemini and get a streamed answer inline — it can also search Linear, create tickets, and spin up worktrees. Your key also powers ticket wording refinement and the mic's speech-to-text. Enter your own Gemini API key to enable it."
+              control={<GeminiApiKeyCard />}
             />
           </Section>
 
