@@ -40,6 +40,8 @@ export type ComposerEditorHandle = {
   setDraft: (draft: ComposerDraft) => void;
   /** Insert image pills at the caret (or the end when unfocused). */
   insertImages: (images: ChatImageInput[]) => void;
+  /** Insert plain text at the caret (or the end when unfocused) — e.g. a mic transcript. */
+  insertText: (text: string) => void;
   getDraft: () => ComposerDraft;
 };
 
@@ -475,6 +477,23 @@ export const ComposerEditor = forwardRef<
     },
     insertImages: (images) => {
       if (allowImages) insertImagesAtCaret(images);
+    },
+    insertText: (text) => {
+      const root = editorRef.current;
+      if (!root || !text) return;
+      root.focus();
+      const range = currentRange();
+      range.deleteContents();
+      const node = document.createTextNode(text);
+      range.insertNode(node);
+      range.setStartAfter(node);
+      range.collapse(true);
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+      savedRangeRef.current = range.cloneRange();
+      setEmpty(false);
+      fireChange();
     },
     getDraft: () => serialize(),
   }));

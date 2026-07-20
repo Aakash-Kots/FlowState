@@ -42,6 +42,8 @@ type SettingsState = {
   surfacedTeamIds: string[];
   /** Team preselected for new tickets (null = none chosen → first surfaced). */
   defaultTeamId: string | null;
+  /** Whether a Gemini API key is stored (the plaintext never reaches the renderer). */
+  geminiApiKeySet: boolean;
 };
 
 ///////////////
@@ -64,6 +66,7 @@ const INITIAL: SettingsState = {
   preferSmallModel: false,
   surfacedTeamIds: [],
   defaultTeamId: null,
+  geminiApiKeySet: false,
 };
 
 export const useSettings = create<SettingsState>(() => INITIAL);
@@ -116,6 +119,7 @@ export function useSettingsSync(): void {
           terminalPanelFraction,
           surfacedTeamIds,
           defaultTeamId,
+          geminiApiKeySet,
         }) => {
           useSettings.setState({
             hydrated: true,
@@ -128,6 +132,7 @@ export function useSettingsSync(): void {
             terminalPanelFraction,
             surfacedTeamIds,
             defaultTeamId,
+            geminiApiKeySet,
           });
           applyCodeTheme(codeTheme);
           applyFontSize(fontSize);
@@ -171,6 +176,19 @@ export function setSurfacedTeamIds(teamIds: string[]): void {
 export function setDefaultTeam(teamId: string | null): void {
   useSettings.setState({ defaultTeamId: teamId });
   void trpc().settings.setDefaultTeam.mutate({ teamId });
+}
+
+/** Save the user's Gemini API key (encrypted in the main process). Resolves once
+ * persisted so the caller can surface a saved/failed state. */
+export async function setGeminiApiKey(apiKey: string): Promise<void> {
+  await trpc().settings.setGeminiApiKey.mutate({ apiKey });
+  useSettings.setState({ geminiApiKeySet: true });
+}
+
+/** Remove the stored Gemini API key (optimistic + persisted). */
+export async function clearGeminiApiKey(): Promise<void> {
+  await trpc().settings.clearGeminiApiKey.mutate();
+  useSettings.setState({ geminiApiKeySet: false });
 }
 
 /** Toggle the completion sound (optimistic; persisted in the main process). */

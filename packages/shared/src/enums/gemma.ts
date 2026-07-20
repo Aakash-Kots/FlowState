@@ -1,6 +1,6 @@
 /**
- * Enumerations for the on-device generative assistant ("Ask Gemma"), shared
- * between the main process (which runs the model) and the renderer (which
+ * Enumerations for the hosted generative assistant ("Ask Gemini"), shared
+ * between the main process (which calls the Gemini API) and the renderer (which
  * streams the reply into the palette). Values are the wire strings.
  */
 
@@ -13,18 +13,4 @@ export enum GemmaStreamKind {
   ToolCall = 'tool-call',
   /** A tool finished (or was denied) — carries the outcome. */
   ToolResult = 'tool-result',
-}
-
-/**
- * Which generative Gemma tier the palette runs. `Auto` lets the main process
- * pick the largest tier (and quant) that fits the machine's RAM; the `Force*`
- * values let a user override that from settings (e.g. run 12B on a machine the
- * auto-picker would keep at 4B, accepting the memory pressure). Resolved to a
- * concrete model + quant by `selectGenerativeSpec` in the main process.
- */
-export enum GemmaTierPreference {
-  Auto = 'auto',
-  Force1b = 'force-1b',
-  Force4b = 'force-4b',
-  Force12b = 'force-12b',
 }

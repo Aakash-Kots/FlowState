@@ -1,8 +1,8 @@
 /**
- * Names of the tools the on-device Gemma model can call (main-process only —
- * the renderer only ever sees these as opaque wire strings on a `ToolCall`
- * event). Values are the function names handed to node-llama-cpp's function
- * calling, so keep them snake_case and stable.
+ * Names of the tools the Gemini "Ask" model can call (main-process only — the
+ * renderer only ever sees these as opaque wire strings on a `ToolCall` event).
+ * Values are the function names handed to Gemini's function calling, so keep
+ * them snake_case and stable.
  */
 export enum LocalToolName {
   ListLinearTeams = 'list_linear_teams',

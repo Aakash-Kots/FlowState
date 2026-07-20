@@ -7,7 +7,7 @@ import { appRouter } from './router';
 import { archiveReaperService } from './services/archive';
 import { claudeService } from './services/claude';
 import { fullScreenService } from './services/fullscreen';
-import { gemmaService } from './services/gemma';
+import { geminiService } from './services/gemini';
 import { localModelService } from './services/local-model';
 import { shortcutsService } from './services/shortcuts';
 import { terminalService } from './services/terminal';
@@ -284,6 +284,6 @@ app.on('will-quit', () => {
   claudeService.disposeAll();
   terminalService.disposeAll();
   void localModelService.dispose();
-  void gemmaService.dispose();
+  geminiService.dispose();
   closeStore();
 });

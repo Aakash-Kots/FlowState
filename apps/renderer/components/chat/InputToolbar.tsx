@@ -1,7 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { ChevronDown, ImagePlus, Loader2 } from 'lucide-react';
+import { ChevronDown, ImagePlus, Loader2, Mic } from 'lucide-react';
 import { DEFAULT_EFFORT, DEFAULT_MODEL, PermissionMode, ReasoningEffort } from '@flowstate/shared';
 import {
   cyclePermissionMode,
@@ -11,6 +11,7 @@ import {
   useChat,
   useTabId,
 } from '@/lib/chat';
+import { useMicTranscription } from '@/lib/transcribe';
 import { cn } from '../ui/cn';
 import { DropdownItem, DropdownMenu } from '../ui/dropdown-menu';
 
@@ -49,6 +50,7 @@ export function InputToolbar({
   disabled,
   trailing,
   onAttachImage,
+  onTranscribe,
 }: {
   disabled: boolean;
   // Right-aligned slot for the send/stop control so it sits on the same row as
@@ -56,8 +58,11 @@ export function InputToolbar({
   trailing?: ReactNode;
   // Opens the composer's image file picker (the leading attach button).
   onAttachImage?: () => void;
+  // Receives transcribed speech from the mic button (inserted into the composer).
+  onTranscribe?: (text: string) => void;
 }) {
   const tabId = useTabId();
+  const mic = useMicTranscription(onTranscribe ?? (() => {}));
   // Fall back to the defaults so the picker always shows a concrete model +
   // effort (Opus 4.8 / High) until the user changes it.
   const model = useChat((s) => s.model) ?? DEFAULT_MODEL;
@@ -89,6 +94,34 @@ export function InputToolbar({
           )}
         >
           <ImagePlus className="h-4 w-4" />
+        </button>
+      )}
+
+      {onTranscribe && (
+        <button
+          type="button"
+          disabled={disabled || mic.status === 'transcribing'}
+          onClick={mic.toggle}
+          title={
+            mic.error ??
+            (mic.status === 'recording'
+              ? 'Stop and transcribe'
+              : mic.status === 'transcribing'
+                ? 'Transcribing…'
+                : 'Dictate with your voice')
+          }
+          className={cn(
+            'inline-flex items-center rounded-md transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+            mic.status === 'recording'
+              ? 'bg-danger/15 px-2 py-1 text-danger hover:bg-danger/25'
+              : triggerClass,
+          )}
+        >
+          {mic.status === 'transcribing' ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Mic className={cn('h-4 w-4', mic.status === 'recording' && 'animate-pulse')} />
+          )}
         </button>
       )}
 

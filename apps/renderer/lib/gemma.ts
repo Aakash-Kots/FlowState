@@ -42,7 +42,7 @@ type GemmaState = {
   error: string | null;
   /** Tool calls from the current turn, in arrival order. */
   tools: ToolCard[];
-  /** The generative model's download/load state, for the prep indicator. */
+  /** Whether an API key is set (Ready) or not (Absent) — drives the needs-key hint. */
   modelStatus: ModelStatus | null;
 };
 
@@ -109,7 +109,7 @@ function patchToolCard(id: string, patch: Partial<ToolCard>): void {
 // Actions //
 /////////////
 
-/** Open the palette (fresh), and start watching model-download progress. */
+/** Open the palette (fresh), and start watching the API-key/ready status. */
 export function openAskGemma(): void {
   sub?.unsubscribe();
   sub = null;
@@ -132,9 +132,9 @@ export function resetAsk(): void {
 }
 
 /**
- * Ask Gemma `prompt` and stream the reply (and any tool calls) into the store.
+ * Ask Gemini `prompt` and stream the reply (and any tool calls) into the store.
  * Cancels any previous generation first, and passes the active workspace so
- * tools can default their target. Downloads/loads the model on first use.
+ * tools can default their target. Requires a Gemini API key (set in Settings).
  */
 export function askGemma(prompt: string): void {
   const q = prompt.trim();

@@ -1,17 +1,16 @@
 /**
- * Runtime validation for the Ask-Gemma domain. Mirrors `../types/gemma` and is
+ * Runtime validation for the Ask-Gemini domain. Mirrors `../types/gemma` and is
  * parsed at the tRPC boundary (subscription output, mutation inputs).
  */
 import { z } from 'zod';
-import { GemmaStreamKind, GemmaTierPreference } from '../enums/gemma';
+import { GemmaStreamKind } from '../enums/gemma';
 import type {
   GemmaAskInput,
-  GemmaPrefs,
   GemmaStreamEvent,
   GemmaToolCall,
   GemmaToolResult,
   RespondGemmaToolInput,
-  SetGemmaTierInput,
+  TranscribeAudioInput,
 } from '../types/gemma';
 
 const jsonArgs = z.record(z.unknown());
@@ -55,10 +54,7 @@ export const respondGemmaToolInputSchema: z.ZodType<RespondGemmaToolInput> = z.o
   editedArgs: jsonArgs.nullish(),
 });
 
-export const gemmaPrefsSchema: z.ZodType<GemmaPrefs> = z.object({
-  tierPreference: z.nativeEnum(GemmaTierPreference),
-});
-
-export const setGemmaTierInputSchema: z.ZodType<SetGemmaTierInput> = z.object({
-  preference: z.nativeEnum(GemmaTierPreference),
+export const transcribeAudioInputSchema: z.ZodType<TranscribeAudioInput> = z.object({
+  audioBase64: z.string().min(1),
+  mimeType: z.string().min(1),
 });

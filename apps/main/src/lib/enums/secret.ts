@@ -9,6 +9,9 @@ export enum SecretName {
   LinearToken = 'linear.token',
   GithubToken = 'github.token',
   AnthropicApiKey = 'anthropic.apiKey',
+  /** Google Gemini API key (user-supplied) powering "Ask Gemini", ticket
+   * refinement, and speech-to-text. */
+  GeminiApiKey = 'gemini.apiKey',
   /** A copy of the Claude Code OAuth credential captured after `claude auth login`. */
   ClaudeCredentials = 'claude.credentials',
   /** Spotify OAuth access token (expires ~1h — refreshed via the refresh token). */

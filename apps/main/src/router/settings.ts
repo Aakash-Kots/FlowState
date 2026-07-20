@@ -1,5 +1,8 @@
 import { z } from 'zod';
 import { ArchiveRetention, CodeTheme, FontSize } from '@flowstate/shared';
+import { SecretName } from '../lib/enums/secret';
+import { geminiService } from '../services/gemini';
+import { deleteSecret, hasSecret, setSecret } from '../store/secrets';
 import {
   getArchiveRetention,
   getCodeTheme,
@@ -39,7 +42,24 @@ export const settingsRouter = router({
     terminalPanelFraction: getTerminalPanelFraction(),
     surfacedTeamIds: getSurfacedTeamIds(),
     defaultTeamId: getDefaultTeamId(),
+    // Only whether a key exists — the plaintext key never leaves the main process.
+    geminiApiKeySet: hasSecret(SecretName.GeminiApiKey),
   })),
+
+  /** Store the user's Gemini API key (encrypted via safeStorage). Powers Ask
+   * Gemini, ticket refinement, and speech-to-text. */
+  setGeminiApiKey: publicProcedure
+    .input(z.object({ apiKey: z.string().min(1) }))
+    .mutation(({ input }) => {
+      setSecret(SecretName.GeminiApiKey, input.apiKey.trim());
+      geminiService.notifyKeyChanged();
+    }),
+
+  /** Remove the stored Gemini API key. */
+  clearGeminiApiKey: publicProcedure.mutation(() => {
+    deleteSecret(SecretName.GeminiApiKey);
+    geminiService.notifyKeyChanged();
+  }),
 
   setSoundEnabled: publicProcedure
     .input(z.object({ enabled: z.boolean() }))
