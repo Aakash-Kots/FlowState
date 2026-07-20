@@ -6,6 +6,7 @@ import {
   DEFAULT_WORKSPACE_ID,
   LinearPrStatus,
   LinearStateType,
+  LocalModelState,
   type CreateLinearIssueInput,
   type LinearIssue,
   type LinearIssueRef,
@@ -15,10 +16,12 @@ import {
   type LinearUser,
   type LinearWorkflowState,
   type LinkedWorktree,
+  type ModelStatus,
 } from '@flowstate/shared';
 import { WorkspaceView } from './enums/view';
 import { useOnboarding } from './onboarding';
 import { fuzzyScore } from './search';
+import { useSettings } from './settings';
 import { trpc } from './trpc';
 import { setViewMode, useWorkspace } from './workspace';
 
@@ -47,6 +50,17 @@ type LinearStoreState = {
   issues: LinearIssue[];
   issuesLoading: boolean;
   issuesError: string | null;
+  /**
+   * Semantic-search relevance by issue id, from the local embedding model. When
+   * `semanticActive`, `IssueList` orders by these scores (literal hits still lead).
+   * Empty for literal/identifier queries.
+   */
+  semanticScores: Map<string, number>;
+  semanticActive: boolean;
+  /** True while a semantic query is in flight (drives the "Searching…" spinner). */
+  semanticSearching: boolean;
+  /** Latest embedding-model lifecycle state, driving the search box's prep hint. */
+  modelStatus: ModelStatus | null;
   /** The issue open in the detail panel. */
   selectedIssueId: string | null;
   /** A team's workflow states (the status dropdown), cached by team id. */
@@ -93,6 +107,10 @@ const INITIAL: LinearStoreState = {
   issues: [],
   issuesLoading: false,
   issuesError: null,
+  semanticScores: new Map(),
+  semanticActive: false,
+  semanticSearching: false,
+  modelStatus: null,
   selectedIssueId: null,
   workflowStatesByTeam: {},
   users: [],
@@ -111,6 +129,15 @@ const INITIAL: LinearStoreState = {
 /** Debounce window for the search box before it refetches. */
 const SEARCH_DEBOUNCE_MS = 300;
 
+/** Min trimmed length before a query is treated as natural language (shorter
+ * queries are likely a keyword/identifier — literal search only). */
+const SEMANTIC_MIN_QUERY_LEN = 4;
+/** Max semantic hits requested per query. */
+const SEMANTIC_LIMIT = 25;
+/** A Linear identifier ("ENG-142") or bare issue number — route these to the
+ * instant literal path, never the embedding model. */
+const IDENTIFIER_QUERY = /^\s*([a-z]{1,6}-\d+|\d+)\s*$/i;
+
 /////////////
 // Helpers //
 /////////////
@@ -125,6 +152,11 @@ let searchTimer: ReturnType<typeof setTimeout> | null = null;
 
 /** Monotonic token so a slow issues fetch can't clobber a newer one's results. */
 let issuesReq = 0;
+
+/** Monotonic token for semantic searches (drops stale/out-of-order responses). */
+let semanticReq = 0;
+/** A natural-language query deferred until the model finishes downloading. */
+let pendingSemanticQuery: string | null = null;
 
 /** Down-convert a browser issue to the small ref a linked worktree persists. */
 export function issueToRef(issue: LinearIssue): LinearIssueRef {
@@ -191,6 +223,39 @@ export function filterIssues(issues: LinearIssue[], query: string): LinearIssue[
   return issues.filter((i) => fuzzyScore(`${i.identifier} ${i.title}`, q) >= 0);
 }
 
+/** True when a query should engage semantic search (natural language, not an
+ * identifier/number lookup). */
+export function shouldRunSemantic(query: string): boolean {
+  const q = query.trim();
+  return q.length >= SEMANTIC_MIN_QUERY_LEN && !IDENTIFIER_QUERY.test(q);
+}
+
+/**
+ * Order issues for a natural-language query: literal identifier/title matches
+ * lead (so "ENG-142" never regresses), then semantically-related tickets by
+ * embedding similarity. Issues with neither signal drop out. Pure — new array.
+ */
+export function rankSemantic(
+  issues: LinearIssue[],
+  query: string,
+  scores: Map<string, number>,
+): LinearIssue[] {
+  return issues
+    .map((issue) => ({
+      issue,
+      literal: fuzzyScore(`${issue.identifier} ${issue.title}`, query),
+      semantic: scores.get(issue.id) ?? -1,
+    }))
+    .filter((r) => r.literal >= 0 || r.semantic >= 0)
+    .sort((a, b) => {
+      const aLiteral = a.literal >= 0;
+      const bLiteral = b.literal >= 0;
+      if (aLiteral !== bLiteral) return aLiteral ? -1 : 1; // literal hits first
+      return aLiteral ? b.literal - a.literal : b.semantic - a.semantic;
+    })
+    .map((r) => r.issue);
+}
+
 /** Merge fresh server issues into a pool (server copy wins), keeping pool order. */
 function mergeIssues(prev: LinearIssue[], incoming: LinearIssue[]): LinearIssue[] {
   const byId = new Map(prev.map((i) => [i.id, i]));
@@ -255,6 +320,83 @@ export async function refreshIssues(merge = false): Promise<void> {
   }
 }
 
+/** Reset semantic state — used when the query becomes literal/empty or the team
+ * changes (cached scores are keyed to the old team's tickets). */
+export function clearSemantic(): void {
+  pendingSemanticQuery = null;
+  useLinear.setState({ semanticScores: new Map(), semanticActive: false, semanticSearching: false });
+}
+
+/** Ensure the selected team's tickets are embedded into the local search index.
+ * No-op when no team is selected (the index is per-team). */
+export function reindexSelectedTeam(): void {
+  const teamId = useLinear.getState().selectedTeamId;
+  if (!teamId) return;
+  void trpc().search.reindex.mutate({ teamId }).catch(() => {});
+}
+
+/** Index every team in the background so semantic search works before the user
+ * picks a team (and ⌘P spans the whole backlog). */
+export function reindexAllTeams(): void {
+  void trpc().search.reindexAll.mutate().catch(() => {});
+}
+
+/**
+ * Run semantic search for the current query + selected team against the local
+ * embedding model and blend the results into the browser list. While the model
+ * is still downloading/loading it returns nothing and we remember the query to
+ * re-run once the model reports Ready (see the progress subscription in
+ * `useLinearSync`). Degrades silently to literal search on any error.
+ */
+export async function runSemanticSearch(): Promise<void> {
+  const { searchQuery, selectedTeamId } = useLinear.getState();
+  const query = searchQuery.trim();
+  if (!query || !shouldRunSemantic(query) || !useSettings.getState().semanticSearchEnabled) {
+    clearSemantic();
+    return;
+  }
+  const token = ++semanticReq;
+  useLinear.setState({ semanticSearching: true });
+  try {
+    let result;
+    try {
+      // No team selected → search the whole indexed backlog (teamId undefined).
+      result = await trpc().search.semantic.query({
+        query,
+        teamId: selectedTeamId ?? undefined,
+        limit: SEMANTIC_LIMIT,
+      });
+    } catch {
+      return; // degrade silently to literal search
+    }
+    if (token !== semanticReq) return;
+    if (!result.modelReady) {
+      pendingSemanticQuery = query; // re-run once the model finishes loading
+      return;
+    }
+    pendingSemanticQuery = null;
+
+    // Hydrate any hit missing from the loaded pool (e.g. a completed ticket) so
+    // it can actually render in the list.
+    const known = new Set(useLinear.getState().issues.map((i) => i.id));
+    const missing = result.hits.filter((h) => !known.has(h.issueId)).map((h) => h.issueId);
+    if (missing.length > 0) {
+      const fetched = await Promise.all(missing.map((id) => trpc().linear.issue.query({ id }).catch(() => null)));
+      if (token !== semanticReq) return;
+      const valid = fetched.filter((i): i is LinearIssue => i !== null);
+      if (valid.length > 0) useLinear.setState((s) => ({ issues: mergeIssues(s.issues, valid) }));
+    }
+
+    useLinear.setState({
+      semanticScores: new Map(result.hits.map((h) => [h.issueId, h.score])),
+      semanticActive: true,
+    });
+  } finally {
+    // Only the latest query clears the spinner (a superseded one already handed off).
+    if (token === semanticReq) useLinear.setState({ semanticSearching: false });
+  }
+}
+
 /**
  * Fetch the linked user's assigned issues as full `LinearIssue`s (with PR + state)
  * for the Active Work / Open PRs sections. Includes completed so a merged-but-
@@ -275,21 +417,32 @@ export async function refreshMyWork(): Promise<void> {
   }
 }
 
-/** Set the team filter (null = all) and refetch. */
+/** Set the team filter (null = all) and refetch. Semantic scores are keyed to
+ * the previous team's tickets, so clear them and warm the new team's index. */
 export function setSelectedTeam(selectedTeamId: string | null): void {
   useLinear.setState({ selectedTeamId });
+  clearSemantic();
   void refreshIssues();
+  reindexSelectedTeam();
+  // A natural-language query still in the box should re-rank against the new team.
+  if (shouldRunSemantic(useLinear.getState().searchQuery)) void runSemanticSearch();
 }
 
 /**
  * Update the search text. The list filters the already-loaded issues locally for
  * instant feedback (see `IssueList`); after a short debounce we merge in server
- * matches to widen the pool beyond what's loaded.
+ * matches to widen the pool, and — for natural-language queries with a team
+ * selected — blend in semantic ranking from the local embedding model.
  */
 export function setSearchQuery(searchQuery: string): void {
   useLinear.setState({ searchQuery });
+  if (!searchQuery.trim()) clearSemantic();
   if (searchTimer) clearTimeout(searchTimer);
-  searchTimer = setTimeout(() => void refreshIssues(true), SEARCH_DEBOUNCE_MS);
+  searchTimer = setTimeout(() => {
+    void refreshIssues(true);
+    if (shouldRunSemantic(searchQuery)) void runSemanticSearch();
+    else clearSemantic();
+  }, SEARCH_DEBOUNCE_MS);
 }
 
 /** Filter the browser list by assignee (null = anyone) and refetch. */
@@ -516,7 +669,25 @@ export function useLinearSync(): void {
     void refreshUsers();
     void refreshProjects();
     void refreshLabels();
+    reindexAllTeams(); // warm the local semantic index across every team
   }, [workspaceId, linearConnected]);
+
+  // Track the embedding model's download/load state for the search box's prep
+  // hint, and re-run a query that was deferred while the model was loading.
+  useEffect(() => {
+    trpc()
+      .search.modelStatus.query()
+      .then((modelStatus) => useLinear.setState({ modelStatus }))
+      .catch(() => {});
+    const sub = trpc().search.onModelProgress.subscribe(undefined, {
+      onData: (modelStatus) => {
+        useLinear.setState({ modelStatus });
+        if (modelStatus.state === LocalModelState.Ready && pendingSemanticQuery) void runSemanticSearch();
+      },
+      onError: () => {},
+    });
+    return () => sub.unsubscribe();
+  }, []);
 
   useEffect(() => {
     if (workspaceId === DEFAULT_WORKSPACE_ID || !linearConnected) return;

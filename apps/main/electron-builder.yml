@@ -20,6 +20,14 @@ extraResources:
   - from: drizzle
     to: drizzle
 asar: true
+# node-llama-cpp loads its prebuilt native addon (a `.node` file inside the
+# per-platform @node-llama-cpp/* package) with require() at runtime; a native
+# binary can't be dlopen'd from inside app.asar, so unpack the loader and its
+# platform binaries. N-API-stable, so no ABI rebuild is needed (unlike
+# better-sqlite3/node-pty) — the prebuilt binary loads as-is under Electron.
+asarUnpack:
+  - '**/node_modules/node-llama-cpp/**'
+  - '**/node_modules/@node-llama-cpp/**'
 
 mac:
   category: public.app-category.developer-tools

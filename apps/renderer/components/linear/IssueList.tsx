@@ -3,7 +3,7 @@
 import { useMemo } from 'react';
 import { GitBranch } from 'lucide-react';
 import { type LinearIssue } from '@flowstate/shared';
-import { filterIssues, rankIssues, selectIssue, useLinear } from '@/lib/linear';
+import { filterIssues, rankIssues, rankSemantic, selectIssue, useLinear } from '@/lib/linear';
 import { useProjects } from '@/lib/projects';
 import { useWorkspace } from '@/lib/workspace';
 import { cn } from '../ui/cn';
@@ -63,6 +63,8 @@ export function IssueList() {
   const issues = useLinear((s) => s.issues);
   const searchQuery = useLinear((s) => s.searchQuery);
   const loading = useLinear((s) => s.issuesLoading);
+  const semanticActive = useLinear((s) => s.semanticActive);
+  const semanticScores = useLinear((s) => s.semanticScores);
 
   // The issue linked to the worktree currently open — highlighted in the list.
   const workspaceId = useWorkspace((s) => s.workspaceId);
@@ -74,10 +76,17 @@ export function IssueList() {
     return null;
   });
 
-  // Filter the already-loaded issues locally for instant feedback on every
-  // keystroke (a debounced server search widens the pool in the background), then
+  // For a natural-language query, rank by embedding similarity (literal hits
+  // still lead); otherwise filter locally for instant keystroke feedback and
   // order by relevance: open-PR / in-progress / not-started above finished work.
-  const rows = useMemo(() => rankIssues(filterIssues(issues, searchQuery)), [issues, searchQuery]);
+  const useSemantic = semanticActive && searchQuery.trim().length > 0 && semanticScores.size > 0;
+  const rows = useMemo(
+    () =>
+      useSemantic
+        ? rankSemantic(issues, searchQuery, semanticScores)
+        : rankIssues(filterIssues(issues, searchQuery)),
+    [issues, searchQuery, useSemantic, semanticScores],
+  );
 
   return (
     <div className="flex w-96 shrink-0 flex-col overflow-y-auto border-r border-border">

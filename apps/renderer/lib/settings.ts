@@ -34,6 +34,10 @@ type SettingsState = {
   skillsPanelOpen: boolean;
   /** Fraction (0–1) of the panel's height given to its bottom terminal section. */
   terminalPanelFraction: number;
+  /** Whether natural-language (semantic) ticket search is enabled. */
+  semanticSearchEnabled: boolean;
+  /** Whether to force the smaller Q4 embedding model regardless of RAM. */
+  preferSmallModel: boolean;
 };
 
 ///////////////
@@ -52,6 +56,8 @@ const INITIAL: SettingsState = {
   skillsPanelWidth: 360,
   skillsPanelOpen: true,
   terminalPanelFraction: 0.5,
+  semanticSearchEnabled: true,
+  preferSmallModel: false,
 };
 
 export const useSettings = create<SettingsState>(() => INITIAL);
@@ -118,7 +124,27 @@ export function useSettingsSync(): void {
         },
       )
       .catch(() => useSettings.setState({ hydrated: true }));
+
+    // Semantic-search prefs live under the search router (main owns the model).
+    trpc()
+      .search.prefs.query()
+      .then(({ enabled, preferSmallModel }) =>
+        useSettings.setState({ semanticSearchEnabled: enabled, preferSmallModel }),
+      )
+      .catch(() => {});
   }, []);
+}
+
+/** Enable or disable natural-language ticket search (optimistic + persisted). */
+export function setSemanticSearchEnabled(enabled: boolean): void {
+  useSettings.setState({ semanticSearchEnabled: enabled });
+  void trpc().search.setEnabled.mutate({ enabled });
+}
+
+/** Toggle the smaller (Q4) embedding model preference (optimistic + persisted). */
+export function setPreferSmallModel(prefer: boolean): void {
+  useSettings.setState({ preferSmallModel: prefer });
+  void trpc().search.setPreferSmallModel.mutate({ prefer });
 }
 
 /** Toggle the completion sound (optimistic; persisted in the main process). */

@@ -7,6 +7,8 @@ import { CODE_THEMES } from '@/lib/constants/codeThemes';
 import {
   setCodeTheme,
   setFontSize,
+  setPreferSmallModel,
+  setSemanticSearchEnabled,
   setSettingsOpen,
   setSoundEnabled,
   useSettings,
@@ -15,6 +17,7 @@ import { cn } from '../ui/cn';
 import { ArchiveRetentionCard } from './ArchiveRetentionCard';
 import { CodeThemeCard } from './CodeThemeCard';
 import { Section, SettingRow } from './SettingsLayout';
+import { SmartSearchModelCard } from './SmartSearchModelCard';
 
 ///////////////
 // Constants //
@@ -110,6 +113,8 @@ export function SettingsPage() {
   const soundEnabled = useSettings((s) => s.soundEnabled);
   const codeTheme = useSettings((s) => s.codeTheme);
   const fontSize = useSettings((s) => s.fontSize);
+  const semanticSearchEnabled = useSettings((s) => s.semanticSearchEnabled);
+  const preferSmallModel = useSettings((s) => s.preferSmallModel);
 
   // Esc closes the page — a familiar exit for a modal-like full surface.
   useEffect(() => {
@@ -181,6 +186,46 @@ export function SettingsPage() {
                   label="Completion sound"
                 />
               }
+            />
+          </Section>
+
+          <Section title="Search">
+            <SettingRow
+              title="Natural-language search"
+              description="Describe a ticket in plain language and rank Linear results by meaning — computed on-device. When off, search stays literal (identifier + title)."
+              control={
+                <Toggle
+                  checked={semanticSearchEnabled}
+                  onChange={setSemanticSearchEnabled}
+                  label="Natural-language search"
+                />
+              }
+            />
+            <SettingRow
+              title="Use smaller model"
+              description="Force the smaller Q4 model regardless of memory — about 80 MB less disk and lower memory use, with slightly lower recall."
+              control={
+                <Toggle
+                  checked={preferSmallModel}
+                  onChange={setPreferSmallModel}
+                  label="Use smaller model"
+                />
+              }
+            />
+            <SettingRow
+              stack
+              title="On-device model"
+              description="The EmbeddingGemma weights are downloaded once and shared across every workspace. Delete to reclaim the space; it re-downloads next time you search."
+              control={<SmartSearchModelCard endpoint="search" />}
+            />
+          </Section>
+
+          <Section title="Ask Gemma">
+            <SettingRow
+              stack
+              title="On-device assistant"
+              description="Double-tap Space anywhere to ask a local Gemma 3 model and get a streamed answer inline. The model size is chosen from your available memory; it downloads once on first use."
+              control={<SmartSearchModelCard endpoint="gemma" />}
             />
           </Section>
 

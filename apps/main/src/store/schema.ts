@@ -226,6 +226,32 @@ export const notes = sqliteTable(
   (t) => [index('idx_notes_workspace').on(t.workspaceId)],
 );
 
+// A cached semantic-search embedding for one Linear ticket. The local embedding
+// model (EmbeddingGemma via node-llama-cpp) vectorizes each ticket's
+// identifier+title once; `content_hash` (a hash of the embedded text) lets the
+// reindexer skip unchanged tickets and re-embed only edited ones. `vector` is
+// the L2-normalized Float32 embedding as a raw little-endian buffer (blob), so
+// cosine similarity is a plain dot product in JS — the corpus is small enough
+// (hundreds/low-thousands per team) that brute-force beats a vector extension.
+// `identifier`/`title` are denormalized so a hit can be labeled without a live
+// Linear fetch. No FK to a workspace: this is an API-derived cache, not user
+// state, and `team_id` is Linear's own id.
+export const linearIssueEmbeddings = sqliteTable(
+  'linear_issue_embeddings',
+  {
+    issueId: text('issue_id').primaryKey(),
+    teamId: text('team_id').notNull(),
+    identifier: text('identifier').notNull(),
+    title: text('title').notNull(),
+    model: text('model').notNull(), // LocalModelId the vector was produced by
+    dim: integer('dim').notNull(), // Matryoshka output width of `vector`
+    contentHash: text('content_hash').notNull(),
+    vector: blob('vector', { mode: 'buffer' }).notNull(), // Float32 LE buffer
+    updatedAt: integer('updated_at').notNull(), // epoch ms
+  },
+  (t) => [index('idx_linear_issue_embeddings_team').on(t.teamId)],
+);
+
 export const settings = sqliteTable('settings', {
   key: text('key').primaryKey(),
   value: text('value').notNull(), // JSON

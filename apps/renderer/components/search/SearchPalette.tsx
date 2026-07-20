@@ -10,7 +10,14 @@ import {
   CommandItem,
   CommandList,
 } from '@/components/ui/command';
-import { ensureIssueDetail, issueRank, openIssueInLinearTab, rankIssues, useLinear } from '@/lib/linear';
+import {
+  ensureIssueDetail,
+  issueRank,
+  openIssueInLinearTab,
+  rankIssues,
+  shouldRunSemantic,
+  useLinear,
+} from '@/lib/linear';
 import { useOnboarding } from '@/lib/onboarding';
 import { fuzzyScore } from '@/lib/search';
 import { setFileFinderOpen, useShortcuts } from '@/lib/shortcuts/store';
@@ -234,7 +241,9 @@ export function SearchPalette() {
   const [query, setQuery] = useState('');
   const [activeValue, setActiveValue] = useState('');
   const [searching, setSearching] = useState(false);
+  const [semanticScores, setSemanticScores] = useState<Map<string, number>>(new Map());
   const reqToken = useRef(0);
+  const semanticToken = useRef(0);
 
   // On open: reset input, fetch files, and seed issues from the synced store.
   useEffect(() => {
@@ -299,6 +308,40 @@ export function SearchPalette() {
     return () => clearTimeout(timer);
   }, [query, open, linearConnected]);
 
+  // Debounced semantic search — for natural-language queries, rank the indexed
+  // ticket corpus by meaning (on-device embeddings) and fold any hit missing from
+  // the pool into the candidates so it can render. Falls back silently to fuzzy.
+  useEffect(() => {
+    if (!open || !linearConnected) return;
+    const q = query.trim();
+    if (!shouldRunSemantic(q)) {
+      setSemanticScores(new Map());
+      return;
+    }
+    const token = ++semanticToken.current;
+    const timer = setTimeout(() => {
+      trpc()
+        .search.semantic.query({ query: q })
+        .then(async (res) => {
+          if (token !== semanticToken.current || !res.modelReady) return;
+          // Hydrate hits not already in the synced pool; mergeById dedups the rest.
+          const known = new Set(useLinear.getState().issues.map((i) => i.id));
+          const missing = res.hits.filter((h) => !known.has(h.issueId));
+          if (missing.length > 0) {
+            const fetched = await Promise.all(
+              missing.map((h) => trpc().linear.issue.query({ id: h.issueId }).catch(() => null)),
+            );
+            if (token !== semanticToken.current) return;
+            const valid = fetched.filter((i): i is LinearIssue => i !== null);
+            if (valid.length > 0) setCandidates((prev) => mergeById(prev, valid));
+          }
+          setSemanticScores(new Map(res.hits.map((h) => [h.issueId, h.score])));
+        })
+        .catch(() => {});
+    }, SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [query, open, linearConnected]);
+
   // Value → item lookups (lowercased: cmdk normalizes the highlighted value).
   const issuesByValue = useMemo(() => {
     const map = new Map<string, LinearIssue>();
@@ -349,14 +392,23 @@ export function SearchPalette() {
   // query shows the curated groups below instead.
   const matchedIssues = useMemo(() => {
     if (!q) return [];
-    const scored: { issue: LinearIssue; score: number }[] = [];
+    const scored: { issue: LinearIssue; fuzzy: number; semantic: number }[] = [];
     for (const { issue, text } of issueSearchText) {
-      const score = fuzzyScore(text, q);
-      if (score >= 0) scored.push({ issue, score });
+      const fuzzy = fuzzyScore(text, q);
+      const semantic = semanticScores.get(issue.id) ?? -1;
+      if (fuzzy >= 0 || semantic >= 0) scored.push({ issue, fuzzy, semantic });
     }
-    scored.sort((a, b) => issueRank(a.issue) - issueRank(b.issue) || b.score - a.score);
+    // Literal matches lead (relevance bucket, then match strength); semantic-only
+    // hits follow, ordered by similarity — so a described ticket still surfaces.
+    scored.sort((a, b) => {
+      const aLiteral = a.fuzzy >= 0;
+      const bLiteral = b.fuzzy >= 0;
+      if (aLiteral !== bLiteral) return aLiteral ? -1 : 1;
+      if (aLiteral) return issueRank(a.issue) - issueRank(b.issue) || b.fuzzy - a.fuzzy;
+      return b.semantic - a.semantic;
+    });
     return scored.slice(0, RESULT_LIMIT).map((s) => s.issue);
-  }, [issueSearchText, q]);
+  }, [issueSearchText, q, semanticScores]);
 
   // Empty-state groups (shown only before the user types). Recent files come from
   // the per-worktree MRU, intersected with the live list so deleted paths drop
