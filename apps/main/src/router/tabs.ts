@@ -3,17 +3,13 @@
  * default tab on first open; `create`/`close`/`rename` manage the (≤5) tabs.
  * Chat streaming itself lives in the `claude` router, keyed by tabId.
  */
-import { randomUUID } from 'node:crypto';
 import { TRPCError } from '@trpc/server';
 import {
-  ClaudeSessionState,
   DEFAULT_TAB_TITLE,
   MAX_FILE_TABS_PER_WORKSPACE,
   MAX_TABS_PER_WORKSPACE,
-  PermissionMode,
   TabKind,
   createTabInputSchema,
-  type Tab,
   type TabStateChange,
 } from '@flowstate/shared';
 import { z } from 'zod';
@@ -27,35 +23,8 @@ import {
   upsertTab,
 } from '../store';
 import { claudeService } from '../services/claude';
+import { makeTab } from '../services/workspaceCreate';
 import { publicProcedure, router } from '../trpc';
-
-/////////////
-// Helpers //
-/////////////
-
-/** Build a fresh Idle tab at the given position. */
-export function makeTab(
-  workspaceId: string,
-  title: string,
-  position: number,
-  kind: TabKind = TabKind.Chat,
-  filePath: string | null = null,
-): Tab {
-  return {
-    id: randomUUID(),
-    workspaceId,
-    title,
-    kind,
-    filePath,
-    claudeState: ClaudeSessionState.Idle,
-    claudeSessionId: null,
-    model: null,
-    effort: null,
-    permissionMode: PermissionMode.Default,
-    position,
-    createdAt: new Date().toISOString(),
-  };
-}
 
 export const tabsRouter = router({
   // Ensure the workspace exists and always return at least one tab.

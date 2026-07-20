@@ -10,15 +10,26 @@
  * never interleave.
  */
 import { EventEmitter } from 'node:events';
+import { randomUUID } from 'node:crypto';
 import { mkdir, readdir, stat, unlink } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { totalmem } from 'node:os';
 import { join } from 'node:path';
 import { app } from 'electron';
-import { LocalModelState, type ModelDiskInfo, type ModelStatus } from '@flowstate/shared';
-import { LOCAL_MODELS, selectGenerativeModel } from '../lib/constants/local-model';
-import { LocalModelKind, type LocalModelId } from '../lib/enums/local-model';
-import type { QuantSource } from '../lib/types/local-model';
+import {
+  LocalModelState,
+  type GemmaToolCall,
+  type GemmaToolResult,
+  type ModelDiskInfo,
+  type ModelStatus,
+  type RespondGemmaToolInput,
+} from '@flowstate/shared';
+import { LOCAL_MODELS, selectGenerativeSpec } from '../lib/constants/local-model';
+import { LocalModelKind } from '../lib/enums/local-model';
+import type { HardwareProfile, ModelSpec, QuantSource } from '../lib/types/local-model';
+import type { ToolContext } from '../lib/types/local-tools';
+import { getGemmaTierPreference } from '../store/settings';
+import { buildToolFunctions, type ToolDecision } from './gemmaTools';
 
 ///////////
 // Types //
@@ -29,14 +40,28 @@ type Llama = Awaited<ReturnType<Lib['getLlama']>>;
 type LlamaModel = Awaited<ReturnType<Llama['loadModel']>>;
 type ChatContext = Awaited<ReturnType<LlamaModel['createContext']>>;
 
+/** Callbacks the router passes into `generate` to stream a reply plus its tool
+ * round-trips back to the palette. */
+type GenerateHandlers = {
+  onToken: (text: string) => void;
+  onToolCall: (call: GemmaToolCall) => void;
+  onToolResult: (result: GemmaToolResult) => void;
+};
+
+/** A gated tool call awaiting the renderer's approve/deny answer. */
+type PendingTool = {
+  resolve: (decision: ToolDecision) => void;
+};
+
 ///////////////
 // Constants //
 ///////////////
 
 const STATUS_EVENT = 'status';
 
-/** Cap generated length so a runaway answer can't stall the palette. */
-const MAX_TOKENS = 800;
+/** Cap generated length so a runaway answer can't stall the palette. Higher than
+ * a plain Q&A cap because a turn may spend tokens on tool calls before the reply. */
+const MAX_TOKENS = 1500;
 
 /** Context window. Pinned small (rather than node-llama-cpp's memory-hungry
  * "auto", which sizes to the model's full trained context) — the palette does
@@ -48,9 +73,28 @@ const CONTEXT_SIZE = 4096;
 const IDLE_UNLOAD_MS = 10 * 60 * 1000;
 
 /** Steers the model toward short, direct answers in the inline palette. */
-const SYSTEM_PROMPT =
-  'You are Gemma, a concise, helpful assistant embedded in a developer tool. ' +
+const SYSTEM_PROMPT_BASE =
+  'You are Gemma, a concise, helpful assistant embedded in a developer tool (FlowState). ' +
   'Answer directly and briefly in Markdown. Prefer short paragraphs and code blocks where useful.';
+
+/** How the model should use the action tools (see `gemmaTools.ts`). */
+const TOOL_GUIDANCE = [
+  'You can take actions with tools: search or list Linear issues, list Linear teams and workflow states,',
+  'create a Linear ticket, create a git worktree/workspace, or create a ticket and a linked worktree together.',
+  'Resolve ids before acting — call list_linear_teams to get a teamId before creating a ticket; never invent ids.',
+  'Creating tickets or worktrees asks the user for confirmation (the app handles that) — just call the tool with',
+  'your best arguments. If a call is denied, do not retry it. For plain questions, answer directly without tools.',
+].join(' ');
+
+/** Compose the system prompt for a turn, injecting the user's current focus so
+ * tools can default their target. */
+function buildSystemPrompt(ctx: ToolContext): string {
+  const lines = [SYSTEM_PROMPT_BASE, TOOL_GUIDANCE];
+  if (ctx.activeProjectId) {
+    lines.push(`The active project id is ${ctx.activeProjectId} — use it as the default for new worktrees.`);
+  }
+  return lines.join('\n\n');
+}
 
 /////////////
 // Helpers //
@@ -66,9 +110,12 @@ function modelsDir(): string {
   return join(app.getPath('userData'), 'models');
 }
 
-function sourceFor(modelId: LocalModelId): QuantSource {
-  const source = LOCAL_MODELS[modelId].quants[0];
-  if (!source) throw new Error(`No download source registered for model ${modelId}`);
+/** Resolve the download source for a spec, falling back to the model's first
+ * listed quant if the picked one isn't published (mirrors the embedding path). */
+function sourceForSpec(spec: ModelSpec): QuantSource {
+  const def = LOCAL_MODELS[spec.modelId];
+  const source = def.quants.find((q) => q.quant === spec.quant) ?? def.quants[0];
+  if (!source) throw new Error(`No download source registered for model ${spec.modelId}`);
   return source;
 }
 
@@ -90,10 +137,15 @@ export class GemmaService extends EventEmitter {
   private llama: Llama | null = null;
   private model: LlamaModel | null = null;
   private context: ChatContext | null = null;
+  /** The resolved run plan (tier + quant), for logging/verification. */
+  private spec: ModelSpec | null = null;
 
   private readyPromise: Promise<void> | null = null;
   /** Serializes generation — one context sequence, one prompt at a time. */
   private queue: Promise<unknown> = Promise.resolve();
+  /** Side-effecting tool calls parked awaiting the renderer's approve/deny, keyed
+   * by call id (mirrors the permission-parking in `claude.ts`). */
+  private pendingTools = new Map<string, PendingTool>();
   /** Fires IDLE_UNLOAD_MS after the last generation to free the model's RAM. */
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -110,6 +162,12 @@ export class GemmaService extends EventEmitter {
 
   isReady(): boolean {
     return this.status.state === LocalModelState.Ready;
+  }
+
+  /** The resolved run plan (tier + quant), for logging/verification (null before
+   * first load). Mirrors `localModelService.getSpec()`. */
+  getSpec(): ModelSpec | null {
+    return this.spec;
   }
 
   onStatus(listener: (status: ModelStatus) => void): () => void {
@@ -158,9 +216,16 @@ export class GemmaService extends EventEmitter {
   private async load(): Promise<void> {
     const { getLlama, createModelDownloader } = await loadLib();
     this.llama ??= await getLlama({ build: 'never' });
-    const modelId = selectGenerativeModel(totalmem());
-    const source = sourceFor(modelId);
-    this.setStatus({ modelId, error: null });
+    const vram = await this.llama.getVramState();
+    const hardware: HardwareProfile = {
+      totalRamBytes: totalmem(),
+      freeVramBytes: vram.free,
+      gpu: this.llama.gpu,
+    };
+    const spec = selectGenerativeSpec(hardware, getGemmaTierPreference());
+    const source = sourceForSpec(spec);
+    this.spec = spec;
+    this.setStatus({ modelId: spec.modelId, error: null });
 
     const dir = modelsDir();
     await mkdir(dir, { recursive: true });
@@ -183,28 +248,45 @@ export class GemmaService extends EventEmitter {
 
     this.setStatus({ state: LocalModelState.Loading, downloadProgress: null });
     const t0 = Date.now();
-    this.model = await this.llama.loadModel({ modelPath, gpuLayers: this.llama.gpu ? 'auto' : 0 });
-    this.context = await this.model.createContext({ contextSize: CONTEXT_SIZE });
-    console.log(`[gemma] loaded ${modelId} in ${Date.now() - t0}ms (gpu=${this.llama.gpu})`);
+    // useMmap lets the OS page weights in/out (less resident pressure); Flash
+    // Attention shrinks the KV cache — both matter most for the 12B tier.
+    this.model = await this.llama.loadModel({ modelPath, gpuLayers: spec.gpuLayers, useMmap: true });
+    this.context = await this.model.createContext({ contextSize: CONTEXT_SIZE, flashAttention: true });
+    console.log(
+      `[gemma] loaded ${spec.modelId} (${spec.quant}) in ${Date.now() - t0}ms (gpu=${this.llama.gpu})`,
+    );
     this.setStatus({ state: LocalModelState.Ready, error: null });
   }
 
   /**
-   * Generate a response to `prompt`, streaming tokens through `onToken`. Loads
-   * the model on first use. One-shot: each call runs on a fresh, history-free
-   * chat session, serialized so concurrent asks don't collide. Returns the full
-   * text; honors `signal` for cancellation.
+   * Generate a response to `prompt`, streaming tokens and tool round-trips
+   * through `handlers`. Loads the model on first use. The chat session stays
+   * alive across the turn's tool calls (node-llama-cpp drives the call→result→
+   * continue loop inside one `prompt()`), then is disposed. Serialized so
+   * concurrent asks don't collide; honors `signal` for cancellation. `ctx` is the
+   * user's current focus, used to default tool targets.
    */
-  async generate(prompt: string, onToken: (text: string) => void, signal?: AbortSignal): Promise<string> {
+  async generate(
+    prompt: string,
+    ctx: ToolContext,
+    handlers: GenerateHandlers,
+    signal?: AbortSignal,
+  ): Promise<string> {
     await this.ensureReady();
-    const { LlamaChatSession } = await loadLib();
+    const { LlamaChatSession, defineChatSessionFunction } = await loadLib();
     const context = this.context;
     if (!context) throw new Error('Chat context unavailable after load.');
+
+    const functions = buildToolFunctions(defineChatSessionFunction, ctx, {
+      nextId: () => randomUUID(),
+      gate: (call) => this.gateToolCall(call, handlers.onToolCall, signal),
+      onResult: (result) => handlers.onToolResult(result),
+    });
 
     const run = async (): Promise<string> => {
       const session = new LlamaChatSession({
         contextSequence: context.getSequence(),
-        systemPrompt: SYSTEM_PROMPT,
+        systemPrompt: buildSystemPrompt(ctx),
       });
       try {
         const t0 = Date.now();
@@ -212,9 +294,10 @@ export class GemmaService extends EventEmitter {
         const text = await session.prompt(prompt, {
           maxTokens: MAX_TOKENS,
           signal,
+          functions,
           onTextChunk: (chunk) => {
             tokens++;
-            onToken(chunk);
+            handlers.onToken(chunk);
           },
         });
         console.log(`[gemma] generated ~${tokens} chunks in ${Date.now() - t0}ms`);
@@ -227,6 +310,40 @@ export class GemmaService extends EventEmitter {
     const result = this.queue.then(run, run);
     this.queue = result.catch(() => undefined);
     return result;
+  }
+
+  /**
+   * Gate a tool call: always surface it to the renderer; auto-approve read-only
+   * tools, but park side-effecting ones until the renderer answers via
+   * `respondTool` (a denial — or the turn being aborted — resolves to not
+   * approved so generation unwinds cleanly).
+   */
+  private gateToolCall(
+    call: GemmaToolCall,
+    emit: (call: GemmaToolCall) => void,
+    signal?: AbortSignal,
+  ): Promise<ToolDecision> {
+    emit(call);
+    if (!call.needsConfirmation) return Promise.resolve({ approved: true });
+    if (signal?.aborted) return Promise.resolve({ approved: false });
+
+    return new Promise<ToolDecision>((resolve) => {
+      const settle = (decision: ToolDecision): void => {
+        if (!this.pendingTools.delete(call.id)) return;
+        signal?.removeEventListener('abort', onAbort);
+        resolve(decision);
+      };
+      const onAbort = (): void => settle({ approved: false });
+      this.pendingTools.set(call.id, { resolve: settle });
+      signal?.addEventListener('abort', onAbort, { once: true });
+    });
+  }
+
+  /** Resolve a parked tool call with the renderer's approve/deny answer. */
+  respondTool(input: RespondGemmaToolInput): void {
+    const pending = this.pendingTools.get(input.id);
+    if (!pending) return;
+    pending.resolve({ approved: input.approved, args: input.editedArgs ?? undefined });
   }
 
   /** On-disk size of the downloaded generative weights (all Gemma tiers present). */
@@ -261,8 +378,17 @@ export class GemmaService extends EventEmitter {
     return this.getDiskInfo();
   }
 
+  /** Unload so the next ask re-selects a tier/quant — used when the tier
+   * preference changes in settings. */
+  async reload(): Promise<void> {
+    await this.dispose();
+  }
+
   async dispose(): Promise<void> {
     this.clearIdleTimer();
+    // Release any parked tool confirmations so their generate() calls unwind.
+    for (const [, pending] of this.pendingTools) pending.resolve({ approved: false });
+    this.pendingTools.clear();
     try {
       await this.context?.dispose();
       await this.model?.dispose();

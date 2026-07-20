@@ -6,17 +6,12 @@
  * uncommitted changes). Git work lives in WorktreeService, file linking in
  * FileLinkService, persistence in the workspace/tab stores.
  */
-import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { TRPCError } from '@trpc/server';
 import {
-  ClaudeSessionState,
-  DEFAULT_TAB_TITLE,
-  UNTITLED_WORKSPACE_NAME,
+  PrState,
   createWorktreeInputSchema,
   renameWorktreeInputSchema,
-  type LinearIssue,
-  type LinearIssueRef,
   type RecentWorkspaceEntry,
   type Tab,
   type Workspace,
@@ -34,73 +29,31 @@ import {
   listTerminalTabs,
   listWorkspacesByProject,
   rememberRecentWorkspace,
-  upsertTab,
-  upsertWorkspace,
 } from '../store';
-import { randomBranchName } from '../lib/branch-names';
-import { PrState } from '@flowstate/shared';
 import { archiveReaperService, teardownWorkspace } from '../services/archive';
 import { claudeService } from '../services/claude';
 import { GitService } from '../services/git';
 import { githubService } from '../services/github';
-import { linearService } from '../services/linear';
-import { fileLinkService } from '../services/links';
 import { terminalService } from '../services/terminal';
-import { startWorkspaceScripts } from '../services/workspaceScripts';
+import {
+  WorkspaceCreateError,
+  createWorkspace,
+  type WorkspaceCreateFailure,
+} from '../services/workspaceCreate';
 import { worktreeService } from '../services/worktree';
 import { renameWorktree, worktreeEvents } from '../services/worktreeEvents';
-import { makeTab } from './tabs';
 import { publicProcedure, router } from '../trpc';
 
 /////////////
 // Helpers //
 /////////////
 
-/** Linear's priority scale (0 none, 1 urgent, 2 high, 3 medium, 4 low). */
-const PRIORITY_LABELS: Record<number, string> = {
-  0: 'No priority',
-  1: 'Urgent',
-  2: 'High',
-  3: 'Medium',
-  4: 'Low',
+/** Map a workspace-creation failure to the tRPC code the client already expects. */
+const CREATE_ERROR_CODES: Record<WorkspaceCreateFailure, TRPCError['code']> = {
+  'not-found': 'NOT_FOUND',
+  precondition: 'PRECONDITION_FAILED',
+  internal: 'INTERNAL_SERVER_ERROR',
 };
-
-/**
- * A plain-text briefing on the linked Linear ticket for Claude's first turn.
- * Prefers the full issue (status/assignee/priority/description) when the fetch
- * succeeded, falling back to the small ref we always have.
- */
-function buildTicketContext(ref: LinearIssueRef, full: LinearIssue | null): string {
-  const lines = [
-    `This worktree is linked to Linear ticket ${ref.identifier}: ${ref.title}`,
-    `URL: ${ref.url}`,
-  ];
-  const stateName = full?.state.name ?? ref.stateName;
-  if (stateName) lines.push(`Status: ${stateName}`);
-  if (full) {
-    lines.push(`Priority: ${PRIORITY_LABELS[full.priority] ?? PRIORITY_LABELS[0]}`);
-    if (full.assignee) lines.push(`Assignee: ${full.assignee.name}`);
-    if (full.description?.trim()) lines.push('', 'Description:', full.description.trim());
-  }
-  return lines.join('\n');
-}
-
-/**
- * Compose the first message sent to a new worktree's Claude session. With a linked
- * ticket we prepend its briefing; with a typed prompt too, the prompt follows the
- * briefing. A ticket but no prompt seeds context only — Claude should read the
- * ticket and wait for instructions rather than start changing code.
- */
-async function composeSeed(
-  ref: LinearIssueRef | null | undefined,
-  prompt: string,
-): Promise<string> {
-  if (!ref) return prompt;
-  const full = await linearService.issue(ref.id).catch(() => null);
-  const context = buildTicketContext(ref, full);
-  if (prompt) return `${context}\n\n---\n\n${prompt}`;
-  return `${context}\n\nFamiliarise yourself with this ticket and wait for my instructions before making any changes.`;
-}
 
 export const worktreeRouter = router({
   /** The worktree-workspaces under a project, most-recent first. */
@@ -166,83 +119,15 @@ export const worktreeRouter = router({
   create: publicProcedure
     .input(createWorktreeInputSchema)
     .mutation(async ({ input }): Promise<{ workspace: Workspace; tab: Tab }> => {
-      const project = getProject(input.projectId);
-      if (!project) throw new TRPCError({ code: 'NOT_FOUND', message: 'Project not found.' });
-
-      const repoRoot = project.localPath;
-      const baseRef =
-        input.baseRef?.trim() || project.worktreeBaseBranch || project.defaultBranch;
-      // Branch name: an explicit override (e.g. the user-edited Linear branch), else
-      // the linked issue's suggested branch, else a friendly random name that
-      // `maybeGenerateTitle` later renames to a slug of the first chat. Made unique
-      // so a name collision never fails creation.
-      const desiredBranch =
-        input.branch?.trim() || input.linearIssue?.branchName || randomBranchName();
-      const branch = await worktreeService.uniqueBranchName(repoRoot, desiredBranch);
-      const worktreePath = worktreeService.worktreePathFor(repoRoot, branch);
-
-      // Refresh remote refs so the worktree is cut from the latest base branch,
-      // not a stale local one. Best-effort: local-only repos (no GitHub origin)
-      // throw here and fall back to the local base ref inside `create`.
-      await githubService.fetch(repoRoot).catch(() => {});
-      // Advance the local base branch to match the remote too, so it isn't left
-      // stale after cutting the worktree from `origin/<base>`. Best-effort.
-      await githubService.syncBaseBranch(repoRoot, baseRef).catch(() => {});
-
-      // 1. Create the worktree + branch.
       try {
-        await worktreeService.create({ repoRoot, branch, baseRef, worktreePath });
+        return await createWorkspace(input);
       } catch (err) {
-        throw new TRPCError({
-          code: 'PRECONDITION_FAILED',
-          message: err instanceof Error ? err.message : 'Failed to create worktree.',
-        });
-      }
-
-      try {
-        // 2. Link the project's .env* files into the fresh checkout (best-effort).
-        const envFiles = await fileLinkService.detectEnvFiles(repoRoot);
-        await fileLinkService.linkInto(repoRoot, worktreePath, envFiles);
-
-        // 3. Persist the workspace + seed its first Claude tab.
-        const workspace = upsertWorkspace({
-          id: randomUUID(),
-          projectId: project.id,
-          name: UNTITLED_WORKSPACE_NAME,
-          repoRoot,
-          worktreePath,
-          branch,
-          baseRef,
-          linearIssue: input.linearIssue ?? null,
-          claudeState: ClaudeSessionState.Idle,
-          claudeSessionId: null,
-          archivedAt: null,
-          createdAt: new Date().toISOString(),
-        });
-        const tab = upsertTab({
-          ...makeTab(workspace.id, DEFAULT_TAB_TITLE, 0),
-          // Start the first session in the requested mode (e.g. Plan) — seeded on
-          // the tab so ensureSession picks it up before the initial prompt runs.
-          ...(input.permissionMode ? { permissionMode: input.permissionMode } : {}),
-        });
-
-        // 4. Seed the Setup/Run terminals and run the project's Setup script in
-        //    the new worktree so dependencies install the moment it exists; the
-        //    Run script auto-starts once Setup finishes successfully.
-        startWorkspaceScripts(workspace.id);
-
-        // 5. Kick off the first session, seeding the linked ticket's context (and
-        //    the user's prompt, if any) so Claude knows what it's working on.
-        const seed = await composeSeed(input.linearIssue, input.initialPrompt?.trim() ?? '');
-        if (seed) claudeService.send(tab.id, seed);
-
-        return { workspace, tab };
-      } catch (err) {
-        // Roll back the orphaned worktree so a retry with the same branch works.
-        await worktreeService.remove({ repoRoot, worktreePath, force: true }).catch(() => {});
+        if (err instanceof WorkspaceCreateError) {
+          throw new TRPCError({ code: CREATE_ERROR_CODES[err.reason], message: err.message });
+        }
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
-          message: err instanceof Error ? err.message : 'Failed to set up worktree.',
+          message: err instanceof Error ? err.message : 'Failed to create worktree.',
         });
       }
     }),

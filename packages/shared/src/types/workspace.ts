@@ -80,4 +80,8 @@ export type CreateWorktreeInput = {
   initialPrompt?: string;
   /** Permission mode the first session starts in (e.g. Plan). Defaults to Default. */
   permissionMode?: PermissionMode;
+  /** Linear issue to link to the new worktree (optional). */
+  linearIssue?: LinearIssueRef | null;
+  /** Explicit branch name (e.g. from the linked issue), overriding the random one. */
+  branch?: string;
 };
