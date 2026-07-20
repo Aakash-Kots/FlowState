@@ -13,10 +13,9 @@
     },
     "apps/main": {
       "name": "@flowstate/main",
-      "version": "0.2.5",
+      "version": "0.2.6",
       "dependencies": {
         "@anthropic-ai/claude-agent-sdk": "^0.3.207",
-        "@flowstate/shared": "workspace:*",
         "@linear/sdk": "^88.1.0",
         "@trpc/server": "^10.45.2",
         "better-sqlite3": "^11.8.1",
@@ -31,6 +30,7 @@
         "zod": "^3.23.8",
       },
       "devDependencies": {
+        "@flowstate/shared": "workspace:*",
         "@types/better-sqlite3": "^7.6.12",
         "@types/node": "^22.10.1",
         "drizzle-kit": "^0.31.5",
