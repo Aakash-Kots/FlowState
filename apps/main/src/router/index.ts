@@ -7,6 +7,7 @@ import { gemmaRouter } from './gemma';
 import { gitRouter } from './git';
 import { githubRouter } from './github';
 import { linearRouter } from './linear';
+import { mcpRouter } from './mcp';
 import { notesRouter } from './notes';
 import { onboardingRouter } from './onboarding';
 import { pinsRouter } from './pins';
@@ -37,6 +38,7 @@ export const appRouter = router({
   skills: skillsRouter,
   claude: claudeRouter,
   linear: linearRouter,
+  mcp: mcpRouter,
   search: searchRouter,
   gemma: gemmaRouter,
   spotify: spotifyRouter,

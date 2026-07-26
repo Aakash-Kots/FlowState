@@ -19,6 +19,7 @@ import {
   fileToChatImage,
   interruptSession,
   loadSupportedSkills,
+  openMcpPanel,
   respondPermission,
   sendPrompt,
   useChat,
@@ -45,6 +46,17 @@ import { InlinePrompt } from './InlinePrompt';
 import { InputToolbar } from './InputToolbar';
 import { SlashMenu } from './SlashMenu';
 import { TaskTracker } from './TaskTracker';
+
+/**
+ * A synthetic `/` menu entry for the built-in `/mcp` command. Unlike SDK skills
+ * (which are sent as prompt text), selecting it opens the MCP status panel. Kept
+ * out of the SDK skill list so it's always available even before a session boots.
+ */
+const MCP_MENU_ENTRY: SkillOption = {
+  name: 'mcp',
+  description: 'Manage MCP servers — status, tools, reconnect, and authentication.',
+  argumentHint: '',
+};
 
 /**
  * The floating prompt bar: a rounded card overlaid on the bottom of the
@@ -132,18 +144,18 @@ export function InputBar({ disabled }: { disabled: boolean }) {
   const slashMatch = /^\/(\S*)$/.exec(text);
   const slashQuery = slashMatch ? slashMatch[1].toLowerCase() : null;
   // Recompute only when the query or skill set changes — not on every re-render
-  // (e.g. arrow-key menu navigation, which only moves the highlight).
-  const filteredSkills = useMemo(
-    () =>
-      slashQuery !== null
-        ? skills.filter(
-            (sk) =>
-              sk.name.toLowerCase().includes(slashQuery) ||
-              sk.aliases?.some((a) => a.toLowerCase().includes(slashQuery)),
-          )
-        : [],
-    [skills, slashQuery],
-  );
+  // (e.g. arrow-key menu navigation, which only moves the highlight). The
+  // synthetic `/mcp` entry is a built-in command (not an SDK skill): selecting it
+  // opens the MCP status panel rather than prefilling the composer.
+  const filteredSkills = useMemo(() => {
+    if (slashQuery === null) return [];
+    const matched = skills.filter(
+      (sk) =>
+        sk.name.toLowerCase().includes(slashQuery) ||
+        sk.aliases?.some((a) => a.toLowerCase().includes(slashQuery)),
+    );
+    return MCP_MENU_ENTRY.name.includes(slashQuery) ? [MCP_MENU_ENTRY, ...matched] : matched;
+  }, [skills, slashQuery]);
   // Keep the menu up during the initial load so it can show a spinner.
   const menuLoading = skillsLoading && filteredSkills.length === 0;
   const menuActive = !disabled && !hasPrompt && !menuDismissed && slashQuery !== null;
@@ -170,7 +182,15 @@ export function InputBar({ disabled }: { disabled: boolean }) {
     setComposerDraft(tabId, { text: next, images: [] });
   };
 
-  const selectSkill = (skill: SkillOption) => setComposer(`/${skill.name} `);
+  const selectSkill = (skill: SkillOption) => {
+    // `/mcp` is a built-in command handled in-app, not a skill to send.
+    if (skill.name === MCP_MENU_ENTRY.name) {
+      openMcpPanel(tabId);
+      setComposer('');
+      return;
+    }
+    setComposer(`/${skill.name} `);
+  };
 
   // Let the Skills & Actions panel prefill this composer (insert-then-send).
   usePrefillComposer(setComposer);
@@ -247,6 +267,13 @@ export function InputBar({ disabled }: { disabled: boolean }) {
     // rather than sending the literal text to the SDK.
     if (trimmed === '/clear') {
       clearChat(tabId);
+      resetComposer();
+      return;
+    }
+    // `/mcp` is a built-in command too: open the MCP status panel instead of
+    // sending the (inert) literal text to the SDK.
+    if (trimmed === '/mcp') {
+      openMcpPanel(tabId);
       resetComposer();
       return;
     }

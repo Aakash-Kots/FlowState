@@ -28,6 +28,8 @@ import { join } from 'node:path';
 import { app } from 'electron';
 import type {
   CanUseTool,
+  McpServerConfig as SdkMcpServerConfig,
+  McpServerStatus,
   ModelInfo,
   PermissionMode as SdkPermissionMode,
   PermissionResult,
@@ -46,6 +48,8 @@ import {
   DEFAULT_EFFORT,
   DEFAULT_MODEL,
   DEFAULT_TAB_TITLE,
+  McpConnectionStatus,
+  McpTransport,
   PermissionBehavior,
   PermissionMode,
   ReasoningEffort,
@@ -59,6 +63,8 @@ import {
   type ChatMessage,
   type ChatSnapshot,
   type ChatSnapshotEntry,
+  type McpServerConfig,
+  type McpServerLiveStatus,
   type ModelOption,
   type PermissionRequest,
   type QuestionItem,
@@ -87,6 +93,7 @@ import {
   type TabChatPage,
 } from '../store';
 import { SdkSystemSubtype } from '../lib/enums/claude';
+import { getMcpServers } from '../store/mcp';
 import { authService } from './auth';
 import { GitService } from './git';
 import { renameWorktree } from './worktreeEvents';
@@ -380,6 +387,40 @@ function toSkillOption(cmd: SlashCommand): SkillOption {
     description: cmd.description,
     argumentHint: cmd.argumentHint,
     ...(cmd.aliases ? { aliases: cmd.aliases } : {}),
+  };
+}
+
+/**
+ * Map FlowState's stored MCP server list to the SDK's `mcpServers` option,
+ * keyed by name. Disabled servers are dropped, as are configs missing their
+ * transport's required field (belt-and-braces — the schema already enforces it).
+ */
+function toSdkMcpServers(list: McpServerConfig[]): Record<string, SdkMcpServerConfig> {
+  const out: Record<string, SdkMcpServerConfig> = {};
+  for (const s of list) {
+    if (!s.enabled) continue;
+    if (s.transport === McpTransport.Stdio) {
+      if (!s.command) continue;
+      out[s.name] = { type: 'stdio', command: s.command, args: s.args, env: s.env };
+    } else if (s.transport === McpTransport.Http) {
+      if (!s.url) continue;
+      out[s.name] = { type: 'http', url: s.url, headers: s.headers };
+    } else {
+      if (!s.url) continue;
+      out[s.name] = { type: 'sse', url: s.url, headers: s.headers };
+    }
+  }
+  return out;
+}
+
+/** Map the SDK's per-server status to our renderer-facing `McpServerLiveStatus`. */
+function toMcpLiveStatus(s: McpServerStatus): McpServerLiveStatus {
+  return {
+    name: s.name,
+    // The enum's values are byte-identical to the SDK's status strings.
+    status: s.status as McpConnectionStatus,
+    tools: (s.tools ?? []).map((t) => t.name),
+    ...(s.error ? { error: s.error } : {}),
   };
 }
 
@@ -778,6 +819,77 @@ export class ClaudeService {
     if (session) await this.refreshSkills(session);
   }
 
+  /**
+   * Re-read the user's MCP server config and apply it live to every active
+   * session (the SDK supports swapping servers on a running session, like
+   * `setModel`). New sessions pick up the change on their next launch via
+   * `run()`'s options, so this only needs to touch the ones already running.
+   * Called by the mcp router after any add/edit/remove/toggle.
+   */
+  async notifyMcpServersChanged(): Promise<void> {
+    const servers = toSdkMcpServers(getMcpServers());
+    for (const session of this.sessions.values()) {
+      try {
+        await session.query?.setMcpServers(servers);
+        await this.emitMcpStatus(session);
+      } catch (err) {
+        console.warn('[claude] setMcpServers failed', err);
+      }
+    }
+  }
+
+  /**
+   * Live MCP server status for a tab's session — boots a no-prompt session if
+   * one isn't up yet (like `getSupportedSkills`) so the `/mcp` panel has data
+   * before the first message. Empty until the tab has a folder and Claude is
+   * connected.
+   */
+  async getMcpStatus(tabId: string): Promise<McpServerLiveStatus[]> {
+    let session = this.sessions.get(tabId);
+    if (!session) {
+      const tab = getTab(tabId);
+      const cwd = tab ? this.getCwd(tab.workspaceId) : null;
+      if (!tab || !cwd || !authService.status().claudeConnected) return [];
+      session = this.ensureSession(tab, cwd);
+    }
+    try {
+      const statuses = (await session.query?.mcpServerStatus()) ?? [];
+      return statuses.map(toMcpLiveStatus);
+    } catch (err) {
+      console.warn('[claude] mcpServerStatus failed', err);
+      return [];
+    }
+  }
+
+  /**
+   * Reconnect a single MCP server on a tab's live session — the path that
+   * re-triggers the SDK's auth flow for a `needs-auth` server. No-op when the
+   * tab has no session yet.
+   */
+  async reconnectMcpServer(tabId: string, name: string): Promise<void> {
+    const session = this.sessions.get(tabId);
+    if (!session?.query) return;
+    try {
+      await session.query.reconnectMcpServer(name);
+      await this.emitMcpStatus(session);
+    } catch (err) {
+      console.warn('[claude] reconnectMcpServer failed', err);
+    }
+  }
+
+  /** Fetch a session's MCP status and broadcast it as a McpStatusUpdated event. */
+  private async emitMcpStatus(session: ClaudeSession): Promise<void> {
+    try {
+      const statuses = (await session.query?.mcpServerStatus()) ?? [];
+      this.emit(session.tabId, {
+        kind: ChatEventKind.McpStatusUpdated,
+        servers: statuses.map(toMcpLiveStatus),
+      });
+    } catch (err) {
+      console.warn('[claude] mcpServerStatus failed', err);
+    }
+  }
+
   /** Set a tab's model. Persists it and applies it live if a session exists. */
   async setModel(tabId: string, model: string): Promise<void> {
     const tab = getTab(tabId);
@@ -1116,6 +1228,10 @@ export class ClaudeService {
           // skill available to invoke from the composer's `/` menu.
           settingSources: ['user', 'project'],
           skills: 'all',
+          // User-registered MCP servers (managed in Settings). Additive to any
+          // project `.mcp.json` the setting sources already discover; their tools
+          // flow through the same `canUseTool` runtime gate as everything else.
+          mcpServers: toSdkMcpServers(getMcpServers()),
           abortController: session.abort,
           stderr: (data) => console.warn('[claude:stderr]', data),
         },
@@ -1173,6 +1289,8 @@ export class ClaudeService {
           });
           // Populate the usage widget as soon as a session opens (before turn 5).
           void this.pollUsageLimits();
+          // Push MCP server status so an open `/mcp` panel reflects this session.
+          void this.emitMcpStatus(session);
         } else if (message.subtype === SdkSystemSubtype.CommandsChanged) {
           // The SDK discovered/dropped skills mid-session — replace the cache.
           session.skills = (message.commands as SlashCommand[]).map(toSkillOption);

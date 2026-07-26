@@ -18,6 +18,7 @@ import { ArchiveRetentionCard } from './ArchiveRetentionCard';
 import { CodeThemeCard } from './CodeThemeCard';
 import { GeminiApiKeyCard } from './GeminiApiKeyCard';
 import { LinearTeamsCard } from './LinearTeamsCard';
+import { McpServersCard } from './McpServersCard';
 import { Section, SettingRow } from './SettingsLayout';
 import { SmartSearchModelCard } from './SmartSearchModelCard';
 
@@ -228,6 +229,15 @@ export function SettingsPage() {
               title="Gemini API key"
               description="Double-tap Space anywhere to ask Google's Gemini and get a streamed answer inline — it can also search Linear, create tickets, and spin up worktrees. Your key also powers ticket wording refinement and the mic's speech-to-text. Enter your own Gemini API key to enable it."
               control={<GeminiApiKeyCard />}
+            />
+          </Section>
+
+          <Section title="MCP servers">
+            <SettingRow
+              stack
+              title="Model Context Protocol servers"
+              description="Register MCP servers to give Claude extra tools (local commands or remote HTTP/SSE endpoints). They apply to every workspace's Claude session; run /mcp in a chat to see live connection status. Secrets in env vars and headers are encrypted with your OS keychain."
+              control={<McpServersCard />}
             />
           </Section>
 
