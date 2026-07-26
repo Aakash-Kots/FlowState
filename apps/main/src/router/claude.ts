@@ -72,6 +72,19 @@ export const claudeRouter = router({
     .input(z.object({ tabId: z.string() }))
     .query(({ input }) => claudeService.getSupportedSkills(input.tabId)),
 
+  // Live MCP server status for the tab's session (drives the `/mcp` panel) —
+  // empty until a session exists; the renderer also gets live McpStatusUpdated
+  // events. Config CRUD lives on the global `mcp` router.
+  mcpStatus: publicProcedure
+    .input(z.object({ tabId: z.string() }))
+    .query(({ input }) => claudeService.getMcpStatus(input.tabId)),
+
+  // Reconnect one MCP server on the tab's live session (re-triggers auth for a
+  // needs-auth server).
+  reconnectMcpServer: publicProcedure
+    .input(z.object({ tabId: z.string(), name: z.string() }))
+    .mutation(({ input }) => claudeService.reconnectMcpServer(input.tabId, input.name)),
+
   setModel: publicProcedure
     .input(z.object({ tabId: z.string(), model: z.string().min(1) }))
     .mutation(({ input }) => claudeService.setModel(input.tabId, input.model)),

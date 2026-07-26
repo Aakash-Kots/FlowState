@@ -14,6 +14,7 @@ import type {
   ReasoningEffort,
 } from '../enums/claude';
 import type { GitFileStatus } from '../enums/git';
+import type { McpServerLiveStatus } from './mcp';
 
 /**
  * A single persisted message in a Claude Code session transcript. `content` is
@@ -197,6 +198,8 @@ export type ChatEvent =
   | { kind: ChatEventKind.WorktreeName; workspaceId: string; name: string; branch: string }
   // The session's available skills changed — replaces the cached list wholesale.
   | { kind: ChatEventKind.SkillsUpdated; skills: SkillOption[] }
+  // The session's MCP servers' live status changed — replaces the panel's list.
+  | { kind: ChatEventKind.McpStatusUpdated; servers: McpServerLiveStatus[] }
   // Live elapsed time for the current top-level tool; ephemeral, not persisted.
   | { kind: ChatEventKind.ToolProgress; toolName: string; elapsedSeconds: number }
   // The SDK is retrying a transient API failure; ephemeral, not persisted.

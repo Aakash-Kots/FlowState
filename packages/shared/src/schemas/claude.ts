@@ -16,6 +16,7 @@ import {
   ReasoningEffort,
 } from '../enums/claude';
 import { GitFileStatus } from '../enums/git';
+import { mcpServerLiveStatusSchema } from './mcp';
 import type {
   ChatBlock,
   ChatEvent,
@@ -185,6 +186,10 @@ export const chatEventSchema: z.ZodType<ChatEvent> = z.discriminatedUnion('kind'
   z.object({
     kind: z.literal(ChatEventKind.SkillsUpdated),
     skills: z.array(skillOptionSchema),
+  }),
+  z.object({
+    kind: z.literal(ChatEventKind.McpStatusUpdated),
+    servers: z.array(mcpServerLiveStatusSchema),
   }),
   z.object({
     kind: z.literal(ChatEventKind.ToolProgress),

@@ -17,6 +17,7 @@ import {
   type ChatEvent,
   type ChatImageInput,
   type ChatMessage,
+  type McpServerLiveStatus,
   type ModelOption,
   type PermissionRequest,
   type QuestionRequest,
@@ -64,6 +65,10 @@ type ChatState = {
   skillsLoaded: boolean;
   /** True while the first skills fetch is in flight (the session is booting up). */
   skillsLoading: boolean;
+  /** Whether the `/mcp` status panel is open for this tab (UI-only). */
+  mcpPanelOpen: boolean;
+  /** Live MCP server status for this tab's session (feeds the `/mcp` panel). */
+  mcpStatus: McpServerLiveStatus[];
   messages: ChatEntry[];
   /** DB row id of the oldest loaded message — the cursor for paging older history. */
   oldestId: number | null;
@@ -108,6 +113,8 @@ const INITIAL: ChatState = {
   skills: [],
   skillsLoaded: false,
   skillsLoading: false,
+  mcpPanelOpen: false,
+  mcpStatus: [],
   messages: [],
   oldestId: null,
   hasMoreBefore: false,
@@ -348,6 +355,10 @@ function applyEvent(tabId: string, event: ChatEvent): void {
       // Replace the cached list wholesale — the SDK sends the full set. This is
       // the authoritative "skills are ready" signal (fires even for an empty set).
       set({ skills: event.skills, skillsLoaded: true, skillsLoading: false });
+      break;
+    case ChatEventKind.McpStatusUpdated:
+      // The session pushed fresh MCP status — replace the panel's list.
+      set({ mcpStatus: event.servers });
       break;
     case ChatEventKind.ToolProgress:
       set({
@@ -673,6 +684,27 @@ export function loadSupportedSkills(tabId: string): void {
       clearTimeout(timeout);
       store.setState({ skillsLoading: false });
     });
+}
+
+// MCP panel (the composer's `/mcp` command) —————————————————————————————————
+
+/** Fetch live MCP server status for a tab and fold it into the store. */
+export function loadMcpStatus(tabId: string): void {
+  void trpc()
+    .claude.mcpStatus.query({ tabId })
+    .then((servers) => storeFor(tabId).setState({ mcpStatus: servers }))
+    .catch(() => {});
+}
+
+/** Open the `/mcp` status panel for a tab and refresh its server status. */
+export function openMcpPanel(tabId: string): void {
+  storeFor(tabId).setState({ mcpPanelOpen: true });
+  loadMcpStatus(tabId);
+}
+
+/** Close the `/mcp` status panel for a tab. */
+export function closeMcpPanel(tabId: string): void {
+  storeFor(tabId).setState({ mcpPanelOpen: false });
 }
 
 /** Change a tab's model (optimistic: store updates, main confirms via Config). */

@@ -6,6 +6,7 @@ import { pickWorkingFolder } from '@/lib/workspace';
 import { Button } from '../ui/Button';
 import { ChatView } from './ChatView';
 import { InputBar } from './InputBar';
+import { McpStatusPanel } from './McpStatusPanel';
 
 ///////////////////
 // Sub-components //
@@ -60,6 +61,7 @@ function ChatSession() {
       )}
 
       <InputBar disabled={!cwd} />
+      <McpStatusPanel />
     </div>
   );
 }

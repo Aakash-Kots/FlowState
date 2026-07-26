@@ -18,4 +18,7 @@ export enum SecretName {
   SpotifyAccessToken = 'spotify.accessToken',
   /** Spotify OAuth refresh token (long-lived — used to mint new access tokens). */
   SpotifyRefreshToken = 'spotify.refreshToken',
+  /** The user's registered MCP servers (a JSON list — encrypted because env vars
+   * and request headers routinely carry API tokens). */
+  McpServers = 'mcp.servers',
 }
