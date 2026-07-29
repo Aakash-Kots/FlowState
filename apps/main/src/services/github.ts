@@ -70,6 +70,21 @@ const PR_STATUS_TTL_MS = 15_000;
 /** How long a worktree's parsed `origin` remote stays cached (ms) — it ~never changes. */
 const ORIGIN_TTL_MS = 5 * 60_000;
 
+/**
+ * How long a repo's remote-branch fetch stays "fresh" (ms). Every branch-picker
+ * open asks for a refresh; a few seconds collapses a double-open (the modal
+ * opens, then the user clicks the branch trigger) onto one network round-trip
+ * while still feeling like "every time".
+ */
+const BRANCH_FETCH_TTL_MS = 5_000;
+
+/**
+ * Hard ceiling on the branch-refresh fetch (ms). The picker never blocks on it,
+ * so this only bounds a stuck credential helper or a dead network — `git()`'s
+ * 10-minute default would pin the in-flight entry for that long.
+ */
+const BRANCH_FETCH_TIMEOUT_MS = 30_000;
+
 /////////////
 // Helpers //
 /////////////
@@ -81,6 +96,13 @@ const prStatusCache = new Map<string, { value: PrStatus | null; expiresAt: numbe
 
 /** Per-worktree parsed `origin` cache. */
 const originCache = new Map<string, { value: { owner: string; fullName: string }; expiresAt: number }>();
+
+/**
+ * Per-repo branch-refresh state. `settledAt === null` means the fetch is still
+ * in flight — concurrent callers ride that promise rather than racing a second
+ * `git fetch`, which git rejects with "cannot lock ref".
+ */
+const branchFetches = new Map<string, { done: Promise<void>; settledAt: number | null }>();
 
 /** The viewer's contribution calendar cache (single viewer per app). */
 let contributionsCache: { value: GithubContributionCalendar; expiresAt: number } | null = null;
@@ -129,9 +151,15 @@ function toContributionDay(d: {
 }
 
 /** Run a `git` subcommand, surfacing stderr on failure. */
-async function git(args: string[]): Promise<void> {
+async function git(
+  args: string[],
+  opts?: { timeoutMs?: number; env?: NodeJS.ProcessEnv },
+): Promise<void> {
   try {
-    await execFileAsync('git', args, { env: process.env, timeout: 10 * 60 * 1000 });
+    await execFileAsync('git', args, {
+      env: opts?.env ?? process.env,
+      timeout: opts?.timeoutMs ?? 10 * 60 * 1000,
+    });
   } catch (err) {
     const e = err as { stderr?: string; message?: string };
     throw new Error(e.stderr?.trim() || e.message || 'git command failed');
@@ -409,6 +437,43 @@ export class GithubService {
     await this.githubOrigin(worktreePath);
     const auth = await this.authHeaderArgs();
     await git(['-C', worktreePath, ...auth, 'fetch', 'origin']);
+  }
+
+  /**
+   * Best-effort `git fetch --prune origin` so the branch pickers see branches
+   * pushed — or deleted — since the last look. Unlike `fetch` this never gates on
+   * a GitHub `origin` or a linked token: the auth header is URL-scoped to
+   * github.com, so it is inert on other remotes and simply omitted when no
+   * account is linked, letting public HTTPS and SSH remotes still refresh.
+   * Concurrent calls for one repo share a single fetch (git refuses concurrent
+   * ref updates) and a settled fetch is reused for BRANCH_FETCH_TTL_MS. Never
+   * throws — a local-only or offline repo just keeps its existing refs.
+   */
+  async refreshRemoteBranches(repoRoot: string): Promise<void> {
+    const existing = branchFetches.get(repoRoot);
+    if (
+      existing &&
+      (existing.settledAt === null || Date.now() - existing.settledAt < BRANCH_FETCH_TTL_MS)
+    ) {
+      return existing.done;
+    }
+    // No token linked → fetch unauthenticated rather than failing outright.
+    const auth = await this.authHeaderArgs().catch(() => []);
+    const entry: { done: Promise<void>; settledAt: number | null } = {
+      done: Promise.resolve(),
+      settledAt: null,
+    };
+    entry.done = git(['-C', repoRoot, ...auth, 'fetch', '--prune', 'origin'], {
+      timeoutMs: BRANCH_FETCH_TIMEOUT_MS,
+      // Never let a credential helper block on a prompt we have no TTY for.
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+    })
+      .catch(() => {})
+      .finally(() => {
+        entry.settledAt = Date.now();
+      });
+    branchFetches.set(repoRoot, entry);
+    return entry.done;
   }
 
   /**

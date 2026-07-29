@@ -9,7 +9,7 @@ import { fileToChatImage } from '@/lib/chat';
 import { MAX_COMPOSER_IMAGE_BYTES } from '@/lib/constants/chat';
 import { refreshAssignedIssues, useLinear } from '@/lib/linear';
 import { useOnboarding } from '@/lib/onboarding';
-import { createWorktree, setCreateOpen, useProjects } from '@/lib/projects';
+import { createWorktree, loadBranches, setCreateOpen, useProjects } from '@/lib/projects';
 import { trpc } from '@/lib/trpc';
 import { Button } from '@/components/ui/Button';
 import { cn } from '@/components/ui/cn';
@@ -34,8 +34,8 @@ export function CreateWorktreeModal() {
   const projectId = useProjects((s) => s.createProjectId);
   const creating = useProjects((s) => s.creating);
   const error = useProjects((s) => s.createError);
-  const branches = useProjects((s) => s.branches);
-  const branchesLoading = useProjects((s) => s.branchesLoading);
+  const branches = useProjects((s) => (projectId ? (s.branches[projectId] ?? []) : []));
+  const branchesLoading = useProjects((s) => (projectId ? !!s.branchesLoading[projectId] : false));
   const project = useProjects((s) => s.projects.find((p) => p.id === s.createProjectId) ?? null);
   const linearSeed = useProjects((s) => s.createLinearSeed);
   const linearConnected = useOnboarding((s) => s.linearConnected);
@@ -78,14 +78,18 @@ export function CreateWorktreeModal() {
     linearSeed,
   ]);
 
-  // Tickets are created constantly, so re-fetch when the window regains focus
-  // while the modal is open (e.g. after creating a ticket in Linear).
+  // Branches and tickets are both created constantly outside FlowState, so
+  // re-read both when the window regains focus while the modal is open (e.g.
+  // after branching in a terminal or filing a ticket in Linear).
   useEffect(() => {
-    if (!open || !linearConnected) return;
-    const onFocus = () => void refreshAssignedIssues();
+    if (!open) return;
+    const onFocus = () => {
+      if (linearConnected) void refreshAssignedIssues();
+      if (projectId) void loadBranches(projectId);
+    };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
-  }, [open, linearConnected]);
+  }, [open, linearConnected, projectId]);
 
   // Picking an issue seeds the (editable) branch with Linear's suggested name.
   const selectIssue = (issue: LinearIssueRef | null) => {
@@ -282,6 +286,9 @@ export function CreateWorktreeModal() {
                 getFilterText={(b) => b}
                 isSelected={(b) => b === baseRef}
                 onSelect={setBaseRef}
+                onOpen={() => {
+                  if (projectId) void loadBranches(projectId);
+                }}
                 placeholder="Search branches…"
                 emptyText="No branches"
                 loading={branchesLoading}

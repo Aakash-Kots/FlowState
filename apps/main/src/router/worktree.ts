@@ -106,12 +106,18 @@ export const worktreeRouter = router({
       rememberRecentWorkspace({ workspaceId: input.workspaceId, tabId: input.tabId });
     }),
 
-  /** A project's local branch names — the base-ref choices for a new worktree. */
+  /**
+   * A project's base-ref choices — its local branches plus `origin`'s. `refresh`
+   * fetches `origin` first; the pickers pass it on every open so branches pushed
+   * from outside FlowState show up. That fetch is best-effort and deduped per
+   * repo, so an offline or remote-less project simply returns its local refs.
+   */
   listBranches: publicProcedure
-    .input(z.object({ projectId: z.string() }))
-    .query(({ input }): Promise<string[]> => {
+    .input(z.object({ projectId: z.string(), refresh: z.boolean().optional() }))
+    .query(async ({ input }): Promise<string[]> => {
       const project = getProject(input.projectId);
       if (!project) throw new TRPCError({ code: 'NOT_FOUND', message: 'Project not found.' });
+      if (input.refresh) await githubService.refreshRemoteBranches(project.localPath);
       return worktreeService.listBranches(project.localPath);
     }),
 
