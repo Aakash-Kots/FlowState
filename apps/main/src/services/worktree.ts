@@ -168,12 +168,14 @@ export class WorktreeService {
   }
 
   /**
-   * A slug of `title` that doesn't collide with an existing local branch —
-   * appends `-2`, `-3`, … until free. Used for both the random creation name
-   * and the auto-title rename.
+   * A slug of `title` that doesn't collide with an existing branch — local *or*
+   * on `origin` — appending `-2`, `-3`, … until free. Used for both the random
+   * creation name and the auto-title rename. Checking `origin` too matters
+   * because the first `git push -u` of a name a teammate already pushed either
+   * lands on their branch or is rejected as non-fast-forward.
    */
   async uniqueBranchName(repoRoot: string, desired: string): Promise<string> {
-    const taken = new Set((await simpleGit(repoRoot).branchLocal()).all);
+    const taken = new Set(await this.listBranches(repoRoot));
     if (!taken.has(desired)) return desired;
     for (let n = 2; ; n++) {
       const candidate = `${desired}-${n}`;
