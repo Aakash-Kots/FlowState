@@ -21,6 +21,19 @@ export type WorktreeInfo = {
   head: string;
 };
 
+///////////////
+// Constants //
+///////////////
+
+/** Longest slug we derive from a chat title — keeps branch names tidy. */
+const SLUG_MAX_LENGTH = 40;
+
+/** Ref namespaces the branch picker draws from — local branches plus `origin`'s. */
+const BRANCH_REF_PREFIXES = ['refs/heads/', 'refs/remotes/origin/'];
+
+/** `origin`'s default-branch symref — a pointer, not a branch; never offered. */
+const ORIGIN_HEAD_REF = 'refs/remotes/origin/HEAD';
+
 /////////////
 // Helpers //
 /////////////
@@ -29,9 +42,6 @@ export type WorktreeInfo = {
 function slugifyBranch(branch: string): string {
   return branch.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'worktree';
 }
-
-/** Longest slug we derive from a chat title — keeps branch names tidy. */
-const SLUG_MAX_LENGTH = 40;
 
 /**
  * Turn a free-text chat title into a lowercase, hyphenated git branch slug
@@ -46,6 +56,22 @@ export function slugifyTitle(title: string): string {
     .slice(0, SLUG_MAX_LENGTH)
     .replace(/-+$/g, '');
   return slug || 'worktree';
+}
+
+/**
+ * Parse `git for-each-ref --format=%(refname)` into bare branch names: strips the
+ * `refs/heads/` / `refs/remotes/origin/` prefixes, skips `origin`'s HEAD symref,
+ * and collapses the local/remote pair for one branch onto a single entry.
+ */
+function parseBranchRefs(out: string): string[] {
+  const names = new Set<string>();
+  for (const line of out.split('\n')) {
+    const ref = line.trim();
+    if (!ref || ref === ORIGIN_HEAD_REF) continue;
+    const prefix = BRANCH_REF_PREFIXES.find((p) => ref.startsWith(p));
+    if (prefix) names.add(ref.slice(prefix.length));
+  }
+  return [...names].sort();
 }
 
 /** Parse `git worktree list --porcelain` into structured records. */
@@ -122,9 +148,23 @@ export class WorktreeService {
     }
   }
 
-  /** The repo's local branch names — the choices for a new worktree's base ref. */
+  /**
+   * The base-ref choices for a new worktree: every local branch plus every
+   * `origin/` branch, shown under its bare name and sorted alphabetically. A
+   * remote-only name is a valid base ref — `create` resolves it via
+   * `origin/<ref>`. This read is purely local; callers that want branches pushed
+   * from elsewhere run `githubService.refreshRemoteBranches` first.
+   */
   async listBranches(repoRoot: string): Promise<string[]> {
-    return (await simpleGit(repoRoot).branchLocal()).all;
+    // `%(refname)`, not `%(refname:short)` — the short form renders
+    // `refs/remotes/origin/HEAD` as the bare string "origin", a phantom branch.
+    const out = await simpleGit(repoRoot).raw([
+      'for-each-ref',
+      '--format=%(refname)',
+      'refs/heads',
+      'refs/remotes/origin',
+    ]);
+    return parseBranchRefs(out);
   }
 
   /**
