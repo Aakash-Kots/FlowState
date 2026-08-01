@@ -25,7 +25,7 @@ import { randomUUID } from 'node:crypto';
 import { readdir, rm } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { app } from 'electron';
+import { app, shell } from 'electron';
 import type {
   CanUseTool,
   McpServerConfig as SdkMcpServerConfig,
@@ -128,6 +128,27 @@ type RawBlock = {
   is_error?: boolean;
 };
 
+/**
+ * MCP OAuth method the SDK exposes on its query object at runtime but does not
+ * surface in its public `Query` type. `mcpAuthenticate` begins the OAuth flow:
+ * the CLI stands up a local callback server (on `callbackPort`) and returns the
+ * provider's `authUrl` for the *consumer* to open — it does NOT open the browser
+ * itself. Once the browser redirects back to the callback server, the CLI
+ * exchanges the code and stores the token. Distinct from `reconnectMcpServer`,
+ * which only re-dials the transport and never starts OAuth.
+ */
+type McpAuthQuery = {
+  mcpAuthenticate: (serverName: string, redirectUri?: string) => Promise<McpAuthResult>;
+};
+
+/** Shape returned by `mcpAuthenticate` (not in the SDK's public types). */
+type McpAuthResult = {
+  authUrl?: string;
+  requiresUserAction?: boolean;
+  callbackExpected?: boolean;
+  callbackPort?: number;
+};
+
 ///////////////
 // Constants //
 ///////////////
@@ -146,6 +167,14 @@ const HISTORY_PAGE_SIZE = 100;
 
 /** Coalesce streamed `text_delta` tokens into one IPC emit per this window (ms). */
 const TEXT_FLUSH_MS = 33;
+
+/**
+ * After opening an MCP OAuth page, poll the server's status this often / for this
+ * long so the `/mcp` panel flips needs-auth → connected once the user finishes
+ * the browser login (the CLI completes the token exchange out-of-band).
+ */
+const MCP_AUTH_POLL_INTERVAL_MS = 2_000;
+const MCP_AUTH_POLL_TIMEOUT_MS = 180_000;
 
 /**
  * Signatures of a crash where the SDK's native `claude` runtime never launched
@@ -862,9 +891,10 @@ export class ClaudeService {
   }
 
   /**
-   * Reconnect a single MCP server on a tab's live session — the path that
-   * re-triggers the SDK's auth flow for a `needs-auth` server. No-op when the
-   * tab has no session yet.
+   * Reconnect a single MCP server on a tab's live session — re-dials the
+   * transport for a failed/disconnected server. No-op when the tab has no
+   * session yet. (For `needs-auth` servers use `authenticateMcpServer`;
+   * reconnect alone does not run the OAuth flow.)
    */
   async reconnectMcpServer(tabId: string, name: string): Promise<void> {
     const session = this.sessions.get(tabId);
@@ -874,6 +904,63 @@ export class ClaudeService {
       await this.emitMcpStatus(session);
     } catch (err) {
       console.warn('[claude] reconnectMcpServer failed', err);
+    }
+  }
+
+  /**
+   * Start the OAuth flow for a `needs-auth` MCP server. Asks the SDK/CLI's
+   * `mcp_authenticate` control request for the provider `authUrl` (the CLI also
+   * stands up a local callback server keyed to it), opens that URL in the user's
+   * browser, and then polls status so the panel flips to connected once the CLI
+   * completes the token exchange out-of-band. The method isn't in the SDK's
+   * public `Query` type, so we reach it through the `McpAuthQuery` shim. No-op
+   * when the tab has no session yet.
+   */
+  async authenticateMcpServer(tabId: string, name: string): Promise<void> {
+    const session = this.sessions.get(tabId);
+    if (!session?.query) return;
+    try {
+      const result = await (session.query as unknown as McpAuthQuery).mcpAuthenticate(name);
+      if (result?.authUrl) {
+        // The CLI hands back the URL for us to open (it does not open a browser
+        // itself); its local callback server finishes auth on the redirect.
+        await shell.openExternal(result.authUrl);
+        void this.pollMcpAuthCompletion(session, name);
+      }
+    } catch (err) {
+      console.warn('[claude] mcpAuthenticate failed', err);
+    }
+    // Reflect the immediate state (still needs-auth until the browser flow
+    // completes; the poll below broadcasts the flip to connected).
+    await this.emitMcpStatus(session);
+  }
+
+  /**
+   * After an OAuth browser page is opened, poll the session's MCP status until
+   * the target server leaves `needs-auth` (connected/failed) or we time out,
+   * broadcasting each snapshot so an open `/mcp` panel updates live without the
+   * user having to reconnect manually.
+   */
+  private async pollMcpAuthCompletion(session: ClaudeSession, name: string): Promise<void> {
+    const deadline = Date.now() + MCP_AUTH_POLL_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, MCP_AUTH_POLL_INTERVAL_MS));
+      if (this.sessions.get(session.tabId) !== session) return; // torn down/replaced
+      let statuses: McpServerStatus[];
+      try {
+        statuses = (await session.query?.mcpServerStatus()) ?? [];
+      } catch {
+        continue;
+      }
+      this.emit(session.tabId, {
+        kind: ChatEventKind.McpStatusUpdated,
+        servers: statuses.map(toMcpLiveStatus),
+      });
+      const target = statuses.find((s) => s.name === name);
+      // The SDK's status strings are byte-identical to our enum values.
+      if (target && (target.status as McpConnectionStatus) !== McpConnectionStatus.NeedsAuth) {
+        return;
+      }
     }
   }
 
@@ -1232,6 +1319,20 @@ export class ClaudeService {
           // project `.mcp.json` the setting sources already discover; their tools
           // flow through the same `canUseTool` runtime gate as everything else.
           mcpServers: toSdkMcpServers(getMcpServers()),
+          // Interactive MCP auth: the SDK asks us to handle elicitation
+          // requests, and without this callback it auto-declines them — which
+          // is why the `/mcp` panel's "Authenticate" button appeared to do
+          // nothing. URL mode = OAuth: open the login page in the system
+          // browser and accept; the SDK finishes the handshake (correlated via
+          // elicitationId) and emits `elicitation_complete`, which we handle
+          // below to refresh the panel. Form mode has no UI yet — decline.
+          onElicitation: async (request) => {
+            if (request.mode === 'url' && request.url) {
+              void shell.openExternal(request.url);
+              return { action: 'accept' };
+            }
+            return { action: 'decline' };
+          },
           abortController: session.abort,
           stderr: (data) => console.warn('[claude:stderr]', data),
         },
@@ -1309,6 +1410,10 @@ export class ClaudeService {
             attempt: message.attempt,
             maxRetries: message.max_retries,
           });
+        } else if (message.subtype === SdkSystemSubtype.ElicitationComplete) {
+          // An MCP auth flow just finished — refresh the `/mcp` panel so the
+          // server flips needs-auth → connected without a manual reconnect.
+          void this.emitMcpStatus(session);
         }
         break;
       }
