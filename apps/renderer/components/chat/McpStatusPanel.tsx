@@ -126,11 +126,13 @@ function ServerRow({
   row,
   busy,
   onReconnect,
+  onAuthenticate,
   onToggle,
 }: {
   row: McpRow;
   busy: boolean;
   onReconnect: () => void;
+  onAuthenticate: () => void;
   onToggle: (enabled: boolean) => void;
 }) {
   const needsAuth = row.status === McpConnectionStatus.NeedsAuth;
@@ -170,7 +172,7 @@ function ServerRow({
           <Button
             variant="secondary"
             className="px-2 py-1 text-xs"
-            onClick={onReconnect}
+            onClick={onAuthenticate}
             disabled={busy}
             title="Authenticate this server"
           >
@@ -282,6 +284,19 @@ export function McpStatusPanel() {
     }
   };
 
+  // Runs the OAuth flow (opens the browser via the main process). The mutation
+  // resolves once the CLI's auth flow finishes, so the button stays busy for the
+  // duration; we then refresh status so the row flips needs-auth → connected.
+  const authenticate = async (name: string) => {
+    setBusy(name);
+    try {
+      await trpc().claude.authenticateMcpServer.mutate({ tabId, name });
+      loadMcpStatus(tabId);
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const toggle = async (name: string, enabled: boolean) => {
     setSummaries((prev) => prev.map((s) => (s.name === name ? { ...s, enabled } : s)));
     await trpc().mcp.setEnabled.mutate({ name, enabled });
@@ -324,6 +339,7 @@ export function McpStatusPanel() {
                   row={row}
                   busy={busy === row.name}
                   onReconnect={() => void reconnect(row.name)}
+                  onAuthenticate={() => void authenticate(row.name)}
                   onToggle={(enabled) => void toggle(row.name, enabled)}
                 />
               ))

@@ -79,11 +79,17 @@ export const claudeRouter = router({
     .input(z.object({ tabId: z.string() }))
     .query(({ input }) => claudeService.getMcpStatus(input.tabId)),
 
-  // Reconnect one MCP server on the tab's live session (re-triggers auth for a
-  // needs-auth server).
+  // Reconnect one MCP server on the tab's live session (re-dials the transport
+  // for a failed/disconnected server).
   reconnectMcpServer: publicProcedure
     .input(z.object({ tabId: z.string(), name: z.string() }))
     .mutation(({ input }) => claudeService.reconnectMcpServer(input.tabId, input.name)),
+
+  // Run the interactive OAuth flow for a needs-auth MCP server (opens the
+  // browser via the SDK/CLI's mcp_authenticate flow).
+  authenticateMcpServer: publicProcedure
+    .input(z.object({ tabId: z.string(), name: z.string() }))
+    .mutation(({ input }) => claudeService.authenticateMcpServer(input.tabId, input.name)),
 
   setModel: publicProcedure
     .input(z.object({ tabId: z.string(), model: z.string().min(1) }))

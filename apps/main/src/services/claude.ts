@@ -128,6 +128,17 @@ type RawBlock = {
   is_error?: boolean;
 };
 
+/**
+ * MCP OAuth methods the SDK exposes on its query object at runtime but does not
+ * surface in its public `Query` type. `mcpAuthenticate` drives the CLI's full
+ * interactive OAuth flow (stand up a local callback server, open the browser to
+ * the provider, wait for the redirect, exchange the code, store the token) —
+ * distinct from `reconnectMcpServer`, which only re-dials the transport.
+ */
+type McpAuthQuery = {
+  mcpAuthenticate: (serverName: string, redirectUri?: string) => Promise<unknown>;
+};
+
 ///////////////
 // Constants //
 ///////////////
@@ -862,9 +873,10 @@ export class ClaudeService {
   }
 
   /**
-   * Reconnect a single MCP server on a tab's live session — the path that
-   * re-triggers the SDK's auth flow for a `needs-auth` server. No-op when the
-   * tab has no session yet.
+   * Reconnect a single MCP server on a tab's live session — re-dials the
+   * transport for a failed/disconnected server. No-op when the tab has no
+   * session yet. (For `needs-auth` servers use `authenticateMcpServer`;
+   * reconnect alone does not run the OAuth flow.)
    */
   async reconnectMcpServer(tabId: string, name: string): Promise<void> {
     const session = this.sessions.get(tabId);
@@ -875,6 +887,27 @@ export class ClaudeService {
     } catch (err) {
       console.warn('[claude] reconnectMcpServer failed', err);
     }
+  }
+
+  /**
+   * Run the interactive OAuth flow for a `needs-auth` MCP server. Delegates to
+   * the SDK/CLI's `mcp_authenticate` control request, which stands up a local
+   * callback server, opens the browser to the provider's consent page, waits for
+   * the redirect, exchanges the code, and stores the token — then we refresh the
+   * `/mcp` panel. The method isn't in the SDK's public `Query` type, so we reach
+   * it through the `McpAuthQuery` shim. No-op when the tab has no session yet.
+   */
+  async authenticateMcpServer(tabId: string, name: string): Promise<void> {
+    const session = this.sessions.get(tabId);
+    if (!session?.query) return;
+    try {
+      await (session.query as unknown as McpAuthQuery).mcpAuthenticate(name);
+    } catch (err) {
+      console.warn('[claude] mcpAuthenticate failed', err);
+    }
+    // Refresh either way so the panel reflects the outcome (connected or still
+    // needs-auth after a cancelled/failed login).
+    await this.emitMcpStatus(session);
   }
 
   /** Fetch a session's MCP status and broadcast it as a McpStatusUpdated event. */
