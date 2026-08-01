@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
-import { LogIn, Loader2, RefreshCw, Settings2, X } from 'lucide-react';
+import { ChevronRight, LogIn, Loader2, RefreshCw, Settings2, X } from 'lucide-react';
 import {
   McpConnectionStatus,
   McpTransport,
@@ -136,6 +136,7 @@ function ServerRow({
   onToggle: (enabled: boolean) => void;
 }) {
   const needsAuth = row.status === McpConnectionStatus.NeedsAuth;
+  const [toolsOpen, setToolsOpen] = useState(false);
   return (
     <div className="flex items-start justify-between gap-3 rounded-md border border-border bg-background/40 px-3 py-2.5">
       <div className="min-w-0 flex-1 space-y-1">
@@ -161,9 +162,31 @@ function ServerRow({
         )}
         {row.error && <p className="text-[11px] text-danger">{row.error}</p>}
         {row.tools.length > 0 && (
-          <p className="text-[11px] text-muted-foreground">
-            {row.tools.length} tool{row.tools.length === 1 ? '' : 's'}: {row.tools.join(', ')}
-          </p>
+          <div className="text-[11px] text-muted-foreground">
+            <button
+              type="button"
+              onClick={() => setToolsOpen((v) => !v)}
+              aria-expanded={toolsOpen}
+              className="inline-flex items-center gap-1 rounded transition-colors hover:text-foreground"
+            >
+              <ChevronRight
+                className={cn('size-3 transition-transform', toolsOpen && 'rotate-90')}
+              />
+              {row.tools.length} tool{row.tools.length === 1 ? '' : 's'}
+            </button>
+            {toolsOpen && (
+              <div className="mt-1 flex flex-wrap gap-1">
+                {row.tools.map((t) => (
+                  <span
+                    key={t}
+                    className="rounded border border-border bg-muted/50 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
+                  >
+                    {t}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
         )}
       </div>
 
