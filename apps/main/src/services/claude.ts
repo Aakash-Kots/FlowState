@@ -25,7 +25,7 @@ import { randomUUID } from 'node:crypto';
 import { readdir, rm } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { app } from 'electron';
+import { app, shell } from 'electron';
 import type {
   CanUseTool,
   McpServerConfig as SdkMcpServerConfig,
@@ -1232,6 +1232,20 @@ export class ClaudeService {
           // project `.mcp.json` the setting sources already discover; their tools
           // flow through the same `canUseTool` runtime gate as everything else.
           mcpServers: toSdkMcpServers(getMcpServers()),
+          // Interactive MCP auth: the SDK asks us to handle elicitation
+          // requests, and without this callback it auto-declines them — which
+          // is why the `/mcp` panel's "Authenticate" button appeared to do
+          // nothing. URL mode = OAuth: open the login page in the system
+          // browser and accept; the SDK finishes the handshake (correlated via
+          // elicitationId) and emits `elicitation_complete`, which we handle
+          // below to refresh the panel. Form mode has no UI yet — decline.
+          onElicitation: async (request) => {
+            if (request.mode === 'url' && request.url) {
+              void shell.openExternal(request.url);
+              return { action: 'accept' };
+            }
+            return { action: 'decline' };
+          },
           abortController: session.abort,
           stderr: (data) => console.warn('[claude:stderr]', data),
         },
@@ -1309,6 +1323,10 @@ export class ClaudeService {
             attempt: message.attempt,
             maxRetries: message.max_retries,
           });
+        } else if (message.subtype === SdkSystemSubtype.ElicitationComplete) {
+          // An MCP auth flow just finished — refresh the `/mcp` panel so the
+          // server flips needs-auth → connected without a manual reconnect.
+          void this.emitMcpStatus(session);
         }
         break;
       }
