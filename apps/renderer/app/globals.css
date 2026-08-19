@@ -538,3 +538,11 @@ html[data-fullscreen='true'] [data-sidebar='sidebar'] {
   color: hsl(var(--muted-foreground));
   text-decoration: line-through;
 }
+
+/* While the window is backgrounded (attribute set by the root page via
+   useWindowActive), freeze infinite pulse animations — Chromium only throttles
+   fully hidden windows, so a visible-but-unfocused one otherwise keeps the
+   compositor awake for a status dot nobody is watching. */
+[data-window-inactive] .animate-pulse {
+  animation-play-state: paused;
+}

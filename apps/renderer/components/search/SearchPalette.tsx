@@ -2,6 +2,7 @@
 
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronRight, ExternalLink, FileCode, GitBranch } from 'lucide-react';
+import { useShallow } from 'zustand/react/shallow';
 import { type LinearIssue } from '@flowstate/shared';
 import {
   CommandDialog,
@@ -81,7 +82,11 @@ function snippet(description: string | null): string | null {
 
 /** The right-hand preview for a highlighted issue: metadata, snippet, worktrees. */
 function IssuePreview({ issue, onOpen }: { issue: LinearIssue; onOpen: (issue: LinearIssue) => void }) {
-  const linked = useLinear((s) => s.linkedWorktrees.filter((w) => w.issueId === issue.id));
+  // Shallow-compared: `.filter` allocates a fresh array on every store change,
+  // which would otherwise re-render the preview for unrelated linear updates.
+  const linked = useLinear(
+    useShallow((s) => s.linkedWorktrees.filter((w) => w.issueId === issue.id)),
+  );
   // The list query omits the body to stay light; fetch the full issue on demand.
   const detail = useLinear((s) => s.issueDetailsById[issue.id]);
   useEffect(() => {

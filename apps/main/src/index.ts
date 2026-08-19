@@ -1,6 +1,6 @@
 import { extname, join, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { app, BrowserWindow, Menu, net, protocol, type MenuItemConstructorOptions } from 'electron';
+import { app, BrowserWindow, Menu, net, powerMonitor, protocol, type MenuItemConstructorOptions } from 'electron';
 import { createIPCHandler } from 'electron-trpc/main';
 import { DEFAULT_KEYBINDINGS, ShortcutCommand } from '@flowstate/shared';
 import { appRouter } from './router';
@@ -12,6 +12,7 @@ import { localModelService } from './services/local-model';
 import { shortcutsService } from './services/shortcuts';
 import { terminalService } from './services/terminal';
 import { updateService } from './services/update';
+import { windowStateService } from './services/windowState';
 import { closeStore, getWindowBounds, initStore, setWindowBounds } from './store';
 
 ///////////////
@@ -185,14 +186,16 @@ function createWindow(): void {
     // NSVisualEffectView behind the web contents, so wherever the DOM is
     // transparent (the sidebar strip) the desktop shows through as frosted
     // glass. Every full-page screen still paints its own opaque `bg-background`,
-    // so only the sidebar is see-through. `visualEffectState: 'active'` keeps
-    // the glass lit even when the window is unfocused. Windows/Linux have no
-    // NSVisualEffectView, so `vibrancy` is a no-op there and a transparent bg
-    // would leave the sidebar strip unpainted — fall back to an opaque surface
-    // matching the sidebar tone (`--sidebar-background` ≈ #1b1a17). Win11's Mica
-    // gives a comparable subtle backdrop where available.
+    // so only the sidebar is see-through. `visualEffectState: 'followWindow'`
+    // lets macOS stop compositing the live blur while the window is unfocused
+    // (the glass dims to its inactive look) — a continuous GPU/energy saving
+    // over `'active'`, which kept the blur lit around the clock. Windows/Linux
+    // have no NSVisualEffectView, so `vibrancy` is a no-op there and a
+    // transparent bg would leave the sidebar strip unpainted — fall back to an
+    // opaque surface matching the sidebar tone (`--sidebar-background` ≈
+    // #1b1a17). Win11's Mica gives a comparable subtle backdrop where available.
     ...(IS_MAC
-      ? { backgroundColor: '#00000000', vibrancy: 'sidebar', visualEffectState: 'active' }
+      ? { backgroundColor: '#00000000', vibrancy: 'sidebar', visualEffectState: 'followWindow' }
       : { backgroundColor: '#1b1a17', backgroundMaterial: 'mica' }),
     show: false,
     webPreferences: {
@@ -200,19 +203,35 @@ function createWindow(): void {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      // The Chromium default, pinned to document intent: renderer timers/rAF
+      // must throttle while the window is hidden or occluded.
+      backgroundThrottling: true,
     },
   });
 
   // Wire tRPC over Electron IPC for this window.
   createIPCHandler({ router: appRouter, windows: [win] });
 
-  win.once('ready-to-show', () => win.show());
+  win.once('ready-to-show', () => {
+    win.show();
+    windowStateService.setVisible(win.isVisible());
+    windowStateService.setFocused(win.isFocused());
+  });
 
   // Track full-screen so the renderer can make the vibrancy sidebar near-opaque
   // (the wallpaper otherwise bleeds through and tints it in full-screen).
   win.on('enter-full-screen', () => fullScreenService.set(true));
   win.on('leave-full-screen', () => fullScreenService.set(false));
   fullScreenService.set(win.isFullScreen());
+
+  // Feed the main-side window-activity signal so background services (git
+  // watchers etc.) can defer work nobody can see.
+  win.on('show', () => windowStateService.setVisible(true));
+  win.on('restore', () => windowStateService.setVisible(true));
+  win.on('hide', () => windowStateService.setVisible(false));
+  win.on('minimize', () => windowStateService.setVisible(false));
+  win.on('focus', () => windowStateService.setFocused(true));
+  win.on('blur', () => windowStateService.setFocused(false));
 
   // Persist size/position so the window reopens where the user left it.
   win.on('close', () => {
@@ -254,6 +273,11 @@ void app.whenReady().then(() => {
   // No Claude sessions run at boot — clear any tab left mid-turn so its status
   // dot reflects reality rather than a stuck "working" state.
   claudeService.reconcileOnStartup();
+
+  // powerMonitor may only be touched after `ready`. Sleep/wake folds into the
+  // same window-activity signal the visibility events feed.
+  powerMonitor.on('suspend', () => windowStateService.setSuspended(true));
+  powerMonitor.on('resume', () => windowStateService.setSuspended(false));
 
   // Reap archived worktrees whose retention delay has elapsed (incl. any that
   // came due while the app was closed), then keep sweeping on a timer.

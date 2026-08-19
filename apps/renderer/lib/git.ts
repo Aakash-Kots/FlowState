@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { create } from 'zustand';
 import { DEFAULT_WORKSPACE_ID, GitFileStatus, PrState } from '@flowstate/shared';
 import type { GitChange, GitDiffStat, GitFileDiff, GitStatus, PrStatus } from '@flowstate/shared';
-import { useWindowActive } from './hooks/useWindowActive';
+import { isWindowActive, useWindowActive } from './hooks/useWindowActive';
 import { useWindowFocus } from './hooks/useWindowFocus';
 import { trpc } from './trpc';
 import { useWorkspace } from './workspace';
@@ -114,6 +114,10 @@ export function resetGit(workspaceId: string): void {
 // change.
 let statusInFlight: Promise<void> | null = null;
 let statusRerun = false;
+
+// A watcher tick arrived while the window was backgrounded; `useGitSync` runs
+// one catch-up refresh on reactivation instead of refreshing per tick unseen.
+let refreshPendingWhileHidden = false;
 
 /** (Re)load the active worktree's status, preserving a still-valid selection. */
 export function refreshStatus(): Promise<void> {
@@ -308,8 +312,12 @@ export async function createPr(title: string, body?: string): Promise<void> {
 // Constants //
 ///////////////
 
-/** How often to re-poll the PR's CI/merge status while a worktree is active. */
-const PR_POLL_MS = 20_000;
+/**
+ * How often to re-poll the PR's CI/merge status while a worktree is active.
+ * Must stay above main's `PR_STATUS_TTL_MS` (services/github.ts) or every poll
+ * would hit the cache and never refresh.
+ */
+const PR_POLL_MS = 60_000;
 
 ///////////
 // Hooks //
@@ -410,15 +418,33 @@ export function useGitSync(): void {
 
   // Reflect on-disk changes (from Claude, a terminal, anything) as they happen,
   // so the changes view is fresh without waiting for a focus event or manual
-  // refresh. Debounced main-side; `refreshStatus` coalesces the bursts.
+  // refresh. Debounced main-side; `refreshStatus` coalesces the bursts. While
+  // the window is backgrounded, skip the refresh (each one spawns git
+  // subprocesses nobody can see) and catch up once on reactivation.
   useEffect(() => {
     if (workspaceId === DEFAULT_WORKSPACE_ID) return;
     const sub = trpc().git.onChange.subscribe(
       { workspaceId },
-      { onData: () => void refreshStatus(), onError: () => {} },
+      {
+        onData: () => {
+          if (!isWindowActive()) {
+            refreshPendingWhileHidden = true;
+            return;
+          }
+          void refreshStatus();
+        },
+        onError: () => {},
+      },
     );
     return () => sub.unsubscribe();
   }, [workspaceId]);
+
+  useEffect(() => {
+    if (workspaceId === DEFAULT_WORKSPACE_ID || !active) return;
+    if (!refreshPendingWhileHidden) return;
+    refreshPendingWhileHidden = false;
+    void refreshStatus();
+  }, [workspaceId, active]);
 
   // Only poll while the window is active; when backgrounded, pause the interval
   // (the `useWindowFocus` handler above already refetches the moment we return).

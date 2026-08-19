@@ -14,6 +14,7 @@ import {
   useSettings,
 } from '@/lib/settings';
 import { cn } from '../ui/cn';
+import { Switch } from '../ui/Switch';
 import { ArchiveRetentionCard } from './ArchiveRetentionCard';
 import { CodeThemeCard } from './CodeThemeCard';
 import { GeminiApiKeyCard } from './GeminiApiKeyCard';
@@ -68,38 +69,6 @@ function FontSizeControl({
         );
       })}
     </div>
-  );
-}
-
-/** A pill toggle switch for a boolean setting. */
-function Toggle({
-  checked,
-  onChange,
-  label,
-}: {
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  label: string;
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      onClick={() => onChange(!checked)}
-      className={cn(
-        'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-ring/60',
-        checked ? 'bg-primary' : 'bg-muted',
-      )}
-    >
-      <span
-        className={cn(
-          'inline-block size-4 rounded-full bg-background shadow transition-transform',
-          checked ? 'translate-x-4' : 'translate-x-0.5',
-        )}
-      />
-    </button>
   );
 }
 
@@ -183,7 +152,7 @@ export function SettingsPage() {
               title="Completion sound"
               description="Play a sound when an agent finishes a turn in a tab you're not watching."
               control={
-                <Toggle
+                <Switch
                   checked={soundEnabled}
                   onChange={setSoundEnabled}
                   label="Completion sound"
@@ -197,7 +166,7 @@ export function SettingsPage() {
               title="Natural-language search"
               description="Describe a ticket in plain language and rank Linear results by meaning — computed on-device. When off, search stays literal (identifier + title)."
               control={
-                <Toggle
+                <Switch
                   checked={semanticSearchEnabled}
                   onChange={setSemanticSearchEnabled}
                   label="Natural-language search"
@@ -208,7 +177,7 @@ export function SettingsPage() {
               title="Use smaller model"
               description="Force the smaller Q4 model regardless of memory — about 80 MB less disk and lower memory use, with slightly lower recall."
               control={
-                <Toggle
+                <Switch
                   checked={preferSmallModel}
                   onChange={setPreferSmallModel}
                   label="Use smaller model"

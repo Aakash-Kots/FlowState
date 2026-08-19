@@ -13,6 +13,7 @@ import { setSettingsOpen } from '@/lib/settings';
 import { trpc } from '@/lib/trpc';
 import { Button } from '../ui/Button';
 import { cn } from '../ui/cn';
+import { Switch } from '../ui/Switch';
 
 ///////////
 // Types //
@@ -86,38 +87,6 @@ function StatusPill({ status }: { status: McpConnectionStatus }) {
       <span className={cn('h-1.5 w-1.5 rounded-full', meta.dot)} />
       {meta.label}
     </span>
-  );
-}
-
-/** A pill toggle switch (mirrors the Settings page's Toggle). */
-function Toggle({
-  checked,
-  onChange,
-  label,
-}: {
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  label: string;
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      onClick={() => onChange(!checked)}
-      className={cn(
-        'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-ring/60',
-        checked ? 'bg-primary' : 'bg-muted',
-      )}
-    >
-      <span
-        className={cn(
-          'inline-block size-4 rounded-full bg-background shadow transition-transform',
-          checked ? 'translate-x-4' : 'translate-x-0.5',
-        )}
-      />
-    </button>
   );
 }
 
@@ -223,7 +192,7 @@ function ServerRow({
           </button>
         )}
         {row.managed && (
-          <Toggle
+          <Switch
             checked={row.enabled}
             onChange={onToggle}
             label={row.enabled ? 'Disable server' : 'Enable server'}

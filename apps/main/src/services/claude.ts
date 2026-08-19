@@ -201,6 +201,18 @@ const ASSISTANT_ERROR_TEXT: Record<string, string> = {
  */
 const USAGE_POLL_EVERY_TURNS = 5;
 
+/**
+ * Tear down a session's forked `claude` runtime (~100-200MB each) after this
+ * long with no activity. Safe: the transcript lives in SQLite and the resume id
+ * on the tab row, so the next send() transparently re-opens with full context —
+ * the same dispose-now/resume-later mechanic `setEffort` already uses. Sessions
+ * mid-turn or parked on a permission/question prompt are never reaped.
+ */
+const IDLE_SESSION_TIMEOUT_MS = 10 * 60_000;
+
+/** How often the idle sweeper checks; runs only while sessions exist. */
+const IDLE_SWEEP_INTERVAL_MS = 60_000;
+
 /** Cheap model + limits for the one-shot auto-title summarizer. */
 const TITLE_MODEL = 'claude-haiku-4-5';
 const TITLE_TIMEOUT_MS = 20_000;
@@ -548,6 +560,8 @@ class ClaudeSession {
   skills: SkillOption[] = [];
   /** Set while an interrupt is in flight so error results read as a clean stop. */
   interrupted = false;
+  /** Last user/SDK activity — the idle sweeper reaps sessions quiet past the timeout. */
+  lastActivityAt = Date.now();
   /** Guards one-shot auto-titling so it runs at most once per tab session. */
   titled = false;
   /**
@@ -589,6 +603,8 @@ export class ClaudeService {
   private turnsSinceUsagePoll = 0;
   /** Guards the one-shot background session booted purely to fetch usage. */
   private usageBootStarted = false;
+  /** Reaps idle sessions; running only while the sessions map is non-empty. */
+  private idleSweeper: NodeJS.Timeout | null = null;
 
   /**
    * Reset stuck states on startup: no sessions run at boot, so a tab persisted
@@ -651,6 +667,7 @@ export class ClaudeService {
     }
 
     const session = this.ensureSession(tab, cwd);
+    session.lastActivityAt = Date.now();
     const trimmed = text.trim();
     const imageList = images ?? [];
     // Persisted/rendered form: image blocks first (they lead the bubble), then
@@ -695,6 +712,7 @@ export class ClaudeService {
   async interrupt(tabId: string): Promise<void> {
     const session = this.sessions.get(tabId);
     if (!session) return;
+    session.lastActivityAt = Date.now();
     session.interrupted = true;
     // A pending permission prompt blocks the agent — deny it so the interrupt lands.
     this.resolveAllPermissions(session, {
@@ -758,6 +776,7 @@ export class ClaudeService {
     const session = this.sessions.get(tabId);
     const pending = session?.pendingPermissions.get(requestId);
     if (!session || !pending) return;
+    session.lastActivityAt = Date.now();
     session.pendingPermissions.delete(requestId);
     pending.resolve(
       behavior === PermissionBehavior.Allow
@@ -776,6 +795,7 @@ export class ClaudeService {
     const session = this.sessions.get(tabId);
     const pending = session?.pendingQuestions.get(requestId);
     if (!session || !pending) return;
+    session.lastActivityAt = Date.now();
     session.pendingQuestions.delete(requestId);
     pending.resolve(this.buildQuestionAnswer(pending.request, answers));
     this.emit(tabId, { kind: ChatEventKind.QuestionResolved, id: requestId });
@@ -790,7 +810,21 @@ export class ClaudeService {
    */
   async getSupportedModels(tabId: string): Promise<ModelOption[]> {
     let session = this.sessions.get(tabId);
+    if (session) session.lastActivityAt = Date.now();
     if (!session) {
+      // The model list is account-global — answer from any live session's
+      // control channel rather than forking another runtime just because this
+      // tab hasn't chatted yet.
+      const shared = this.anyLiveQuery();
+      if (shared) {
+        try {
+          const infos = await shared.supportedModels();
+          return resolveModelOptions((infos ?? []).map(toModelOption));
+        } catch (err) {
+          console.warn('[claude] supportedModels failed', err);
+          return resolveModelOptions([]);
+        }
+      }
       const tab = getTab(tabId);
       const cwd = tab ? this.getCwd(tab.workspaceId) : null;
       if (!tab || !cwd || !authService.status().claudeConnected) return resolveModelOptions([]);
@@ -813,6 +847,7 @@ export class ClaudeService {
    */
   async getSupportedSkills(tabId: string): Promise<SkillOption[]> {
     let session = this.sessions.get(tabId);
+    if (session) session.lastActivityAt = Date.now();
     // Boot the session (no prompt) so skills can be discovered before the first
     // message — the SDK initializes, then `commands_changed`/init populate the
     // cache and the renderer gets a live SkillsUpdated event. Only worthwhile
@@ -875,6 +910,7 @@ export class ClaudeService {
    */
   async getMcpStatus(tabId: string): Promise<McpServerLiveStatus[]> {
     let session = this.sessions.get(tabId);
+    if (session) session.lastActivityAt = Date.now();
     if (!session) {
       const tab = getTab(tabId);
       const cwd = tab ? this.getCwd(tab.workspaceId) : null;
@@ -1206,7 +1242,8 @@ export class ClaudeService {
     const messages: ChatSnapshotEntry[] = [];
     for (const row of page.rows) {
       const parsed = chatMessageSchema.safeParse(row.content);
-      if (parsed.success) messages.push({ message: parsed.data, createdAt: row.createdAt });
+      if (parsed.success)
+        messages.push({ id: row.id, message: parsed.data, createdAt: row.createdAt });
     }
     return { messages, oldestId: page.rows[0]?.id ?? null };
   }
@@ -1275,6 +1312,7 @@ export class ClaudeService {
     session.effort = tab.effort;
     session.permissionMode = tab.permissionMode;
     this.sessions.set(tab.id, session);
+    this.startIdleSweeper();
     void this.run(session, tab.claudeSessionId);
     return session;
   }
@@ -1291,6 +1329,39 @@ export class ClaudeService {
     });
     session.queue.end();
     session.abort.abort();
+    this.stopIdleSweeperIfEmpty();
+  }
+
+  private startIdleSweeper(): void {
+    if (this.idleSweeper) return;
+    this.idleSweeper = setInterval(() => this.sweepIdleSessions(), IDLE_SWEEP_INTERVAL_MS);
+  }
+
+  private stopIdleSweeperIfEmpty(): void {
+    if (this.sessions.size > 0 || !this.idleSweeper) return;
+    clearInterval(this.idleSweeper);
+    this.idleSweeper = null;
+  }
+
+  /**
+   * Reap sessions idle past `IDLE_SESSION_TIMEOUT_MS`. Guarded twice against
+   * live work: the persisted tab state must be Idle (never Running/Waiting) AND
+   * the in-memory session must have no pending prompts and no turn in flight —
+   * a tab parked on a permission prompt survives indefinitely. Reaping emits no
+   * state change (the tab is already Idle); the renderer's subscription stays
+   * valid and the next send() re-opens the session with `resume`.
+   */
+  private sweepIdleSessions(): void {
+    const now = Date.now();
+    for (const [tabId, session] of this.sessions) {
+      if (now - session.lastActivityAt < IDLE_SESSION_TIMEOUT_MS) continue;
+      if (session.pendingPermissions.size > 0 || session.pendingQuestions.size > 0) continue;
+      if (session.turnBaseline !== null) continue;
+      const state = getTab(tabId)?.claudeState ?? ClaudeSessionState.Idle;
+      if (state !== ClaudeSessionState.Idle) continue;
+      this.disposeSession(tabId);
+    }
+    this.stopIdleSweeperIfEmpty();
   }
 
   private async run(session: ClaudeSession, resumeSessionId: string | null): Promise<void> {
@@ -1364,6 +1435,7 @@ export class ClaudeService {
       }
       // Drop the broken session; the next send() starts fresh and resumes.
       this.sessions.delete(tabId);
+      this.stopIdleSweeperIfEmpty();
       this.resolveAllPermissions(session, {
         behavior: 'deny',
         message: 'The session ended.',
@@ -1374,6 +1446,7 @@ export class ClaudeService {
   }
 
   private async handleSdkMessage(session: ClaudeSession, message: SDKMessage): Promise<void> {
+    session.lastActivityAt = Date.now();
     const { tabId } = session;
     switch (message.type) {
       case 'system': {
@@ -1733,12 +1806,12 @@ export class ClaudeService {
 
   private persistAndEmit(session: ClaudeSession, message: ChatMessage): void {
     const createdAt = new Date().toISOString();
-    appendMessage(session.tabId, session.workspaceId, session.sessionId ?? 'pending', {
+    const id = appendMessage(session.tabId, session.workspaceId, session.sessionId ?? 'pending', {
       role: message.role,
       content: message,
       createdAt,
     });
-    this.emit(session.tabId, { kind: ChatEventKind.Message, message, createdAt });
+    this.emit(session.tabId, { kind: ChatEventKind.Message, id, message, createdAt });
   }
 
   private setState(tabId: string, state: ClaudeSessionState): void {

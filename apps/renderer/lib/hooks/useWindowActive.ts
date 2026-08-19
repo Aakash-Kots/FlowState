@@ -37,6 +37,16 @@ function ensureListening(): void {
   window.addEventListener('blur', evaluate);
 }
 
+/**
+ * Non-hook read of the current active state, for event handlers (e.g. a tRPC
+ * subscription callback) that need to skip work while the window is
+ * backgrounded without re-rendering anything.
+ */
+export function isWindowActive(): boolean {
+  ensureListening();
+  return active;
+}
+
 //////////
 // Hook //
 //////////

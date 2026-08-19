@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { ArchiveRetention, CodeTheme, FontSize } from '@flowstate/shared';
 import { SecretName } from '../lib/enums/secret';
+import { archiveReaperService } from '../services/archive';
 import { geminiService } from '../services/gemini';
 import { deleteSecret, hasSecret, setSecret } from '../store/secrets';
 import {
@@ -83,6 +84,9 @@ export const settingsRouter = router({
     .input(z.object({ retention: z.nativeEnum(ArchiveRetention) }))
     .mutation(({ input }) => {
       setArchiveRetention(input.retention);
+      // A shorter retention may make archived worktrees due right now; sweep so
+      // the change acts immediately (and re-arms the reaper's one-shot timer).
+      void archiveReaperService.sweep();
     }),
 
   setSkillsPanelWidth: publicProcedure

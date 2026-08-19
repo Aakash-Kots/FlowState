@@ -6,6 +6,7 @@ import { McpTransport, type McpServerConfig, type McpServerSummary } from '@flow
 import { trpc } from '@/lib/trpc';
 import { Button } from '../ui/Button';
 import { cn } from '../ui/cn';
+import { Switch } from '../ui/Switch';
 
 ///////////
 // Types //
@@ -119,38 +120,6 @@ function displayTarget(s: McpServerSummary): string {
 ///////////////////
 // Sub-components //
 ///////////////////
-
-/** A pill toggle switch (mirrors the Settings page's Toggle). */
-function Toggle({
-  checked,
-  onChange,
-  label,
-}: {
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  label: string;
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      onClick={() => onChange(!checked)}
-      className={cn(
-        'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-ring/60',
-        checked ? 'bg-primary' : 'bg-muted',
-      )}
-    >
-      <span
-        className={cn(
-          'inline-block size-4 rounded-full bg-background shadow transition-transform',
-          checked ? 'translate-x-4' : 'translate-x-0.5',
-        )}
-      />
-    </button>
-  );
-}
 
 /** Labelled text input used throughout the editor form. */
 function Field({
@@ -372,7 +341,7 @@ function ServerRow({
         </p>
       </div>
       <div className="flex shrink-0 items-center gap-2">
-        <Toggle
+        <Switch
           checked={server.enabled}
           onChange={onToggle}
           label={server.enabled ? 'Disable server' : 'Enable server'}

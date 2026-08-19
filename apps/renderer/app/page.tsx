@@ -1,7 +1,9 @@
 'use client';
 
+import { useEffect } from 'react';
 import { DEFAULT_WORKSPACE_ID } from '@flowstate/shared';
 import { useFullScreenSync } from '@/lib/fullscreen';
+import { useWindowActive } from '@/lib/hooks/useWindowActive';
 import { useIsOnboarded, useOnboarding, useOnboardingSync } from '@/lib/onboarding';
 import { useWorktreeSync } from '@/lib/projects';
 import { useSettings, useSettingsSync } from '@/lib/settings';
@@ -32,6 +34,13 @@ export default function Page() {
   useOnboardingSync();
   // Track full-screen so the vibrancy sidebar goes near-opaque (no wallpaper tint).
   useFullScreenSync();
+  // Pause CSS pulse animations while the window is backgrounded (globals.css
+  // keys off this attribute). Chromium only throttles a fully hidden window —
+  // a visible-but-unfocused one keeps compositing infinite animations.
+  const windowActive = useWindowActive();
+  useEffect(() => {
+    document.documentElement.toggleAttribute('data-window-inactive', !windowActive);
+  }, [windowActive]);
   const hydrated = useOnboarding((s) => s.hydrated);
   const onboarded = useIsOnboarded();
 

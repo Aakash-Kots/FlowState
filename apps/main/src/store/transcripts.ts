@@ -25,14 +25,15 @@ export type TabChatRow = { id: number; content: unknown; createdAt: string };
 /** A page of transcript rows plus whether older rows exist before the page. */
 export type TabChatPage = { rows: TabChatRow[]; hasMoreBefore: boolean };
 
+/** Append one message; returns the new row's id (the paging cursor). */
 export function appendMessage(
   tabId: string,
   workspaceId: string,
   sessionId: string,
   message: ClaudeMessage,
-): void {
+): number {
   const msg = claudeMessageSchema.parse(message);
-  getDb()
+  const result = getDb()
     .insert(claudeMessages)
     .values({
       tabId,
@@ -43,6 +44,7 @@ export function appendMessage(
       createdAt: msg.createdAt,
     })
     .run();
+  return Number(result.lastInsertRowid);
 }
 
 /**

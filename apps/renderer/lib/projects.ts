@@ -14,6 +14,8 @@ import {
   type WorktreeChange,
 } from '@flowstate/shared';
 import { toast } from '@/components/ui/sonner';
+import { disposeChatTab } from './chat';
+import { unregisterTab, useTabStates } from './tabStates';
 import { refreshTerminals } from './terminals';
 import { trpc } from './trpc';
 import { selectWorkspace, setInitialising, useWorkspace } from './workspace';
@@ -481,6 +483,7 @@ export async function removeWorktree(workspace: Workspace, force = false): Promi
   if (wasActive) void selectWorkspace(DEFAULT_WORKSPACE_ID);
   try {
     await trpc().worktree.remove.mutate({ workspaceId: workspace.id, force });
+    evictWorkspaceTabs(workspace.id);
   } catch (err) {
     restore();
     if (!force && message(err).toLowerCase().includes('uncommitted')) {
@@ -505,8 +508,24 @@ export async function archiveWorktree(workspace: Workspace): Promise<void> {
   if (wasActive) void selectWorkspace(DEFAULT_WORKSPACE_ID);
   try {
     await trpc().worktree.archive.mutate({ workspaceId: workspace.id });
+    evictWorkspaceTabs(workspace.id);
   } catch (err) {
     restore();
     toast.error(`Couldn't archive ${workspace.branch}`, { description: message(err) });
+  }
+}
+
+/**
+ * Drop every tab binding of a removed/archived workspace: chat stores + IPC
+ * subscriptions (`disposeChatTab`) and the tab-state aggregates. Without this,
+ * a day of opening and tearing down worktrees accumulates orphaned stores that
+ * keep folding events forever.
+ */
+function evictWorkspaceTabs(workspaceId: string): void {
+  const { workspaceOf } = useTabStates.getState();
+  for (const tabId in workspaceOf) {
+    if (workspaceOf[tabId] !== workspaceId) continue;
+    disposeChatTab(tabId);
+    unregisterTab(tabId);
   }
 }
