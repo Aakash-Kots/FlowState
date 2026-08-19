@@ -26,6 +26,12 @@ export type ToolRowProps = { block: ToolUseBlock; result?: ToolResultBlock };
 export type MentionCaret = { left: number; top: number; bottom: number };
 
 /**
+ * A streaming reply cut into the part that can no longer change (`stable`) and the
+ * part still being written (`tail`). See `splitStreamingMarkdown`.
+ */
+export type StreamingSplit = { stable: string; tail: string };
+
+/**
  * One item in the flattened transcript that `ChatView` renders: a whole-message
  * bubble, a standalone assistant block, or a single tool call. See
  * `groupChatItems`. `key` is a stable React key (a message id, `msgId:index`,
