@@ -48,13 +48,11 @@ jobs:
 
       - name: Build (renderer export + main bundle)
         run: bun run build
-        # Linear + Spotify OAuth client credentials are inlined into the main
-        # bundle at build time (electron-vite `define`). Provided as repo secrets;
-        # Spotify uses PKCE, so only its client id is needed (no secret).
+        # Linear OAuth client credentials are inlined into the main bundle at
+        # build time (electron-vite `define`). Provided as repo secrets.
         env:
           LINEAR_CLIENT_ID: ${{ secrets.LINEAR_CLIENT_ID }}
           LINEAR_CLIENT_SECRET: ${{ secrets.LINEAR_CLIENT_SECRET }}
-          SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
 
       - name: Package & publish Windows installer
         working-directory: apps/main
