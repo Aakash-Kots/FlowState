@@ -145,7 +145,7 @@ export const usageEvents = sqliteTable(
 );
 
 // An append-only ledger of user activity — one row per meaningful action (a
-// commit, a finished Setup/Run script, a Linear state change, a Spotify play).
+// commit, a finished Setup/Run script, a Linear state change).
 // The analytics page reads these back as time-series aggregates. `type` mirrors
 // the JSON payload's discriminant (kept as a column for cheap filtering/index);
 // `data` is the full payload as JSON. `workspace_id`/`project_id` are

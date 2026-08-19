@@ -540,9 +540,19 @@ html[data-fullscreen='true'] [data-sidebar='sidebar'] {
 }
 
 /* While the window is backgrounded (attribute set by the root page via
-   useWindowActive), freeze infinite pulse animations — Chromium only throttles
-   fully hidden windows, so a visible-but-unfocused one otherwise keeps the
-   compositor awake for a status dot nobody is watching. */
-[data-window-inactive] .animate-pulse {
+   useWindowActive), freeze infinite animations — Chromium only throttles fully
+   hidden windows, so a visible-but-unfocused one otherwise keeps the compositor
+   awake for a status dot nobody is watching. Spinners matter as much as pulses:
+   one is mounted per running agent, so several workflows in flight composite a
+   handful of animated layers around the clock. */
+[data-window-inactive] .animate-pulse,
+[data-window-inactive] .animate-spin {
   animation-play-state: paused;
+}
+
+/* With vibrancy off the window is opaque, so the sidebar's translucent tone has
+   nothing to blend with and reads washed out — give it a solid fill. The
+   attribute is set by lib/settings.ts alongside the code theme. */
+[data-vibrancy='off'] [data-sidebar='sidebar'] {
+  background-color: hsl(var(--sidebar-background));
 }

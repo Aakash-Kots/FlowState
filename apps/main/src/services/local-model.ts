@@ -56,6 +56,16 @@ const STATUS_EVENT = 'status';
  */
 const IDLE_UNLOAD_MS = 10 * 60_000;
 
+/**
+ * Backoff after a failed load, doubling per consecutive failure up to the cap.
+ * `ensureReady` clears its single-flight guard on failure so a later call can retry,
+ * but the failure that matters here is a multi-hundred-MB download: offline, or a
+ * moved URL, every subsequent search would otherwise kick off the whole transfer
+ * again. Retries stay automatic, just not once per keystroke.
+ */
+const LOAD_RETRY_BASE_MS = 30_000;
+const LOAD_RETRY_MAX_MS = 15 * 60_000;
+
 /////////////
 // Helpers //
 /////////////
@@ -137,6 +147,11 @@ export class LocalModelService extends EventEmitter {
   private idleTimer: NodeJS.Timeout | null = null;
   /** In-flight `embed()` calls — the idle timer never arms while any remain. */
   private inFlight = 0;
+  /** `Date.now()` of the last failed load, and the error it failed with. */
+  private lastFailureAt = 0;
+  private lastFailure: Error | null = null;
+  /** Consecutive failures, capping the exponential backoff below. */
+  private failureCount = 0;
 
   private status: ModelStatus = {
     state: LocalModelState.Absent,
@@ -175,7 +190,8 @@ export class LocalModelService extends EventEmitter {
   /**
    * Ensure the model is downloaded and loaded. Idempotent and single-flight: the
    * first caller drives download → load and everyone awaits the same promise. On
-   * failure the guard is cleared so a later call can retry.
+   * failure the guard is cleared so a later call can retry, but not immediately —
+   * see `LOAD_RETRY_BASE_MS`.
    */
   ensureReady(): Promise<void> {
     // A warm-up load must not race the idle unloader; re-arm so a warm-up with
@@ -185,11 +201,27 @@ export class LocalModelService extends EventEmitter {
       this.armIdleTimer();
       return Promise.resolve();
     }
+    if (!this.readyPromise && this.failureCount > 0) {
+      const wait = Math.min(
+        LOAD_RETRY_BASE_MS * 2 ** (this.failureCount - 1),
+        LOAD_RETRY_MAX_MS,
+      );
+      if (Date.now() - this.lastFailureAt < wait) {
+        return Promise.reject(this.lastFailure ?? new Error('Model failed to load.'));
+      }
+    }
     this.readyPromise ??= this.load()
-      .then(() => this.armIdleTimer())
-      .catch((err) => {
+      .then(() => {
+        this.failureCount = 0;
+        this.lastFailure = null;
+        this.armIdleTimer();
+      })
+      .catch((err: unknown) => {
         this.readyPromise = null;
-        const message = err instanceof Error ? err.message : String(err);
+        this.failureCount += 1;
+        this.lastFailureAt = Date.now();
+        this.lastFailure = err instanceof Error ? err : new Error(String(err));
+        const message = this.lastFailure.message;
         this.setStatus({ state: LocalModelState.Error, downloadProgress: null, error: message });
         throw err;
       });
@@ -302,10 +334,22 @@ export class LocalModelService extends EventEmitter {
     }
   }
 
+  /**
+   * Clear the load-failure backoff. Both callers below are deliberate user
+   * gestures, which should retry at once rather than sit out a backoff window
+   * that a transient network failure started.
+   */
+  private clearFailureBackoff(): void {
+    this.failureCount = 0;
+    this.lastFailure = null;
+    this.lastFailureAt = 0;
+  }
+
   /** Unload and delete the downloaded weights, reclaiming the disk. A later
    * search re-downloads on demand. */
   async deleteModel(): Promise<ModelDiskInfo> {
     await this.dispose();
+    this.clearFailureBackoff();
     try {
       const dir = modelsDir();
       const files = await readdir(dir);
@@ -322,6 +366,7 @@ export class LocalModelService extends EventEmitter {
    * small-model preference changes (the chosen quant/width differs). */
   async reload(): Promise<void> {
     await this.dispose();
+    this.clearFailureBackoff();
   }
 
   /** Dispose the loaded model/context (app quit, delete, reload, idle unload). */

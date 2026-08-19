@@ -13,5 +13,4 @@ export enum ActivityType {
   GitCommit = 'git_commit',
   TerminalRun = 'terminal_run',
   LinearTransition = 'linear_transition',
-  SpotifyPlay = 'spotify_play',
 }

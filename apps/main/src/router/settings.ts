@@ -13,6 +13,7 @@ import {
   getSkillsPanelWidth,
   getSoundEnabled,
   getSurfacedTeamIds,
+  getVibrancyEnabled,
   getTerminalPanelFraction,
   setArchiveRetention,
   setCodeTheme,
@@ -22,6 +23,7 @@ import {
   setSkillsPanelWidth,
   setSoundEnabled,
   setSurfacedTeamIds,
+  setVibrancyEnabled,
   setTerminalPanelFraction,
 } from '../store/settings';
 import { publicProcedure, router } from '../trpc';
@@ -35,6 +37,7 @@ import { publicProcedure, router } from '../trpc';
 export const settingsRouter = router({
   get: publicProcedure.query(() => ({
     soundEnabled: getSoundEnabled(),
+    vibrancyEnabled: getVibrancyEnabled(),
     codeTheme: getCodeTheme(),
     fontSize: getFontSize(),
     archiveRetention: getArchiveRetention(),
@@ -66,6 +69,14 @@ export const settingsRouter = router({
     .input(z.object({ enabled: z.boolean() }))
     .mutation(({ input }) => {
       setSoundEnabled(input.enabled);
+    }),
+
+  /** Toggle the macOS frosted-glass sidebar. Applied when the window is created,
+   * so an existing window keeps its current look until the app relaunches. */
+  setVibrancyEnabled: publicProcedure
+    .input(z.object({ enabled: z.boolean() }))
+    .mutation(({ input }) => {
+      setVibrancyEnabled(input.enabled);
     }),
 
   setCodeTheme: publicProcedure

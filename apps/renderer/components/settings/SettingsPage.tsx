@@ -11,6 +11,7 @@ import {
   setSemanticSearchEnabled,
   setSettingsOpen,
   setSoundEnabled,
+  setVibrancyEnabled,
   useSettings,
 } from '@/lib/settings';
 import { cn } from '../ui/cn';
@@ -85,6 +86,7 @@ export function SettingsPage() {
   const soundEnabled = useSettings((s) => s.soundEnabled);
   const codeTheme = useSettings((s) => s.codeTheme);
   const fontSize = useSettings((s) => s.fontSize);
+  const vibrancyEnabled = useSettings((s) => s.vibrancyEnabled);
   const semanticSearchEnabled = useSettings((s) => s.semanticSearchEnabled);
   const preferSmallModel = useSettings((s) => s.preferSmallModel);
 
@@ -126,6 +128,17 @@ export function SettingsPage() {
                     The quick brown fox jumps over the lazy dog.
                   </p>
                 </div>
+              }
+            />
+            <SettingRow
+              title="Frosted sidebar"
+              description="Blur the desktop behind the sidebar. Looks nice, but keeps the GPU compositing continuously — leave it off if battery matters. Applies on next launch."
+              control={
+                <Switch
+                  checked={vibrancyEnabled}
+                  onChange={setVibrancyEnabled}
+                  label="Frosted sidebar"
+                />
               }
             />
             <SettingRow

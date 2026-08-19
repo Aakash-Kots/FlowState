@@ -29,6 +29,9 @@ export const useUsage = create<UsageStoreState>(() => INITIAL);
 
 let started = false;
 
+/** Backoff schedule (ms) for retrying the initial limits query. */
+const RETRY_DELAYS_MS = [2_000, 5_000, 15_000, 60_000];
+
 /**
  * Keep the account-global Claude usage snapshot live for the app's lifetime.
  * Seeds from the `limits` query, then stays fresh via `onLimits` (the main
@@ -48,13 +51,22 @@ export function useUsageSync(): void {
 
     const set = (limits: UsageLimits | null) => useUsage.setState({ hydrated: true, limits });
 
-    trpc()
-      .usage.limits.query()
-      .then(set)
-      .catch((err) => {
-        console.warn('[usage] limits query failed', err);
-        useUsage.setState({ hydrated: true });
-      });
+    // Retry with backoff rather than giving up on the first failure: `limits`
+    // stays null forever otherwise, and the header renders pulsing skeleton bars
+    // for the rest of the session — an infinite animation bought by one flaky
+    // query. Stops on the first success; `onLimits` keeps it fresh from there.
+    const attempt = (i = 0): void => {
+      trpc()
+        .usage.limits.query()
+        .then(set)
+        .catch((err) => {
+          console.warn('[usage] limits query failed', err);
+          useUsage.setState({ hydrated: true });
+          const delay = RETRY_DELAYS_MS[i];
+          if (delay !== undefined) setTimeout(() => attempt(i + 1), delay);
+        });
+    };
+    attempt();
 
     trpc().usage.onLimits.subscribe(undefined, {
       onData: set,

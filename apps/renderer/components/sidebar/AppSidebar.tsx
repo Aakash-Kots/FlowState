@@ -130,7 +130,9 @@ function WorktreeRow({ workspace }: { workspace: Workspace }) {
             className={cn('size-4 shrink-0', prOpen && 'text-green-600 dark:text-green-500')}
           />
           <span className="flex-1 truncate">{prOpen ? pr.title : workspace.branch}</span>
-          <StateIndicator state={state} unread={unread} />
+          {/* Only the row you're on spins: every other running worktree
+              would add a compositor animation for a status nobody reads. */}
+          <StateIndicator state={state} unread={unread} animated={active} />
           {/* Trailing slot: diff badge by default, hover controls (archive when
               merged, remove) on hover — they overlap so row width stays stable. */}
           <span className="relative flex shrink-0 items-center">

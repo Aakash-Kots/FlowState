@@ -165,6 +165,18 @@ export const claudeRouter = router({
       ),
     ),
 
+  /**
+   * Tell main which chat tab is mounted (null when none is). A tab's `onEvent`
+   * binding is app-lifetime by design, so this is main's only way to know whose
+   * streaming text is actually on screen — every other running session's deltas
+   * are dropped rather than shipped over IPC.
+   */
+  setActiveTab: publicProcedure
+    .input(z.object({ tabId: z.string().nullable(), releasing: z.string().optional() }))
+    .mutation(({ input }) => {
+      claudeService.setActiveTab(input.tabId, input.releasing);
+    }),
+
   // App-wide stream of every tab's state transitions — feeds the status dots on
   // the tab strip and sidebar worktree rows (unlike `onEvent`, not tab-scoped).
   onAnyState: publicProcedure.subscription(() =>

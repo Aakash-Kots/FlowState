@@ -14,6 +14,9 @@ type SettingsState = {
   hydrated: boolean;
   /** Play a sound when an agent finishes a turn in a tab you're not watching. */
   soundEnabled: boolean;
+  /** Whether the macOS frosted-glass sidebar is on. Costs continuous GPU
+   * compositing, so it defaults off and applies on the next launch. */
+  vibrancyEnabled: boolean;
   /** The syntax-highlighting palette for code surfaces (diffs, chat blocks). */
   codeTheme: CodeTheme;
   /** The base UI text size; drives the root font size the whole UI scales from. */
@@ -53,6 +56,7 @@ type SettingsState = {
 const INITIAL: SettingsState = {
   hydrated: false,
   soundEnabled: true,
+  vibrancyEnabled: false,
   codeTheme: CodeTheme.GithubDark,
   fontSize: FontSize.Default,
   archiveRetention: ArchiveRetention.OneDay,
@@ -92,6 +96,17 @@ function applyCodeTheme(theme: CodeTheme): void {
   }
 }
 
+/**
+ * Drive the CSS `data-vibrancy` attribute. With vibrancy off the window is
+ * opaque, so the sidebar's translucent tone would read as washed out — the
+ * attribute lets `globals.css` give it a solid fill instead.
+ */
+function applyVibrancy(enabled: boolean): void {
+  if (typeof document !== 'undefined') {
+    document.documentElement.dataset.vibrancy = enabled ? 'on' : 'off';
+  }
+}
+
 /** Set the root font size the rem-based UI scales from. */
 function applyFontSize(size: FontSize): void {
   if (typeof document !== 'undefined') {
@@ -111,6 +126,7 @@ export function useSettingsSync(): void {
       .then(
         ({
           soundEnabled,
+          vibrancyEnabled,
           codeTheme,
           fontSize,
           archiveRetention,
@@ -124,6 +140,7 @@ export function useSettingsSync(): void {
           useSettings.setState({
             hydrated: true,
             soundEnabled,
+            vibrancyEnabled,
             codeTheme,
             fontSize,
             archiveRetention,
@@ -136,6 +153,7 @@ export function useSettingsSync(): void {
           });
           applyCodeTheme(codeTheme);
           applyFontSize(fontSize);
+          applyVibrancy(vibrancyEnabled);
         },
       )
       .catch(() => useSettings.setState({ hydrated: true }));
@@ -195,6 +213,17 @@ export async function clearGeminiApiKey(): Promise<void> {
 export function setSoundEnabled(enabled: boolean): void {
   useSettings.setState({ soundEnabled: enabled });
   void trpc().settings.setSoundEnabled.mutate({ enabled });
+}
+
+/**
+ * Toggle the macOS frosted-glass sidebar. Optimistic in the store so the sidebar
+ * swaps to its opaque tone at once, but the window's own `vibrancy` is fixed at
+ * creation — the glass itself only changes on the next launch.
+ */
+export function setVibrancyEnabled(enabled: boolean): void {
+  useSettings.setState({ vibrancyEnabled: enabled });
+  applyVibrancy(enabled);
+  void trpc().settings.setVibrancyEnabled.mutate({ enabled });
 }
 
 /** Choose the code-highlighting palette (optimistic + applied immediately). */

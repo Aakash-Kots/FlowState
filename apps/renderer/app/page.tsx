@@ -19,7 +19,6 @@ import { ProjectSelector } from '@/components/projects/ProjectSelector';
 import { ProjectSettingsPage } from '@/components/projects/ProjectSettingsPage';
 import { GitHeaderButton } from '@/components/git/GitHeaderButton';
 import { NotesButton } from '@/components/notes/NotesButton';
-import { SpotifyButton } from '@/components/spotify/SpotifyButton';
 import { ShortcutProvider } from '@/components/shortcuts/ShortcutProvider';
 import { UsageIndicator } from '@/components/usage/UsageIndicator';
 import { SystemMetricsIndicator } from '@/components/system/SystemMetricsIndicator';
@@ -112,7 +111,6 @@ function WorkspaceShell() {
             <div className="flex items-center gap-4 text-xs text-muted-foreground">
               <AnalyticsButton />
               <NotesButton />
-              <SpotifyButton />
               {!onDefaultWorkspace && <GitHeaderButton />}
               <SoundToggle />
             </div>

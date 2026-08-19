@@ -16,7 +16,6 @@ import { searchRouter } from './search';
 import { settingsRouter } from './settings';
 import { shortcutsRouter } from './shortcuts';
 import { skillsRouter } from './skills';
-import { spotifyRouter } from './spotify';
 import { systemRouter } from './system';
 import { tabsRouter } from './tabs';
 import { terminalRouter } from './terminal';
@@ -41,7 +40,6 @@ export const appRouter = router({
   mcp: mcpRouter,
   search: searchRouter,
   gemma: gemmaRouter,
-  spotify: spotifyRouter,
   system: systemRouter,
   shortcuts: shortcutsRouter,
   settings: settingsRouter,

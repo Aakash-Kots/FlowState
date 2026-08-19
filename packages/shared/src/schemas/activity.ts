@@ -35,20 +35,11 @@ const linearTransitionDataSchema = z.object({
   fromState: z.string().nullable(),
 });
 
-const spotifyPlayDataSchema = z.object({
-  type: z.literal(ActivityType.SpotifyPlay),
-  trackId: z.string(),
-  trackName: z.string(),
-  artist: z.string(),
-  durationMs: z.number(),
-});
-
 /** Validates any activity payload, narrowing on the `type` discriminant. */
 export const activityDataSchema: z.ZodType<ActivityData> = z.discriminatedUnion('type', [
   gitCommitDataSchema,
   terminalRunDataSchema,
   linearTransitionDataSchema,
-  spotifyPlayDataSchema,
 ]);
 
 /** Validates a new ledger row at the store boundary before insert. */

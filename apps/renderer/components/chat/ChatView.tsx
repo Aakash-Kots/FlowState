@@ -11,6 +11,7 @@ import { verbForTool } from '@/lib/constants/tools';
 import { formatDuration } from '@/lib/format';
 import { useElapsed } from '@/lib/hooks/useElapsed';
 import { useThrottledValue } from '@/lib/hooks/useThrottledValue';
+import { splitStreamingMarkdown } from '@/lib/streamingMarkdown';
 import { clearInitialising, useWorkspace } from '@/lib/workspace';
 import { EmptyChat } from './EmptyChat';
 import { InitialisingMessage } from './InitialisingMessage';
@@ -48,12 +49,25 @@ const OVERSCAN_ROWS = 8;
  * re-running ReactMarkdown+Prism that often is O(n²) over a long reply. The
  * `streamingText` guard still hides the block the instant the turn ends, so the
  * finalized message never double-renders.
+ *
+ * Throttling alone only fixes the frequency, not the cost: each parse still walked
+ * the whole reply, so the total stayed quadratic. `splitStreamingMarkdown` cuts the
+ * settled part off at a boundary where it cannot be affected by what arrives next,
+ * and that prefix only changes when a block completes — so `Markdown`'s `memo` sees
+ * the same string frame after frame and skips it. Only the short tail re-parses.
  */
 function StreamingBubble() {
   const streamingText = useChat((s) => s.streamingText);
   const throttledStreamingText = useThrottledValue(streamingText, STREAM_RENDER_INTERVAL_MS);
+  const text = throttledStreamingText ?? streamingText;
+  const { stable, tail } = useMemo(() => splitStreamingMarkdown(text ?? ''), [text]);
   if (!streamingText) return null;
-  return <Markdown>{throttledStreamingText ?? streamingText}</Markdown>;
+  return (
+    <>
+      {stable && <Markdown>{stable}</Markdown>}
+      {tail && <Markdown>{tail}</Markdown>}
+    </>
+  );
 }
 
 /**

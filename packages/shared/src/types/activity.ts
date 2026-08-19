@@ -39,21 +39,8 @@ export type LinearTransitionData = {
   fromState: string | null;
 };
 
-/** A Spotify track that started playing. */
-export type SpotifyPlayData = {
-  type: ActivityType.SpotifyPlay;
-  trackId: string;
-  trackName: string;
-  artist: string;
-  durationMs: number;
-};
-
 /** The persisted payload — a discriminated union keyed by `type`. */
-export type ActivityData =
-  | GitCommitData
-  | TerminalRunData
-  | LinearTransitionData
-  | SpotifyPlayData;
+export type ActivityData = GitCommitData | TerminalRunData | LinearTransitionData;
 
 /**
  * One recorded activity. `workspaceId`/`projectId` are denormalized text (no FK)

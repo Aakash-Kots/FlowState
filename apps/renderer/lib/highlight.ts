@@ -51,7 +51,7 @@ const EXT_TO_LANG: Record<string, string> = {
   toml: 'toml',
 };
 
-/** Upper bound on cached highlight results before the cache is cleared wholesale. */
+/** Upper bound on cached highlight results before the oldest entries are evicted. */
 const HIGHLIGHT_CACHE_LIMIT = 500;
 
 /////////////
@@ -60,9 +60,15 @@ const HIGHLIGHT_CACHE_LIMIT = 500;
 
 // Memoize highlight output keyed by `lang\ncode`: the transcript re-renders the
 // same code blocks constantly (every streamed token, every tool event), and
-// re-tokenizing all of them through Prism each time is a visible cost. The cache
-// is cleared wholesale once it grows past the limit — a session with thousands
-// of distinct blocks is unrealistic, and the simple reset avoids LRU bookkeeping.
+// re-tokenizing all of them through Prism each time is a visible cost.
+//
+// Eviction is oldest-first, one entry at a time, which relies on `Map` preserving
+// insertion order. A wholesale `clear()` would be cheaper to write but is actively
+// harmful here: a *streaming* code block inserts a new growing-prefix entry on every
+// frame, so it fills the cache with garbage within seconds and the reset would then
+// evict every stable block in the transcript, forcing them all to re-tokenize at
+// once. Evicting one at a time keeps the useless prefixes rolling through while the
+// blocks that are actually re-rendered stay warm.
 const highlightCache = new Map<string, string>();
 
 /** The Prism language id for a file path, or null when we can't highlight it. */
@@ -94,7 +100,12 @@ export function highlightToHtml(code: string, lang: string | null): string | nul
   const cached = highlightCache.get(key);
   if (cached !== undefined) return cached;
   const html = Prism.highlight(code, grammar, lang);
-  if (highlightCache.size >= HIGHLIGHT_CACHE_LIMIT) highlightCache.clear();
+  // Evict oldest-first (Map iterates in insertion order) rather than clearing.
+  while (highlightCache.size >= HIGHLIGHT_CACHE_LIMIT) {
+    const oldest = highlightCache.keys().next();
+    if (oldest.done) break;
+    highlightCache.delete(oldest.value);
+  }
   highlightCache.set(key, html);
   return html;
 }
