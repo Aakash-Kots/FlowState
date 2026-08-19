@@ -571,6 +571,24 @@ export function useChatSync(tabId: string): void {
   }, [tabId]);
 }
 
+/**
+ * Tell main this tab is the mounted one for as long as it is. Because the
+ * `onEvent` bindings above are app-lifetime, main can't infer visibility from
+ * subscriptions — without this it would ship 30 Hz streaming text for every
+ * running session, not just the one on screen. Only `TextDelta` is affected:
+ * state changes, tool events, and permission prompts keep flowing to every tab.
+ */
+export function useActiveChatTab(tabId: string): void {
+  useEffect(() => {
+    void trpc().claude.setActiveTab.mutate({ tabId });
+    return () => {
+      // `releasing` so a cleanup that lands after the next tab's mount can't
+      // clear the slot out from under it.
+      void trpc().claude.setActiveTab.mutate({ tabId: null, releasing: tabId });
+    };
+  }, [tabId]);
+}
+
 // Actions
 
 // The image formats the Agent SDK accepts, keyed by MIME string — anything else

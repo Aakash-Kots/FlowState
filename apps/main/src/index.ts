@@ -13,7 +13,13 @@ import { shortcutsService } from './services/shortcuts';
 import { terminalService } from './services/terminal';
 import { updateService } from './services/update';
 import { windowStateService } from './services/windowState';
-import { closeStore, getWindowBounds, initStore, setWindowBounds } from './store';
+import {
+  closeStore,
+  getVibrancyEnabled,
+  getWindowBounds,
+  initStore,
+  setWindowBounds,
+} from './store';
 
 ///////////////
 // Constants //
@@ -194,9 +200,9 @@ function createWindow(): void {
     // transparent bg would leave the sidebar strip unpainted — fall back to an
     // opaque surface matching the sidebar tone (`--sidebar-background` ≈
     // #1b1a17). Win11's Mica gives a comparable subtle backdrop where available.
-    ...(IS_MAC
+    ...(IS_MAC && getVibrancyEnabled()
       ? { backgroundColor: '#00000000', vibrancy: 'sidebar', visualEffectState: 'followWindow' }
-      : { backgroundColor: '#1b1a17', backgroundMaterial: 'mica' }),
+      : { backgroundColor: '#1b1a17', ...(IS_MAC ? {} : { backgroundMaterial: 'mica' }) }),
     show: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),

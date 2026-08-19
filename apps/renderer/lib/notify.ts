@@ -8,6 +8,11 @@
 // suspended until a user gesture, but by the time an agent finishes the user has
 // long since interacted, so resume() resolves immediately.
 let ctx: AudioContext | null = null;
+/** Pending suspend, pushed back whenever another ping lands. */
+let idleTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** How long after the last note to park the context (covers its decay). */
+const SUSPEND_AFTER_MS = 600;
 
 function audioContext(): AudioContext | null {
   if (typeof window === 'undefined') return null;
@@ -46,6 +51,14 @@ export function playPing(): void {
     // A rising fifth (A5 → E6) — brief and cheerful.
     note(ac, 880, 0, 0.12);
     note(ac, 1318.5, 0.11, 0.16);
+    // A running AudioContext holds a realtime audio render thread for the life
+    // of the process — a permanent idle-energy floor bought for one chime. Park
+    // it once the tail has decayed; the `resume()` above wakes it for the next.
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      idleTimer = null;
+      void ctx?.suspend();
+    }, SUSPEND_AFTER_MS);
   } catch {
     // Audio is best-effort; never let it break the caller.
   }

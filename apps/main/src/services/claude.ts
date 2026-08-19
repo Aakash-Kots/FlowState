@@ -96,6 +96,7 @@ import { SdkSystemSubtype } from '../lib/enums/claude';
 import { getMcpServers } from '../store/mcp';
 import { authService } from './auth';
 import { GitService } from './git';
+import { windowStateService } from './windowState';
 import { renameWorktree } from './worktreeEvents';
 
 ///////////
@@ -167,6 +168,12 @@ const HISTORY_PAGE_SIZE = 100;
 
 /** Coalesce streamed `text_delta` tokens into one IPC emit per this window (ms). */
 const TEXT_FLUSH_MS = 33;
+/**
+ * Streaming tail retained for a session whose tab isn't mounted, so switching to
+ * it mid-turn can paint a preview immediately. Bounded because with many
+ * concurrent workflows these buffers would otherwise grow for a whole turn each.
+ */
+const HIDDEN_TEXT_BUFFER_MAX = 64 * 1024;
 
 /**
  * After opening an MCP OAuth page, poll the server's status this often / for this
@@ -605,6 +612,23 @@ export class ClaudeService {
   private usageBootStarted = false;
   /** Reaps idle sessions; running only while the sessions map is non-empty. */
   private idleSweeper: NodeJS.Timeout | null = null;
+  /**
+   * The one chat tab the renderer currently has mounted, or null when none is
+   * (a file tab, settings, analytics). Only this tab's streaming text is worth
+   * shipping over IPC — see `isStreamingVisible`.
+   */
+  private activeTabId: string | null = null;
+
+  constructor() {
+    // Coming back from hidden/asleep, paint the visible tab's retained tail at
+    // once — while the window was down its deltas were suppressed, so without
+    // this the bubble would sit stale until the turn ends.
+    windowStateService.onChange((isActive) => {
+      if (!isActive || !this.activeTabId) return;
+      const session = this.sessions.get(this.activeTabId);
+      if (session) this.flushText(session);
+    });
+  }
 
   /**
    * Reset stuck states on startup: no sessions run at boot, so a tab persisted
@@ -1836,14 +1860,56 @@ export class ClaudeService {
     this.events.emit(tabId, event);
   }
 
+  /**
+   * Whether a session's streaming text can actually be seen right now: its tab
+   * is the mounted one and the window is up. Every other running session's
+   * `TextDelta`s would land in a per-tab store with no React listeners and be
+   * discarded when the turn's `Message` arrives, so shipping them is pure cost —
+   * ~30 IPC wakeups/sec each on the renderer's main thread.
+   */
+  private isStreamingVisible(session: ClaudeSession): boolean {
+    return session.tabId === this.activeTabId && windowStateService.isActive();
+  }
+
+  /**
+   * Point streaming at the chat tab the renderer just mounted (null when none
+   * is). Flushes the newly-visible session's retained buffer straight away, so
+   * switching into a mid-turn tab paints its partial reply at once rather than
+   * waiting for the turn to finish.
+   */
+  setActiveTab(tabId: string | null, releasing?: string): void {
+    // An unmount cleanup racing the next tab's mount must not clear it: only
+    // honour a release from whoever still holds the slot.
+    if (tabId === null && releasing && this.activeTabId !== releasing) return;
+    if (this.activeTabId === tabId) return;
+    this.activeTabId = tabId;
+    const session = tabId ? this.sessions.get(tabId) : null;
+    if (session) this.flushText(session);
+  }
+
   /** Accumulate a streamed text delta and schedule a coalesced flush. */
   private bufferText(session: ClaudeSession, text: string): void {
     session.textBuffer += text;
+    // Nobody can see this one — keep only enough tail to paint a preview if the
+    // user switches to it mid-turn, and don't arm a timer that would only drop
+    // the buffer again. The turn's `Message` event carries the authoritative text.
+    if (!this.isStreamingVisible(session)) {
+      if (session.textBuffer.length > HIDDEN_TEXT_BUFFER_MAX) {
+        session.textBuffer = session.textBuffer.slice(-HIDDEN_TEXT_BUFFER_MAX);
+      }
+      return;
+    }
     if (session.textFlush) return;
     session.textFlush = setTimeout(() => this.flushText(session), TEXT_FLUSH_MS);
   }
 
-  /** Emit any buffered streaming text as a single `TextDelta` and clear the timer. */
+  /**
+   * Emit any buffered streaming text as a single `TextDelta` and clear the timer.
+   * For a session nobody is watching this drops the buffer instead of emitting:
+   * `emit` calls it before every non-text event, so discarding here is what keeps
+   * the retained tail scoped to the *current* in-progress reply — otherwise stale
+   * pre-tool-call text would resurface as a phantom bubble on tab switch.
+   */
   private flushText(session: ClaudeSession): void {
     if (session.textFlush) {
       clearTimeout(session.textFlush);
@@ -1852,6 +1918,7 @@ export class ClaudeService {
     if (!session.textBuffer) return;
     const text = session.textBuffer;
     session.textBuffer = '';
+    if (!this.isStreamingVisible(session)) return;
     // Emit directly (not via `emit`) — this IS the text flush, so it must not recurse.
     this.events.emit(session.tabId, { kind: ChatEventKind.TextDelta, text });
   }

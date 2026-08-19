@@ -31,6 +31,7 @@ type WindowBounds = {
 
 const WINDOW_BOUNDS_KEY = 'window.bounds';
 const SOUND_ENABLED_KEY = 'notifications.soundEnabled';
+const VIBRANCY_ENABLED_KEY = 'appearance.vibrancyEnabled';
 const CODE_THEME_KEY = 'appearance.codeTheme';
 const FONT_SIZE_KEY = 'appearance.fontSize';
 const ARCHIVE_RETENTION_KEY = 'worktree.archiveRetention';
@@ -152,6 +153,21 @@ export function getSoundEnabled(): boolean {
 
 export function setSoundEnabled(enabled: boolean): void {
   setSetting(SOUND_ENABLED_KEY, enabled);
+}
+
+/**
+ * Whether the macOS frosted-glass sidebar is on (default off). It requires a
+ * fully transparent window, which denies Chromium the opaque compositing fast
+ * path for every layer and makes the OS live-blur the desktop behind the window
+ * each frame — a continuous GPU cost even on a completely idle app. Off by
+ * default; the look is worth it only if you want it.
+ */
+export function getVibrancyEnabled(): boolean {
+  return getSetting<boolean>(VIBRANCY_ENABLED_KEY) ?? false;
+}
+
+export function setVibrancyEnabled(enabled: boolean): void {
+  setSetting(VIBRANCY_ENABLED_KEY, enabled);
 }
 
 /** The chosen code-highlighting palette (defaults to GitHub Dark). */

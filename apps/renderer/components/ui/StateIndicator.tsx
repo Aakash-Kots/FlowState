@@ -30,17 +30,29 @@ function Marker({ label, children }: { label: string; children: React.ReactNode 
 export function StateIndicator({
   state,
   unread = false,
+  animated = true,
   className,
 }: {
   state: ClaudeSessionState;
   unread?: boolean;
+  /**
+   * Whether Running spins. Each spinner is its own compositor animation, and one
+   * is mounted per running worktree — with several workflows in flight that adds
+   * up to continuous GPU work for rows nobody is reading. Pass false away from
+   * the focused row to get a static marker in the same tone instead.
+   */
+  animated?: boolean;
   className?: string;
 }) {
   if (state === ClaudeSessionState.Running) {
     return (
       <Marker label="Working…">
         <span className={cn('inline-flex shrink-0', className)} aria-label="Working…">
-          <Loader2 className="size-3 animate-spin text-warn" />
+          {animated ? (
+            <Loader2 className="size-3 animate-spin text-warn" />
+          ) : (
+            <span className="h-1.5 w-1.5 rounded-full bg-warn" />
+          )}
         </span>
       </Marker>
     );

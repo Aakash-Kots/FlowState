@@ -195,6 +195,7 @@ function WindowDetail({ window: w }: { window: UsageWindowBreakdown }) {
 export function UsageIndicator({ variant = 'panel' }: { variant?: UsageVariant } = {}) {
   useUsageSync();
   const limits = useUsage((s) => s.limits);
+  const hydrated = useUsage((s) => s.hydrated);
   const [windowKey, setWindowKey] = useState<WindowKey>('week');
 
   // No snapshot yet → subtle loading skeleton (dim labels + pulsing bars) rather
@@ -205,7 +206,16 @@ export function UsageIndicator({ variant = 'panel' }: { variant?: UsageVariant }
         {LOADING_LABELS[variant].map((label) => (
           <div key={label} className={METER_CLASS[variant]}>
             <span className="truncate text-[11px] text-muted-foreground/50">{label}</span>
-            <div className={cn('animate-pulse rounded-full bg-white/10', BAR_CLASS[variant] || 'h-1')} />
+            <div
+              className={cn(
+                'rounded-full bg-white/10',
+                // Only pulse while the first query is genuinely in flight — once
+                // it has settled without limits this is a static placeholder,
+                // not an infinite animation nobody asked for.
+                !hydrated && 'animate-pulse',
+                BAR_CLASS[variant] || 'h-1',
+              )}
+            />
           </div>
         ))}
       </div>
