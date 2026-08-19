@@ -32,8 +32,13 @@ type Session = {
   pty: pty.IPty;
   /** 'data' → (chunk: string), 'exit' → (code: number) */
   events: EventEmitter;
-  /** Tail of the pty's output, replayed to a (re)attaching renderer. */
-  scrollback: string;
+  /**
+   * Tail of the pty's output, replayed to a (re)attaching renderer, held as the
+   * flushed chunks rather than one joined string — see `flushOut`.
+   */
+  scrollback: string[];
+  /** Total length of `scrollback`, tracked so trimming never re-measures it. */
+  scrollbackLen: number;
   /** Visible output accumulated since the last flush (coalesced before emitting). */
   outBuffer: string;
   /** Pending output-flush timer, or null when nothing is buffered. */
@@ -72,9 +77,14 @@ const SCROLLBACK_LIMIT = 256 * 1024;
  * Coalesce pty output into one IPC emit per this window (ms). A chatty process
  * (a watch dev server, a noisy build) can push hundreds of small chunks a
  * second; emitting each as its own subscription message floods the bridge.
- * ~16ms (a frame) keeps output feeling instant while collapsing the bursts.
+ *
+ * 32ms (~30/sec) rather than a frame: every emit crosses the IPC bridge and turns
+ * into an xterm WebGL draw in the renderer, and a dev server saturating a 16ms
+ * timer was a measurable share of renderer + GPU energy. Output still lands well
+ * inside the ~100ms that reads as instant, and text arriving in slightly larger
+ * bursts is invisible on a scrolling log.
  */
-const OUTPUT_FLUSH_MS = 16;
+const OUTPUT_FLUSH_MS = 32;
 
 /** Let the login shell source its rc files and print a prompt before auto-typing. */
 const STARTUP_DELAY_MS = 300;
@@ -224,7 +234,8 @@ export class TerminalService {
     const session: Session = {
       pty: child,
       events,
-      scrollback: '',
+      scrollback: [],
+      scrollbackLen: 0,
       outBuffer: '',
       outFlush: null,
       injected: false,
@@ -287,7 +298,15 @@ export class TerminalService {
     session.outFlush = setTimeout(() => this.flushOut(session), OUTPUT_FLUSH_MS);
   }
 
-  /** Emit buffered output as one chunk, appending it to scrollback in a single slice. */
+  /**
+   * Emit buffered output as one chunk and append it to scrollback.
+   *
+   * Scrollback is kept as a list of chunks and trimmed from the front. Rebuilding
+   * one capped string per flush instead (`(scrollback + data).slice(-LIMIT)`) meant
+   * allocating and copying a fresh 256 KB string on every tick — tens of MB/s of
+   * garbage while a dev server is chatty, for a buffer that is only ever read when a
+   * terminal reattaches. Appending is now O(chunk); the join moved to that rare read.
+   */
   private flushOut(session: Session): void {
     if (session.outFlush) {
       clearTimeout(session.outFlush);
@@ -296,7 +315,26 @@ export class TerminalService {
     if (!session.outBuffer) return;
     const data = session.outBuffer;
     session.outBuffer = '';
-    session.scrollback = (session.scrollback + data).slice(-SCROLLBACK_LIMIT);
+    session.scrollback.push(data);
+    session.scrollbackLen += data.length;
+    // Drop whole chunks off the front while the rest still covers the limit, then
+    // slice the new head to land exactly on it.
+    while (session.scrollbackLen > SCROLLBACK_LIMIT) {
+      const head = session.scrollback[0];
+      if (head === undefined) {
+        // Length and contents disagree — resync rather than spin.
+        session.scrollbackLen = 0;
+        break;
+      }
+      if (session.scrollbackLen - head.length >= SCROLLBACK_LIMIT) {
+        session.scrollback.shift();
+        session.scrollbackLen -= head.length;
+      } else {
+        const cut = session.scrollbackLen - SCROLLBACK_LIMIT;
+        session.scrollback[0] = head.slice(cut);
+        session.scrollbackLen -= cut;
+      }
+    }
     session.events.emit('data', data);
   }
 
@@ -431,7 +469,7 @@ export class TerminalService {
    * replay before it subscribes to live data. Empty if the session isn't live.
    */
   snapshot(id: string): string {
-    const scrollback = this.sessions.get(id)?.scrollback ?? '';
+    const scrollback = this.sessions.get(id)?.scrollback.join('') ?? '';
     return scrollback.replace(DEVICE_QUERY_RE, '');
   }
 

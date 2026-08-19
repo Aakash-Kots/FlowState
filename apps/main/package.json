@@ -19,7 +19,6 @@
     "@linear/sdk": "^88.1.0",
     "@trpc/server": "^10.45.2",
     "better-sqlite3": "^11.8.1",
-    "chokidar": "^5.0.0",
     "drizzle-orm": "^0.44.5",
     "electron-trpc": "^0.7.1",
     "electron-updater": "^6.8.9",
