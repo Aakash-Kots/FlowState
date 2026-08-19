@@ -184,9 +184,13 @@ export const projects = sqliteTable('projects', {
   // Branch new worktrees are cut from, overriding `default_branch`; null uses the default.
   worktreeBaseBranch: text('worktree_base_branch'),
   private: integer('private', { mode: 'boolean' }).notNull(),
-  // Project-scoped shell commands for the Setup/Run default terminals; null until set.
+  // Project-scoped shell commands for the Setup/Run default terminals; null until
+  // set. The `_enabled` flags gate only the auto-run: false keeps the command
+  // (so the tab still shows it) but stops it firing when a worktree opens.
   setupScript: text('setup_script'),
+  setupScriptEnabled: integer('setup_script_enabled', { mode: 'boolean' }).notNull().default(true),
   runScript: text('run_script'),
+  runScriptEnabled: integer('run_script_enabled', { mode: 'boolean' }).notNull().default(true),
   createdAt: text('created_at').notNull(),
 });
 

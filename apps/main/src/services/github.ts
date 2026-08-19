@@ -60,12 +60,13 @@ const CONTRIBUTIONS_QUERY = `query {
 }`;
 
 /**
- * How long a branch's PR status stays cached (ms). The header polls every ~20s
- * and every sidebar row + focus/archive read hits this same call; without a
- * cache each read fans out to 3 GitHub REST requests. A short TTL collapses a
- * focus burst onto one result while staying fresh against the poll.
+ * How long a branch's PR status stays cached (ms). The header polls every ~60s
+ * (`PR_POLL_MS` in renderer lib/git.ts — this TTL must stay below it so polls
+ * refresh) and every sidebar row + focus/archive read hits this same call;
+ * without a cache each read fans out to 3 GitHub REST requests. The TTL
+ * collapses a focus burst onto one result while staying fresh against the poll.
  */
-const PR_STATUS_TTL_MS = 15_000;
+const PR_STATUS_TTL_MS = 55_000;
 
 /** How long a worktree's parsed `origin` remote stays cached (ms) — it ~never changes. */
 const ORIGIN_TTL_MS = 5 * 60_000;
@@ -106,6 +107,17 @@ const branchFetches = new Map<string, { done: Promise<void>; settledAt: number |
 
 /** The viewer's contribution calendar cache (single viewer per app). */
 let contributionsCache: { value: GithubContributionCalendar; expiresAt: number } | null = null;
+
+/**
+ * Drop a removed worktree's cache entries so they don't outlive the worktree.
+ * `branchFetches` stays — it's keyed by repo root, shared across worktrees.
+ */
+export function evictGithubCaches(worktreePath: string): void {
+  originCache.delete(worktreePath);
+  for (const key of prStatusCache.keys()) {
+    if (key.startsWith(`${worktreePath}\n`)) prStatusCache.delete(key);
+  }
+}
 
 /** GitHub's contribution-level buckets → a 0–4 heat step. */
 const CONTRIBUTION_LEVELS: Record<GithubContributionLevel, number> = {

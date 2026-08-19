@@ -5,13 +5,15 @@
  * (`projects.ts`) enforce the output shape.
  */
 import { z } from 'zod';
+import { TerminalKind } from '../enums/terminal';
 import type {
   AddProjectInput,
   GithubRepo,
   GithubViewer,
   Project,
+  ProjectScriptKind,
   UpdateProjectBaseBranchInput,
-  UpdateProjectScriptsInput,
+  UpdateProjectScriptInput,
 } from '../types/project';
 
 export const githubViewerSchema: z.ZodType<GithubViewer> = z.object({
@@ -41,7 +43,9 @@ export const projectSchema: z.ZodType<Project> = z.object({
   worktreeBaseBranch: z.string().nullable(),
   private: z.boolean(),
   setupScript: z.string().nullable(),
+  setupScriptEnabled: z.boolean(),
   runScript: z.string().nullable(),
+  runScriptEnabled: z.boolean(),
   createdAt: z.string().datetime(),
 });
 
@@ -52,14 +56,21 @@ export const addProjectInputSchema: z.ZodType<AddProjectInput> = z.object({
   private: z.boolean(),
 });
 
-export const updateProjectScriptsInputSchema: z.ZodType<UpdateProjectScriptsInput> = z.object({
+export const projectScriptKindSchema: z.ZodType<ProjectScriptKind> = z.union([
+  z.literal(TerminalKind.Setup),
+  z.literal(TerminalKind.Run),
+]);
+
+export const updateProjectScriptInputSchema: z.ZodType<UpdateProjectScriptInput> = z.object({
   projectId: z.string(),
-  setupScript: z.string().nullable(),
-  runScript: z.string().nullable(),
+  kind: projectScriptKindSchema,
+  command: z.string().nullable().optional(),
+  enabled: z.boolean().optional(),
 });
 
-export const updateProjectBaseBranchInputSchema: z.ZodType<UpdateProjectBaseBranchInput> =
-  z.object({
+export const updateProjectBaseBranchInputSchema: z.ZodType<UpdateProjectBaseBranchInput> = z.object(
+  {
     projectId: z.string(),
     worktreeBaseBranch: z.string().nullable(),
-  });
+  },
+);

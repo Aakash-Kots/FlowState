@@ -2,8 +2,8 @@
 
 import { useState } from 'react';
 import { Terminal } from 'lucide-react';
-import { TerminalKind, type Project } from '@flowstate/shared';
-import { saveProjectScripts } from '@/lib/projects';
+import { TerminalKind, type Project, type ProjectScriptKind } from '@flowstate/shared';
+import { saveProjectScript } from '@/lib/projects';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/input';
 
@@ -11,10 +11,7 @@ import { Input } from '../ui/input';
 // Constants //
 ///////////////
 
-const COPY: Record<
-  TerminalKind.Setup | TerminalKind.Run,
-  { title: string; hint: string; placeholder: string }
-> = {
+const COPY: Record<ProjectScriptKind, { title: string; hint: string; placeholder: string }> = {
   [TerminalKind.Setup]: {
     title: 'Set a setup command',
     hint: 'Runs in every new worktree of this project (e.g. installing dependencies).',
@@ -32,13 +29,7 @@ const COPY: Record<
  * isn't set yet. Saves the command to the project (shared by every worktree);
  * once set, the tab renders the live terminal instead.
  */
-export function ScriptSetupTab({
-  project,
-  kind,
-}: {
-  project: Project;
-  kind: TerminalKind.Setup | TerminalKind.Run;
-}) {
+export function ScriptSetupTab({ project, kind }: { project: Project; kind: ProjectScriptKind }) {
   const copy = COPY[kind];
   const [command, setCommand] = useState('');
   const [saving, setSaving] = useState(false);
@@ -48,10 +39,7 @@ export function ScriptSetupTab({
     if (!value || saving) return;
     setSaving(true);
     try {
-      await saveProjectScripts(project.id, {
-        setupScript: kind === TerminalKind.Setup ? value : project.setupScript,
-        runScript: kind === TerminalKind.Run ? value : project.runScript,
-      });
+      await saveProjectScript(project.id, kind, { command: value });
     } finally {
       setSaving(false);
     }

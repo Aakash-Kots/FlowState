@@ -1,6 +1,7 @@
 'use client';
 
 import { ChevronDown, ExternalLink, GitBranch, Plus, UserPlus } from 'lucide-react';
+import { useShallow } from 'zustand/react/shallow';
 import { type LinearIssue } from '@flowstate/shared';
 import {
   ensureWorkflowStates,
@@ -120,7 +121,11 @@ function AssigneeControl({ issue }: { issue: LinearIssue }) {
 
 /** The worktrees currently linked to this issue (clickable to switch). */
 function LinkedWorktrees({ issueId }: { issueId: string }) {
-  const linked = useLinear((s) => s.linkedWorktrees.filter((w) => w.issueId === issueId));
+  // Shallow-compared: `.filter` allocates a fresh array on every store change,
+  // which would otherwise re-render this row for unrelated linear updates.
+  const linked = useLinear(
+    useShallow((s) => s.linkedWorktrees.filter((w) => w.issueId === issueId)),
+  );
   if (linked.length === 0) {
     return <p className="text-sm text-muted-foreground">No linked worktrees yet.</p>;
   }

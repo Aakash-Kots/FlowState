@@ -37,6 +37,8 @@ import { useWorkspace } from './workspace';
 ///////////
 
 type ChatEntry = {
+  /** DB row id — the trim cursor; null for entries predating id plumbing. */
+  id: number | null;
   message: ChatMessage;
   createdAt: string;
 };
@@ -156,10 +158,12 @@ const CLEARED_PATCH: Partial<ChatState> = {
 /////////////
 
 // One store per tab, plus a guard so each tab binds to the main process exactly
-// once. Stores live for the app's lifetime so a backgrounded tab keeps its state
-// (and its subscription keeps feeding it) while its component is unmounted.
+// once. Stores live until the tab is actually closed (not merely backgrounded),
+// so a backgrounded tab keeps its state (and its subscription keeps feeding it)
+// while its component is unmounted; `disposeChatTab` is the explicit teardown.
 const stores = new Map<string, StoreApi<ChatState>>();
 const started = new Set<string>();
+const subscriptions = new Map<string, { unsubscribe: () => void }>();
 
 /** The (lazily-created) chat store for a tab. */
 function storeFor(tabId: string): StoreApi<ChatState> {
@@ -169,6 +173,20 @@ function storeFor(tabId: string): StoreApi<ChatState> {
     stores.set(tabId, store);
   }
   return store;
+}
+
+/**
+ * Tear down a closed tab's chat binding: kill the IPC subscription and drop the
+ * store + started guard so they don't accumulate RAM (and keep folding events)
+ * for the app's lifetime. Only for real closes — backgrounded tabs must keep
+ * their binding. Tab ids are never reused, so the deleted guard can't cause a
+ * double-subscribe later.
+ */
+export function disposeChatTab(tabId: string): void {
+  subscriptions.get(tabId)?.unsubscribe();
+  subscriptions.delete(tabId);
+  stores.delete(tabId);
+  started.delete(tabId);
 }
 
 function pushMessage(state: ChatState, entry: ChatEntry): Partial<ChatState> {
@@ -181,6 +199,57 @@ function pushMessage(state: ChatState, entry: ChatEntry): Partial<ChatState> {
     toolProgress: null,
     apiRetry: null,
   };
+}
+
+/**
+ * Renderer-side ceiling on retained tool-result text. The DB keeps full
+ * fidelity; this only bounds what the live store holds, since a session full
+ * of big file reads otherwise pins tens of MB of strings per tab. Comfortably
+ * above the render caps (4k/8k in the tool rows), so nothing visible changes —
+ * known cosmetic exception: `ReadToolRow`'s "Read N lines" label undercounts
+ * for results past the cap.
+ */
+const TOOL_RESULT_MAX_CHARS = 24_000;
+
+/** Truncate oversized tool-result blocks at store-insert; identity otherwise. */
+function slimEntry(entry: ChatEntry): ChatEntry {
+  const oversized = (b: ChatBlock): boolean =>
+    b.type === ChatBlockType.ToolResult && b.content.length > TOOL_RESULT_MAX_CHARS;
+  if (!entry.message.blocks.some(oversized)) return entry;
+  return {
+    ...entry,
+    message: {
+      ...entry.message,
+      blocks: entry.message.blocks.map((b) =>
+        oversized(b) && b.type === ChatBlockType.ToolResult
+          ? { ...b, content: `${b.content.slice(0, TOOL_RESULT_MAX_CHARS)}\n… (truncated)` }
+          : b,
+      ),
+    },
+  };
+}
+
+// Live-array cap: the transcript store grows all session (hydration pages are
+// bounded, live pushes aren't). Past the soft cap, an unwatched tab is trimmed
+// back at turn end — the head re-loads through the existing "Load earlier"
+// paging, cursored on the first retained entry's row id. A watched tab is left
+// alone (never yank scrollback mid-read) until the hard failsafe.
+const MAX_LIVE_MESSAGES = 400;
+const TRIM_KEEP = 300;
+const HARD_MAX_LIVE_MESSAGES = 600;
+
+/** Trim the live array at a turn boundary when it outgrew the caps. */
+function trimLiveMessages(state: ChatState, tabId: string): Partial<ChatState> {
+  const count = state.messages.length;
+  const overHard = count > HARD_MAX_LIVE_MESSAGES;
+  const overSoft = count > MAX_LIVE_MESSAGES && !isTabWatched(tabId);
+  if (!overHard && !overSoft) return {};
+  const kept = state.messages.slice(-TRIM_KEEP);
+  // Without a row id on the first retained entry there is no correct paging
+  // cursor — skip rather than orphan the older history.
+  const first = kept[0];
+  if (!first || first.id == null) return {};
+  return { messages: kept, oldestId: first.id, hasMoreBefore: true };
 }
 
 /** True when the user is actively watching `tabId`'s chat right now. */
@@ -249,7 +318,9 @@ function applyEvent(tabId: string, event: ChatEvent): void {
       break;
     }
     case ChatEventKind.Message:
-      set((s) => pushMessage(s, { message: event.message, createdAt: event.createdAt }));
+      set((s) =>
+        pushMessage(s, slimEntry({ id: event.id, message: event.message, createdAt: event.createdAt })),
+      );
       break;
     case ChatEventKind.State: {
       const prev = storeFor(tabId).getState().sessionState;
@@ -281,6 +352,11 @@ function applyEvent(tabId: string, event: ChatEvent): void {
           ? { pendingPermissions: [], pendingQuestions: [] }
           : {}),
       });
+      // Turn boundary — cap the live transcript array (RAM) while the user
+      // isn't looking at it; trimmed history re-pages via "Load earlier".
+      if (event.state === ClaudeSessionState.Idle || event.state === ClaudeSessionState.Error) {
+        set((s) => trimLiveMessages(s, tabId));
+      }
       maybePingOnFinish(tabId, prev, event.state);
       break;
     }
@@ -405,6 +481,15 @@ export function useChat<T>(selector: (state: ChatState) => T): T {
 }
 
 /**
+ * The surrounding tab's raw store handle, for imperative `store.subscribe`
+ * side-effects (e.g. ChatView's auto-scroll) that must react to state changes
+ * without putting the component on the re-render path.
+ */
+export function useChatStoreApi(): StoreApi<ChatState> {
+  return storeFor(useTabId());
+}
+
+/**
  * The most recent `TodoWrite` tool-use block in the transcript, or `null` if the
  * session hasn't written a todo list. Scans newest-first and returns the block
  * object itself — a stable reference (messages are immutable in the store) so it
@@ -436,7 +521,7 @@ export function useChatSync(tabId: string): void {
     let seeded = false;
     const buffer: ChatEvent[] = [];
 
-    trpc().claude.onEvent.subscribe(
+    const sub = trpc().claude.onEvent.subscribe(
       { tabId },
       {
         onData: (event) => {
@@ -446,6 +531,8 @@ export function useChatSync(tabId: string): void {
         onError: () => {},
       },
     );
+    // Held for `disposeChatTab` — the effect itself never unsubscribes (below).
+    subscriptions.set(tabId, sub);
 
     trpc()
       .claude.snapshot.query({ tabId })
@@ -458,7 +545,7 @@ export function useChatSync(tabId: string): void {
           model: snapshot.model,
           effort: snapshot.effort,
           permissionMode: snapshot.permissionMode,
-          messages: snapshot.messages,
+          messages: snapshot.messages.map(slimEntry),
           oldestId: snapshot.oldestId,
           hasMoreBefore: snapshot.hasMoreBefore,
           pendingPermissions: snapshot.pendingPermissions,
@@ -545,7 +632,7 @@ export async function loadOlderMessages(tabId: string): Promise<void> {
     const page = await trpc().claude.olderMessages.query({ tabId, beforeId: oldestId });
     store.setState((s) => {
       const seen = new Set(s.messages.map((m) => m.message.id));
-      const older = page.messages.filter((e) => !seen.has(e.message.id));
+      const older = page.messages.filter((e) => !seen.has(e.message.id)).map(slimEntry);
       return {
         messages: [...older, ...s.messages],
         // Advance the cursor to the page's oldest raw row; keep it if the page

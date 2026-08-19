@@ -38,6 +38,11 @@ const REMOTE_CACHE_TTL_MS = 60_000;
 /** Per-worktree cache of the derived `hasRemote` flag, with an expiry stamp. */
 const remoteCache = new Map<string, { hasRemote: boolean; expiresAt: number }>();
 
+/** Drop a removed worktree's cache entries so they don't outlive the worktree. */
+export function evictGitCaches(worktreePath: string): void {
+  remoteCache.delete(worktreePath);
+}
+
 /** Map a porcelain status code (index or working-dir column) to our enum. */
 function mapCode(code: string): GitFileStatus | null {
   switch (code) {

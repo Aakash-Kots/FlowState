@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Check, Plus, RefreshCw, TriangleAlert, X } from 'lucide-react';
+import { Plus, X } from 'lucide-react';
 import {
   MAX_TERMINALS_PER_WORKSPACE,
   TerminalKind,
@@ -18,16 +18,11 @@ import {
 import { useProjects } from '@/lib/projects';
 import { useWorkspace } from '@/lib/workspace';
 import { trpc } from '@/lib/trpc';
+import type { ScriptCompletion } from '@/lib/types/terminal';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { ScriptSetupTab } from './ScriptSetupTab';
+import { ScriptTabBanner } from './ScriptTabBanner';
 import { WorkspaceTerminal } from './WorkspaceTerminal';
-
-///////////
-// Types //
-///////////
-
-/** A tracked script's latest completion. `seq` bumps on each (re-)run so re-runs are observable. */
-type ScriptCompletion = { exitCode: number; seq: number };
 
 /////////////
 // Helpers //
@@ -114,63 +109,6 @@ function NewTerminalButton({ disabled }: { disabled: boolean }) {
   );
 }
 
-/**
- * The Setup tab's completion banner: shows whether the Setup script finished or
- * failed, with a button to re-run it. Hidden until the script first completes;
- * while re-running it shows a spinner until the next completion arrives.
- */
-function SetupStatusBanner({
-  workspaceId,
-  completion,
-}: {
-  workspaceId: string | null;
-  completion: ScriptCompletion | null;
-}) {
-  const [rerunning, setRerunning] = useState(false);
-  // A fresh completion (seq changes) means the (re-)run finished.
-  useEffect(() => {
-    setRerunning(false);
-  }, [completion?.seq]);
-
-  const rerun = () => {
-    if (!workspaceId) return;
-    setRerunning(true);
-    void trpc().terminal.rerunSetup.mutate({ workspaceId });
-  };
-
-  if (rerunning) {
-    return (
-      <div className="flex items-center gap-2 border-b border-border bg-secondary px-3 py-1.5 text-xs text-muted-foreground">
-        <RefreshCw className="size-3 animate-spin" />
-        <span>Running setup script…</span>
-      </div>
-    );
-  }
-  if (!completion) return null;
-
-  const ok = completion.exitCode === 0;
-  return (
-    <div className="flex items-center gap-2 border-b border-border bg-secondary px-3 py-1.5 text-xs">
-      {ok ? (
-        <Check className="size-3 text-green-500" />
-      ) : (
-        <TriangleAlert className="size-3 text-destructive" />
-      )}
-      <span className="text-muted-foreground">
-        {ok ? 'Setup script finished' : `Setup script failed (exit ${completion.exitCode})`}
-      </span>
-      <button
-        type="button"
-        onClick={rerun}
-        className="ml-auto inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-      >
-        <RefreshCw className="size-3" />
-        Re-run setup script
-      </button>
-    </div>
-  );
-}
-
 /** The body for the active terminal tab: an inline script prompt or the live pty. */
 function TerminalBody({
   tab,
@@ -186,10 +124,18 @@ function TerminalBody({
   /** Setup-script completion — only passed for the Setup tab. */
   completion: ScriptCompletion | null;
 }) {
+  // Bumped by the banner's Restart/Stop: killing the pty completes the router's
+  // onData observable, and WorkspaceTerminal only re-subscribes when its key
+  // changes — without this the terminal would stay dead after a restart.
+  const [restarts, setRestarts] = useState(0);
+
+  const scriptKind =
+    tab.kind === TerminalKind.Setup || tab.kind === TerminalKind.Run ? tab.kind : null;
+
   // An unconfigured Setup/Run tab prompts for the project script and must never
   // spawn a pty — otherwise a plain shell would orphan itself under the tab id
   // and block the real command from running once it's set.
-  if ((tab.kind === TerminalKind.Setup || tab.kind === TerminalKind.Run) && !tab.command) {
+  if (scriptKind && !tab.command) {
     if (!project) {
       return (
         <div className="flex min-h-0 flex-1 items-center justify-center bg-secondary text-sm text-muted-foreground">
@@ -197,15 +143,22 @@ function TerminalBody({
         </div>
       );
     }
-    return <ScriptSetupTab project={project} kind={tab.kind} />;
+    return <ScriptSetupTab project={project} kind={scriptKind} />;
   }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {tab.kind === TerminalKind.Setup && (
-        <SetupStatusBanner workspaceId={workspaceId} completion={completion} />
+      {scriptKind && project && (
+        <ScriptTabBanner
+          project={project}
+          kind={scriptKind}
+          workspaceId={workspaceId}
+          completion={completion}
+          onRestart={() => setRestarts((n) => n + 1)}
+        />
       )}
       <div className="min-h-0 flex-1">
-        <WorkspaceTerminal key={tab.id} terminalId={tab.id} cwd={cwd} />
+        <WorkspaceTerminal key={`${tab.id}:${restarts}`} terminalId={tab.id} cwd={cwd} />
       </div>
     </div>
   );

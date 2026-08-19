@@ -47,6 +47,15 @@ type EmbeddingContext = Awaited<ReturnType<LlamaModel['createEmbeddingContext']>
 /** Event name the service emits a fresh `ModelStatus` snapshot on. */
 const STATUS_EVENT = 'status';
 
+/**
+ * Unload the model after this long without an `embed()` call. The weights +
+ * Metal buffers hold hundreds of MB that would otherwise stay resident until
+ * quit; the `.gguf` stays on disk, so the next search reloads without a
+ * re-download. Reindexes run `embed()` in a tight sequential loop, so the
+ * timer never fires mid-burst.
+ */
+const IDLE_UNLOAD_MS = 10 * 60_000;
+
 /////////////
 // Helpers //
 /////////////
@@ -124,6 +133,10 @@ export class LocalModelService extends EventEmitter {
   private readyPromise: Promise<void> | null = null;
   /** Serializes `getEmbeddingFor` calls — one embedding context, one at a time. */
   private queue: Promise<unknown> = Promise.resolve();
+  /** Arms after the last in-flight embed settles; fires `idleUnload`. */
+  private idleTimer: NodeJS.Timeout | null = null;
+  /** In-flight `embed()` calls — the idle timer never arms while any remain. */
+  private inFlight = 0;
 
   private status: ModelStatus = {
     state: LocalModelState.Absent,
@@ -165,13 +178,21 @@ export class LocalModelService extends EventEmitter {
    * failure the guard is cleared so a later call can retry.
    */
   ensureReady(): Promise<void> {
-    if (this.isReady()) return Promise.resolve();
-    this.readyPromise ??= this.load().catch((err) => {
-      this.readyPromise = null;
-      const message = err instanceof Error ? err.message : String(err);
-      this.setStatus({ state: LocalModelState.Error, downloadProgress: null, error: message });
-      throw err;
-    });
+    // A warm-up load must not race the idle unloader; re-arm so a warm-up with
+    // no embed after it still gets unloaded eventually.
+    this.clearIdleTimer();
+    if (this.isReady()) {
+      this.armIdleTimer();
+      return Promise.resolve();
+    }
+    this.readyPromise ??= this.load()
+      .then(() => this.armIdleTimer())
+      .catch((err) => {
+        this.readyPromise = null;
+        const message = err instanceof Error ? err.message : String(err);
+        this.setStatus({ state: LocalModelState.Error, downloadProgress: null, error: message });
+        throw err;
+      });
     return this.readyPromise;
   }
 
@@ -223,23 +244,47 @@ export class LocalModelService extends EventEmitter {
    * embedding context — but each call queues so callers never interleave.
    */
   async embed(texts: string[], role: EmbedRole): Promise<Float32Array[]> {
-    await this.ensureReady();
-    const context = this.context;
-    const dim = this.spec?.dim ?? LOCAL_MODELS[SEARCH_EMBEDDING_MODEL].nativeDim;
-    if (!context) throw new Error('Embedding context unavailable after load.');
+    this.clearIdleTimer();
+    this.inFlight += 1;
+    try {
+      await this.ensureReady();
+      const context = this.context;
+      const dim = this.spec?.dim ?? LOCAL_MODELS[SEARCH_EMBEDDING_MODEL].nativeDim;
+      if (!context) throw new Error('Embedding context unavailable after load.');
 
-    const run = async (): Promise<Float32Array[]> => {
-      const out: Float32Array[] = [];
-      for (const text of texts) {
-        const embedding = await context.getEmbeddingFor(withPrompt(text, role));
-        out.push(truncateNormalize(embedding.vector, dim));
-      }
-      return out;
-    };
-    const result = this.queue.then(run, run);
-    // Keep the chain alive but don't let a rejection poison the next caller.
-    this.queue = result.catch(() => undefined);
-    return result;
+      const run = async (): Promise<Float32Array[]> => {
+        const out: Float32Array[] = [];
+        for (const text of texts) {
+          const embedding = await context.getEmbeddingFor(withPrompt(text, role));
+          out.push(truncateNormalize(embedding.vector, dim));
+        }
+        return out;
+      };
+      const result = this.queue.then(run, run);
+      // Keep the chain alive but don't let a rejection poison the next caller.
+      this.queue = result.catch(() => undefined);
+      return await result;
+    } finally {
+      this.inFlight -= 1;
+      this.armIdleTimer();
+    }
+  }
+
+  private clearIdleTimer(): void {
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.idleTimer = null;
+  }
+
+  private armIdleTimer(): void {
+    if (this.inFlight > 0) return;
+    this.clearIdleTimer();
+    this.idleTimer = setTimeout(() => void this.idleUnload(), IDLE_UNLOAD_MS);
+  }
+
+  /** Free the weights after a quiet spell; bails if a load or embed raced in. */
+  private async idleUnload(): Promise<void> {
+    if (!this.isReady() || this.inFlight > 0) return;
+    await this.dispose();
   }
 
   /** On-disk size of the downloaded weights (all `.gguf` files in the cache). */
@@ -279,8 +324,9 @@ export class LocalModelService extends EventEmitter {
     await this.dispose();
   }
 
-  /** Dispose the loaded model/context (called on app quit). */
+  /** Dispose the loaded model/context (app quit, delete, reload, idle unload). */
   async dispose(): Promise<void> {
+    this.clearIdleTimer();
     try {
       await this.context?.dispose();
       await this.model?.dispose();

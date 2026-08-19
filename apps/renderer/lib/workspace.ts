@@ -11,6 +11,7 @@ import {
   type Tab,
 } from '@flowstate/shared';
 import { WorkspaceView } from './enums/view';
+import { disposeChatTab } from './chat';
 import { clearComposerDraft } from './composerDrafts';
 import { clearFileTabState } from './fileTabs';
 import { markTabRead, registerTab, unregisterTab, useTabStates } from './tabStates';
@@ -265,6 +266,7 @@ async function performCloseTab(tabId: string): Promise<void> {
   const { tabs, activeTabId } = useWorkspace.getState();
   await trpc().tabs.close.mutate({ tabId });
   unregisterTab(tabId);
+  disposeChatTab(tabId);
   clearFileTabState(tabId);
   clearComposerDraft(tabId);
   const remaining = tabs.filter((t) => t.id !== tabId);

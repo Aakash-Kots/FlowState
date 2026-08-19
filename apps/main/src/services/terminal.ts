@@ -180,9 +180,7 @@ export class TerminalService {
    * *inside* the interactive shell, so if the program exits the user drops back
    * to a normal prompt.
    */
-  spawn(
-    opts: SpawnOpts & { startupCommand?: string } = {},
-  ): { id: string } {
+  spawn(opts: SpawnOpts & { startupCommand?: string } = {}): { id: string } {
     const id = opts.id ?? randomUUID();
     // A persistent terminal that's already running just reattaches — never
     // double-spawn a pty (which would rerun its startup command) for one tab.
@@ -207,38 +205,6 @@ export class TerminalService {
   ): { id: string } {
     if (!this.sessions.has(id)) this.createSession(id, { ...opts, id });
     this.inject(id, command, { trackCompletion: opts.trackCompletion ?? false });
-    return { id };
-  }
-
-  /**
-   * Re-run `command` in an existing (idle, at-prompt) pty — the "Re-run setup
-   * script" action. Resets completion tracking and types the command again;
-   * `onComplete` fires afresh when it finishes. Falls back to a fresh
-   * spawn-and-inject if the pty is gone (e.g. after an app restart).
-   */
-  rerunScript(
-    id: string,
-    command: string,
-    opts: SpawnOpts & { trackCompletion?: boolean } = {},
-  ): { id: string } {
-    const session = this.sessions.get(id);
-    if (!session) {
-      // No live shell to type into — start one from scratch (its `injected`
-      // guard is fresh, so the command runs).
-      return this.runScript(id, command, opts);
-    }
-    const track = (opts.trackCompletion ?? false) && process.platform !== 'win32';
-    session.marker = track ? sentinelRegex(id) : null;
-    session.markerGlobal = track ? sentinelRegex(id, true) : null;
-    session.markerSource = track ? sentinelSource(id) : null;
-    session.trackedCommand = track ? command : null;
-    session.trackedStartedAt = track ? Date.now() : null;
-    session.filterCarry = '';
-    this.completions.delete(id);
-    const write = track ? `${command.trimEnd()}${session.markerSource}\r` : `${command}\r`;
-    // The shell is already at a prompt (the previous run finished), so no
-    // startup delay is needed — type it straight in.
-    session.pty.write(write);
     return { id };
   }
 
@@ -299,10 +265,11 @@ export class TerminalService {
     }
 
     // Give the login shell a beat to source its rc files and print its first
-    // prompt, then type the command as if the user did. Guarded so a fast
-    // unmount that kills the pty before it's ready doesn't write to a dead fd.
+    // prompt, then type the command as if the user did. Compare identity, not
+    // just presence: a restart within the delay kills this pty and puts a fresh
+    // session under the same id, and writing to the dead fd would throw.
     setTimeout(() => {
-      if (this.sessions.has(id)) session.pty.write(write);
+      if (this.sessions.get(id) === session) session.pty.write(write);
     }, STARTUP_DELAY_MS);
   }
 

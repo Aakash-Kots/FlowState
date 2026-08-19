@@ -75,6 +75,17 @@ export async function loadTerminals(workspaceId: string): Promise<void> {
   }
 }
 
+/**
+ * Ask main to (re-)evaluate the active workspace's auto-run scripts. Idempotent
+ * — a script already injected into a live pty is a no-op — so this is what makes
+ * a freshly saved command start now instead of on the next worktree switch.
+ */
+export async function startTerminalScripts(): Promise<void> {
+  const { workspaceId } = useTerminals.getState();
+  if (!workspaceId) return;
+  await trpc().terminal.startScripts.mutate({ workspaceId });
+}
+
 /** Re-fetch the active workspace's terminal tabs (e.g. after a script edit). */
 export async function refreshTerminals(): Promise<void> {
   const { workspaceId } = useTerminals.getState();
