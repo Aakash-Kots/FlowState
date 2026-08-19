@@ -23,6 +23,7 @@ import { claudeService } from './claude';
 import { evictGitCaches } from './git';
 import { evictGithubCaches } from './github';
 import { terminalService } from './terminal';
+import { forgetWorkspaceScripts } from './workspaceScripts';
 import { worktreeService } from './worktree';
 
 ///////////////
@@ -52,6 +53,7 @@ const MIN_RESCHEDULE_MS = 60 * 1000;
 export async function teardownWorkspace(ws: Workspace, force: boolean): Promise<void> {
   for (const tab of listTabs(ws.id)) claudeService.closeSession(tab.id);
   for (const term of listTerminalTabs(ws.id)) terminalService.kill(term.id);
+  forgetWorkspaceScripts(ws.id);
   await worktreeService.remove({ repoRoot: ws.repoRoot, worktreePath: ws.worktreePath, force });
   await claudeService.removeTranscriptDir(ws.worktreePath);
   deleteWorkspace(ws.id);

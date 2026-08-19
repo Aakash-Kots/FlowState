@@ -10,13 +10,14 @@ import {
   type LinearIssueRef,
   type PermissionMode,
   type Project,
+  type ProjectScriptKind,
   type Workspace,
   type WorktreeChange,
 } from '@flowstate/shared';
 import { toast } from '@/components/ui/sonner';
 import { disposeChatTab } from './chat';
 import { unregisterTab, useTabStates } from './tabStates';
-import { refreshTerminals } from './terminals';
+import { refreshTerminals, startTerminalScripts } from './terminals';
 import { trpc } from './trpc';
 import { selectWorkspace, setInitialising, useWorkspace } from './workspace';
 
@@ -412,18 +413,22 @@ export async function renameWorktree(workspace: Workspace, name: string): Promis
 }
 
 /**
- * Save a project's Setup/Run scripts (shared by all its worktrees) and refresh
- * the active worktree's terminals so the Setup/Run tabs pick up the new command.
+ * Patch one of a project's scripts — its command and/or its auto-run flag, both
+ * shared by every worktree of the project. Sends only what changed, then
+ * refreshes the active worktree's terminals so its tab picks the command up and
+ * asks main to start it (a no-op if it's already running).
  */
-export async function saveProjectScripts(
+export async function saveProjectScript(
   projectId: string,
-  scripts: { setupScript: string | null; runScript: string | null },
+  kind: ProjectScriptKind,
+  patch: { command?: string | null; enabled?: boolean },
 ): Promise<void> {
-  const project = await trpc().projects.setScripts.mutate({ projectId, ...scripts });
+  const project = await trpc().projects.setScript.mutate({ projectId, kind, ...patch });
   useProjects.setState((s) => ({
     projects: s.projects.map((p) => (p.id === projectId ? project : p)),
   }));
   await refreshTerminals();
+  await startTerminalScripts();
 }
 
 /**
