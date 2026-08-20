@@ -155,6 +155,13 @@
       "when": 1787174162162,
       "tag": "0021_pink_ender_wiggin",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "6",
+      "when": 1787266086052,
+      "tag": "0022_violet_hairball",
+      "breakpoints": true
     }
   ]
 }
