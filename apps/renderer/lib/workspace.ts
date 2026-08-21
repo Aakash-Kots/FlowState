@@ -11,6 +11,8 @@ import {
   type Tab,
 } from '@flowstate/shared';
 import { WorkspaceView } from './enums/view';
+import { disposeChatTab } from './chat';
+import { clearComposerDraft } from './composerDrafts';
 import { clearFileTabState } from './fileTabs';
 import { markTabRead, registerTab, unregisterTab, useTabStates } from './tabStates';
 import { trpc } from './trpc';
@@ -218,6 +220,10 @@ export async function openTab(): Promise<void> {
 export async function openFileTab(filePath: string): Promise<void> {
   const { workspaceId, tabs, viewMode } = useWorkspace.getState();
   if (viewMode !== WorkspaceView.Workspace) setViewMode(WorkspaceView.Workspace);
+  // Remember it for the ⌘P "Recent files" empty state (fire-and-forget).
+  if (workspaceId !== DEFAULT_WORKSPACE_ID) {
+    void trpc().files.recordRecent.mutate({ workspaceId, path: filePath });
+  }
   const existing = tabs.find((t) => t.kind === TabKind.File && t.filePath === filePath);
   if (existing) {
     selectTab(existing.id);
@@ -260,7 +266,9 @@ async function performCloseTab(tabId: string): Promise<void> {
   const { tabs, activeTabId } = useWorkspace.getState();
   await trpc().tabs.close.mutate({ tabId });
   unregisterTab(tabId);
+  disposeChatTab(tabId);
   clearFileTabState(tabId);
+  clearComposerDraft(tabId);
   const remaining = tabs.filter((t) => t.id !== tabId);
   const nextActive =
     activeTabId === tabId ? (remaining[remaining.length - 1]?.id ?? null) : activeTabId;

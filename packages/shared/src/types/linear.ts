@@ -121,6 +121,9 @@ export type LinkedWorktree = {
 /** Input to browse issues: optional team/text plus the command-center filters. */
 export type ListLinearIssuesInput = {
   teamId?: string;
+  /** Restrict to a set of teams (the surfaced-teams setting); ignored when
+   * `teamId` is set. Empty/undefined means every team the token can see. */
+  teamIds?: string[];
   query?: string;
   /** Include completed/canceled issues (excluded by default). */
   includeCompleted?: boolean;

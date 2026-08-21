@@ -7,14 +7,22 @@ import { CODE_THEMES } from '@/lib/constants/codeThemes';
 import {
   setCodeTheme,
   setFontSize,
+  setPreferSmallModel,
+  setSemanticSearchEnabled,
   setSettingsOpen,
   setSoundEnabled,
+  setVibrancyEnabled,
   useSettings,
 } from '@/lib/settings';
 import { cn } from '../ui/cn';
+import { Switch } from '../ui/Switch';
 import { ArchiveRetentionCard } from './ArchiveRetentionCard';
 import { CodeThemeCard } from './CodeThemeCard';
+import { GeminiApiKeyCard } from './GeminiApiKeyCard';
+import { LinearTeamsCard } from './LinearTeamsCard';
+import { McpServersCard } from './McpServersCard';
 import { Section, SettingRow } from './SettingsLayout';
+import { SmartSearchModelCard } from './SmartSearchModelCard';
 
 ///////////////
 // Constants //
@@ -65,38 +73,6 @@ function FontSizeControl({
   );
 }
 
-/** A pill toggle switch for a boolean setting. */
-function Toggle({
-  checked,
-  onChange,
-  label,
-}: {
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  label: string;
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      onClick={() => onChange(!checked)}
-      className={cn(
-        'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-ring/60',
-        checked ? 'bg-primary' : 'bg-muted',
-      )}
-    >
-      <span
-        className={cn(
-          'inline-block size-4 rounded-full bg-background shadow transition-transform',
-          checked ? 'translate-x-4' : 'translate-x-0.5',
-        )}
-      />
-    </button>
-  );
-}
-
 /////////////////
 // Settings page //
 /////////////////
@@ -110,6 +86,9 @@ export function SettingsPage() {
   const soundEnabled = useSettings((s) => s.soundEnabled);
   const codeTheme = useSettings((s) => s.codeTheme);
   const fontSize = useSettings((s) => s.fontSize);
+  const vibrancyEnabled = useSettings((s) => s.vibrancyEnabled);
+  const semanticSearchEnabled = useSettings((s) => s.semanticSearchEnabled);
+  const preferSmallModel = useSettings((s) => s.preferSmallModel);
 
   // Esc closes the page — a familiar exit for a modal-like full surface.
   useEffect(() => {
@@ -152,6 +131,17 @@ export function SettingsPage() {
               }
             />
             <SettingRow
+              title="Frosted sidebar"
+              description="Blur the desktop behind the sidebar. Looks nice, but keeps the GPU compositing continuously — leave it off if battery matters. Applies on next launch."
+              control={
+                <Switch
+                  checked={vibrancyEnabled}
+                  onChange={setVibrancyEnabled}
+                  label="Frosted sidebar"
+                />
+              }
+            />
+            <SettingRow
               stack
               title="Code theme"
               description="Syntax-highlighting palette for git diffs and chat code blocks."
@@ -175,12 +165,70 @@ export function SettingsPage() {
               title="Completion sound"
               description="Play a sound when an agent finishes a turn in a tab you're not watching."
               control={
-                <Toggle
+                <Switch
                   checked={soundEnabled}
                   onChange={setSoundEnabled}
                   label="Completion sound"
                 />
               }
+            />
+          </Section>
+
+          <Section title="Search">
+            <SettingRow
+              title="Natural-language search"
+              description="Describe a ticket in plain language and rank Linear results by meaning — computed on-device. When off, search stays literal (identifier + title)."
+              control={
+                <Switch
+                  checked={semanticSearchEnabled}
+                  onChange={setSemanticSearchEnabled}
+                  label="Natural-language search"
+                />
+              }
+            />
+            <SettingRow
+              title="Use smaller model"
+              description="Force the smaller Q4 model regardless of memory — about 80 MB less disk and lower memory use, with slightly lower recall."
+              control={
+                <Switch
+                  checked={preferSmallModel}
+                  onChange={setPreferSmallModel}
+                  label="Use smaller model"
+                />
+              }
+            />
+            <SettingRow
+              stack
+              title="On-device model"
+              description="The EmbeddingGemma weights are downloaded once and shared across every workspace. Delete to reclaim the space; it re-downloads next time you search."
+              control={<SmartSearchModelCard />}
+            />
+          </Section>
+
+          <Section title="Ask Gemini">
+            <SettingRow
+              stack
+              title="Gemini API key"
+              description="Double-tap Space anywhere to ask Google's Gemini and get a streamed answer inline — it can also search Linear, create tickets, and spin up worktrees. Your key also powers ticket wording refinement and the mic's speech-to-text. Enter your own Gemini API key to enable it."
+              control={<GeminiApiKeyCard />}
+            />
+          </Section>
+
+          <Section title="MCP servers">
+            <SettingRow
+              stack
+              title="Model Context Protocol servers"
+              description="Register MCP servers to give Claude extra tools (local commands or remote HTTP/SSE endpoints). They apply to every workspace's Claude session; run /mcp in a chat to see live connection status. Secrets in env vars and headers are encrypted with your OS keychain."
+              control={<McpServersCard />}
+            />
+          </Section>
+
+          <Section title="Linear">
+            <SettingRow
+              stack
+              title="Surfaced teams"
+              description="Choose which teams' issues appear across the app — the issue browser, team pickers, your assigned-work sections, and the on-device search index."
+              control={<LinearTeamsCard />}
             />
           </Section>
 

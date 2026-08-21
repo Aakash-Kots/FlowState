@@ -4,16 +4,20 @@ import { useEffect } from 'react';
 import { create } from 'zustand';
 import {
   DEFAULT_WORKSPACE_ID,
+  type ChatImageInput,
   type GithubRepo,
   type GithubViewer,
   type LinearIssueRef,
   type PermissionMode,
   type Project,
+  type ProjectScriptKind,
   type Workspace,
   type WorktreeChange,
 } from '@flowstate/shared';
 import { toast } from '@/components/ui/sonner';
-import { refreshTerminals } from './terminals';
+import { disposeChatTab } from './chat';
+import { unregisterTab, useTabStates } from './tabStates';
+import { refreshTerminals, startTerminalScripts } from './terminals';
 import { trpc } from './trpc';
 import { selectWorkspace, setInitialising, useWorkspace } from './workspace';
 
@@ -44,9 +48,10 @@ type ProjectsState = {
   createLinearSeed: LinearIssueRef | null;
   creating: boolean;
   createError: string | null;
-  /** The active project's local branches — base-ref choices in the modal. */
-  branches: string[];
-  branchesLoading: boolean;
+  /** Base-ref choices per project id — its local branches plus `origin`'s. */
+  branches: Record<string, string[]>;
+  /** Project ids with a branch load in flight — drives the picker's spinner. */
+  branchesLoading: Record<string, boolean>;
 };
 
 /////////////
@@ -56,6 +61,9 @@ type ProjectsState = {
 function message(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
+
+/** Monotonic per-project load id, so a superseded branch load can't clobber a newer one. */
+const branchReqs = new Map<string, number>();
 
 export const useProjects = create<ProjectsState>(() => ({
   projects: [],
@@ -72,8 +80,8 @@ export const useProjects = create<ProjectsState>(() => ({
   createLinearSeed: null,
   creating: false,
   createError: null,
-  branches: [],
-  branchesLoading: false,
+  branches: {},
+  branchesLoading: {},
 }));
 
 /** Load the persisted project list — and each project's worktrees — into the store. */
@@ -270,7 +278,6 @@ export function openCreateWorktree(projectId: string): void {
     createProjectId: projectId,
     createLinearSeed: null,
     createError: null,
-    branches: [],
   });
   void loadBranches(projectId);
 }
@@ -286,19 +293,41 @@ export function openCreateWorktreeForIssue(projectId: string, issue: LinearIssue
     createProjectId: projectId,
     createLinearSeed: issue,
     createError: null,
-    branches: [],
   });
   void loadBranches(projectId);
 }
 
-/** Load a project's local branches (the base-ref choices) into the store. */
+/**
+ * Load a project's base-ref choices, keyed by project id. Two phases so the
+ * picker never blocks on the network: the local refs paint immediately, then a
+ * `git fetch --prune origin` + re-read folds in branches pushed (or deleted)
+ * elsewhere. Awaited in order, so the fresher list always wins; a monotonic
+ * per-project token drops a superseded load's writes. Failures are non-fatal —
+ * the picker keeps whatever it had. Safe to call on every picker open: the main
+ * process dedupes the fetch.
+ */
 export async function loadBranches(projectId: string): Promise<void> {
-  useProjects.setState({ branchesLoading: true });
+  const req = (branchReqs.get(projectId) ?? 0) + 1;
+  branchReqs.set(projectId, req);
+  const current = () => branchReqs.get(projectId) === req;
+  const apply = (branches: string[]) => {
+    if (!current()) return;
+    useProjects.setState((s) => ({ branches: { ...s.branches, [projectId]: branches } }));
+  };
+  const setLoading = (loading: boolean) =>
+    useProjects.setState((s) => ({
+      branchesLoading: { ...s.branchesLoading, [projectId]: loading },
+    }));
+
+  setLoading(true);
   try {
-    const branches = await trpc().worktree.listBranches.query({ projectId });
-    useProjects.setState({ branches, branchesLoading: false });
+    apply(await trpc().worktree.listBranches.query({ projectId }));
+    apply(await trpc().worktree.listBranches.query({ projectId, refresh: true }));
   } catch {
-    useProjects.setState({ branchesLoading: false });
+    // Non-fatal: the picker keeps the branches it already had.
+  } finally {
+    // Guarded, so a superseded load can't clear a newer load's spinner.
+    if (current()) setLoading(false);
   }
 }
 
@@ -314,6 +343,7 @@ export function setCreateOpen(open: boolean): void {
 export async function createWorktree(input: {
   baseRef?: string;
   initialPrompt?: string;
+  initialImages?: ChatImageInput[];
   permissionMode?: PermissionMode;
   linearIssue?: LinearIssueRef | null;
   branch?: string;
@@ -326,6 +356,7 @@ export async function createWorktree(input: {
       projectId,
       baseRef: input.baseRef?.trim() || undefined,
       initialPrompt: input.initialPrompt?.trim() || undefined,
+      initialImages: input.initialImages?.length ? input.initialImages : undefined,
       permissionMode: input.permissionMode,
       linearIssue: input.linearIssue ?? undefined,
       branch: input.branch?.trim() || undefined,
@@ -382,18 +413,22 @@ export async function renameWorktree(workspace: Workspace, name: string): Promis
 }
 
 /**
- * Save a project's Setup/Run scripts (shared by all its worktrees) and refresh
- * the active worktree's terminals so the Setup/Run tabs pick up the new command.
+ * Patch one of a project's scripts — its command and/or its auto-run flag, both
+ * shared by every worktree of the project. Sends only what changed, then
+ * refreshes the active worktree's terminals so its tab picks the command up and
+ * asks main to start it (a no-op if it's already running).
  */
-export async function saveProjectScripts(
+export async function saveProjectScript(
   projectId: string,
-  scripts: { setupScript: string | null; runScript: string | null },
+  kind: ProjectScriptKind,
+  patch: { command?: string | null; enabled?: boolean },
 ): Promise<void> {
-  const project = await trpc().projects.setScripts.mutate({ projectId, ...scripts });
+  const project = await trpc().projects.setScript.mutate({ projectId, kind, ...patch });
   useProjects.setState((s) => ({
     projects: s.projects.map((p) => (p.id === projectId ? project : p)),
   }));
   await refreshTerminals();
+  await startTerminalScripts();
 }
 
 /**
@@ -453,6 +488,7 @@ export async function removeWorktree(workspace: Workspace, force = false): Promi
   if (wasActive) void selectWorkspace(DEFAULT_WORKSPACE_ID);
   try {
     await trpc().worktree.remove.mutate({ workspaceId: workspace.id, force });
+    evictWorkspaceTabs(workspace.id);
   } catch (err) {
     restore();
     if (!force && message(err).toLowerCase().includes('uncommitted')) {
@@ -477,8 +513,24 @@ export async function archiveWorktree(workspace: Workspace): Promise<void> {
   if (wasActive) void selectWorkspace(DEFAULT_WORKSPACE_ID);
   try {
     await trpc().worktree.archive.mutate({ workspaceId: workspace.id });
+    evictWorkspaceTabs(workspace.id);
   } catch (err) {
     restore();
     toast.error(`Couldn't archive ${workspace.branch}`, { description: message(err) });
+  }
+}
+
+/**
+ * Drop every tab binding of a removed/archived workspace: chat stores + IPC
+ * subscriptions (`disposeChatTab`) and the tab-state aggregates. Without this,
+ * a day of opening and tearing down worktrees accumulates orphaned stores that
+ * keep folding events forever.
+ */
+function evictWorkspaceTabs(workspaceId: string): void {
+  const { workspaceOf } = useTabStates.getState();
+  for (const tabId in workspaceOf) {
+    if (workspaceOf[tabId] !== workspaceId) continue;
+    disposeChatTab(tabId);
+    unregisterTab(tabId);
   }
 }

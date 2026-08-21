@@ -8,7 +8,6 @@ type OnboardingStatus = {
   claudeConnected: boolean;
   githubConnected: boolean;
   linearConnected: boolean;
-  spotifyConnected: boolean;
 };
 
 type OnboardingState = OnboardingStatus & {
@@ -21,7 +20,6 @@ export const useOnboarding = create<OnboardingState>((set) => ({
   claudeConnected: false,
   githubConnected: false,
   linearConnected: false,
-  spotifyConnected: false,
   hydrated: false,
   setStatus: (s) => set({ ...s, hydrated: true }),
 }));

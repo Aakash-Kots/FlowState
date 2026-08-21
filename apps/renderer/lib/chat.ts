@@ -9,18 +9,21 @@ import {
   ClaudeSessionState,
   CURATED_MODELS,
   ImageMediaType,
-  mergeModelOptions,
+  resolveModelOptions,
   PermissionBehavior,
   PermissionMode,
   ReasoningEffort,
+  type ChatBlock,
   type ChatEvent,
   type ChatImageInput,
   type ChatMessage,
+  type McpServerLiveStatus,
   type ModelOption,
   type PermissionRequest,
   type QuestionRequest,
   type SkillOption,
 } from '@flowstate/shared';
+import { TODO_WRITE_TOOL } from './constants/tools';
 import { ActivityIndicator } from './enums/chat';
 import { WorkspaceView } from './enums/view';
 import { playPing } from './notify';
@@ -34,6 +37,8 @@ import { useWorkspace } from './workspace';
 ///////////
 
 type ChatEntry = {
+  /** DB row id — the trim cursor; null for entries predating id plumbing. */
+  id: number | null;
   message: ChatMessage;
   createdAt: string;
 };
@@ -54,12 +59,18 @@ type ChatState = {
   permissionMode: PermissionMode;
   /** Models offered by the picker (loaded lazily from the main process). */
   availableModels: ModelOption[];
+  /** True while a live model fetch is in flight (the picker shows a spinner). */
+  modelsLoading: boolean;
   /** Skills the session can run — feeds the composer's `/` menu and the pin picker. */
   skills: SkillOption[];
   /** True once the session has reported its skills at least once (even if empty). */
   skillsLoaded: boolean;
   /** True while the first skills fetch is in flight (the session is booting up). */
   skillsLoading: boolean;
+  /** Whether the `/mcp` status panel is open for this tab (UI-only). */
+  mcpPanelOpen: boolean;
+  /** Live MCP server status for this tab's session (feeds the `/mcp` panel). */
+  mcpStatus: McpServerLiveStatus[];
   messages: ChatEntry[];
   /** DB row id of the oldest loaded message — the cursor for paging older history. */
   oldestId: number | null;
@@ -100,9 +111,12 @@ const INITIAL: ChatState = {
   // Seed with the curated models so the picker always shows them immediately,
   // even before (or independent of) the live SDK fetch.
   availableModels: CURATED_MODELS,
+  modelsLoading: false,
   skills: [],
   skillsLoaded: false,
   skillsLoading: false,
+  mcpPanelOpen: false,
+  mcpStatus: [],
   messages: [],
   oldestId: null,
   hasMoreBefore: false,
@@ -144,10 +158,12 @@ const CLEARED_PATCH: Partial<ChatState> = {
 /////////////
 
 // One store per tab, plus a guard so each tab binds to the main process exactly
-// once. Stores live for the app's lifetime so a backgrounded tab keeps its state
-// (and its subscription keeps feeding it) while its component is unmounted.
+// once. Stores live until the tab is actually closed (not merely backgrounded),
+// so a backgrounded tab keeps its state (and its subscription keeps feeding it)
+// while its component is unmounted; `disposeChatTab` is the explicit teardown.
 const stores = new Map<string, StoreApi<ChatState>>();
 const started = new Set<string>();
+const subscriptions = new Map<string, { unsubscribe: () => void }>();
 
 /** The (lazily-created) chat store for a tab. */
 function storeFor(tabId: string): StoreApi<ChatState> {
@@ -157,6 +173,20 @@ function storeFor(tabId: string): StoreApi<ChatState> {
     stores.set(tabId, store);
   }
   return store;
+}
+
+/**
+ * Tear down a closed tab's chat binding: kill the IPC subscription and drop the
+ * store + started guard so they don't accumulate RAM (and keep folding events)
+ * for the app's lifetime. Only for real closes — backgrounded tabs must keep
+ * their binding. Tab ids are never reused, so the deleted guard can't cause a
+ * double-subscribe later.
+ */
+export function disposeChatTab(tabId: string): void {
+  subscriptions.get(tabId)?.unsubscribe();
+  subscriptions.delete(tabId);
+  stores.delete(tabId);
+  started.delete(tabId);
 }
 
 function pushMessage(state: ChatState, entry: ChatEntry): Partial<ChatState> {
@@ -169,6 +199,57 @@ function pushMessage(state: ChatState, entry: ChatEntry): Partial<ChatState> {
     toolProgress: null,
     apiRetry: null,
   };
+}
+
+/**
+ * Renderer-side ceiling on retained tool-result text. The DB keeps full
+ * fidelity; this only bounds what the live store holds, since a session full
+ * of big file reads otherwise pins tens of MB of strings per tab. Comfortably
+ * above the render caps (4k/8k in the tool rows), so nothing visible changes —
+ * known cosmetic exception: `ReadToolRow`'s "Read N lines" label undercounts
+ * for results past the cap.
+ */
+const TOOL_RESULT_MAX_CHARS = 24_000;
+
+/** Truncate oversized tool-result blocks at store-insert; identity otherwise. */
+function slimEntry(entry: ChatEntry): ChatEntry {
+  const oversized = (b: ChatBlock): boolean =>
+    b.type === ChatBlockType.ToolResult && b.content.length > TOOL_RESULT_MAX_CHARS;
+  if (!entry.message.blocks.some(oversized)) return entry;
+  return {
+    ...entry,
+    message: {
+      ...entry.message,
+      blocks: entry.message.blocks.map((b) =>
+        oversized(b) && b.type === ChatBlockType.ToolResult
+          ? { ...b, content: `${b.content.slice(0, TOOL_RESULT_MAX_CHARS)}\n… (truncated)` }
+          : b,
+      ),
+    },
+  };
+}
+
+// Live-array cap: the transcript store grows all session (hydration pages are
+// bounded, live pushes aren't). Past the soft cap, an unwatched tab is trimmed
+// back at turn end — the head re-loads through the existing "Load earlier"
+// paging, cursored on the first retained entry's row id. A watched tab is left
+// alone (never yank scrollback mid-read) until the hard failsafe.
+const MAX_LIVE_MESSAGES = 400;
+const TRIM_KEEP = 300;
+const HARD_MAX_LIVE_MESSAGES = 600;
+
+/** Trim the live array at a turn boundary when it outgrew the caps. */
+function trimLiveMessages(state: ChatState, tabId: string): Partial<ChatState> {
+  const count = state.messages.length;
+  const overHard = count > HARD_MAX_LIVE_MESSAGES;
+  const overSoft = count > MAX_LIVE_MESSAGES && !isTabWatched(tabId);
+  if (!overHard && !overSoft) return {};
+  const kept = state.messages.slice(-TRIM_KEEP);
+  // Without a row id on the first retained entry there is no correct paging
+  // cursor — skip rather than orphan the older history.
+  const first = kept[0];
+  if (!first || first.id == null) return {};
+  return { messages: kept, oldestId: first.id, hasMoreBefore: true };
 }
 
 /** True when the user is actively watching `tabId`'s chat right now. */
@@ -211,6 +292,8 @@ function applyEvent(tabId: string, event: ChatEvent): void {
         model: event.model,
         cwd: event.cwd,
       });
+      // The session is live now, so the SDK can report the real model list.
+      loadSupportedModels(tabId);
       break;
     case ChatEventKind.TextDelta:
       set((s) => ({
@@ -235,7 +318,9 @@ function applyEvent(tabId: string, event: ChatEvent): void {
       break;
     }
     case ChatEventKind.Message:
-      set((s) => pushMessage(s, { message: event.message, createdAt: event.createdAt }));
+      set((s) =>
+        pushMessage(s, slimEntry({ id: event.id, message: event.message, createdAt: event.createdAt })),
+      );
       break;
     case ChatEventKind.State: {
       const prev = storeFor(tabId).getState().sessionState;
@@ -267,6 +352,11 @@ function applyEvent(tabId: string, event: ChatEvent): void {
           ? { pendingPermissions: [], pendingQuestions: [] }
           : {}),
       });
+      // Turn boundary — cap the live transcript array (RAM) while the user
+      // isn't looking at it; trimmed history re-pages via "Load earlier".
+      if (event.state === ClaudeSessionState.Idle || event.state === ClaudeSessionState.Error) {
+        set((s) => trimLiveMessages(s, tabId));
+      }
       maybePingOnFinish(tabId, prev, event.state);
       break;
     }
@@ -342,6 +432,10 @@ function applyEvent(tabId: string, event: ChatEvent): void {
       // the authoritative "skills are ready" signal (fires even for an empty set).
       set({ skills: event.skills, skillsLoaded: true, skillsLoading: false });
       break;
+    case ChatEventKind.McpStatusUpdated:
+      // The session pushed fresh MCP status — replace the panel's list.
+      set({ mcpStatus: event.servers });
+      break;
     case ChatEventKind.ToolProgress:
       set({
         toolProgress: { toolName: event.toolName, elapsedSeconds: event.elapsedSeconds },
@@ -387,6 +481,32 @@ export function useChat<T>(selector: (state: ChatState) => T): T {
 }
 
 /**
+ * The surrounding tab's raw store handle, for imperative `store.subscribe`
+ * side-effects (e.g. ChatView's auto-scroll) that must react to state changes
+ * without putting the component on the re-render path.
+ */
+export function useChatStoreApi(): StoreApi<ChatState> {
+  return storeFor(useTabId());
+}
+
+/**
+ * The most recent `TodoWrite` tool-use block in the transcript, or `null` if the
+ * session hasn't written a todo list. Scans newest-first and returns the block
+ * object itself — a stable reference (messages are immutable in the store) so it
+ * can be used directly as a `useChat` selector without churning re-renders.
+ */
+export function selectLatestTodoBlock(state: ChatState): ChatBlock | null {
+  for (let i = state.messages.length - 1; i >= 0; i--) {
+    const blocks = state.messages[i].message.blocks;
+    for (let j = blocks.length - 1; j >= 0; j--) {
+      const block = blocks[j];
+      if (block.type === ChatBlockType.ToolUse && block.name === TODO_WRITE_TOOL) return block;
+    }
+  }
+  return null;
+}
+
+/**
  * Bind a tab's chat store to the main process exactly once (same pattern as the
  * old singleton sync, now keyed per tab). Subscribes first and buffers events,
  * then seeds from the snapshot query, then replays the buffer — the message-id
@@ -401,7 +521,7 @@ export function useChatSync(tabId: string): void {
     let seeded = false;
     const buffer: ChatEvent[] = [];
 
-    trpc().claude.onEvent.subscribe(
+    const sub = trpc().claude.onEvent.subscribe(
       { tabId },
       {
         onData: (event) => {
@@ -411,6 +531,8 @@ export function useChatSync(tabId: string): void {
         onError: () => {},
       },
     );
+    // Held for `disposeChatTab` — the effect itself never unsubscribes (below).
+    subscriptions.set(tabId, sub);
 
     trpc()
       .claude.snapshot.query({ tabId })
@@ -423,7 +545,7 @@ export function useChatSync(tabId: string): void {
           model: snapshot.model,
           effort: snapshot.effort,
           permissionMode: snapshot.permissionMode,
-          messages: snapshot.messages,
+          messages: snapshot.messages.map(slimEntry),
           oldestId: snapshot.oldestId,
           hasMoreBefore: snapshot.hasMoreBefore,
           pendingPermissions: snapshot.pendingPermissions,
@@ -446,6 +568,24 @@ export function useChatSync(tabId: string): void {
     // also breaks under React StrictMode's dev double-mount — the first mount's
     // cleanup would kill the only subscription while the `started` guard stops
     // the second mount from re-subscribing.
+  }, [tabId]);
+}
+
+/**
+ * Tell main this tab is the mounted one for as long as it is. Because the
+ * `onEvent` bindings above are app-lifetime, main can't infer visibility from
+ * subscriptions — without this it would ship 30 Hz streaming text for every
+ * running session, not just the one on screen. Only `TextDelta` is affected:
+ * state changes, tool events, and permission prompts keep flowing to every tab.
+ */
+export function useActiveChatTab(tabId: string): void {
+  useEffect(() => {
+    void trpc().claude.setActiveTab.mutate({ tabId });
+    return () => {
+      // `releasing` so a cleanup that lands after the next tab's mount can't
+      // clear the slot out from under it.
+      void trpc().claude.setActiveTab.mutate({ tabId: null, releasing: tabId });
+    };
   }, [tabId]);
 }
 
@@ -510,7 +650,7 @@ export async function loadOlderMessages(tabId: string): Promise<void> {
     const page = await trpc().claude.olderMessages.query({ tabId, beforeId: oldestId });
     store.setState((s) => {
       const seen = new Set(s.messages.map((m) => m.message.id));
-      const older = page.messages.filter((e) => !seen.has(e.message.id));
+      const older = page.messages.filter((e) => !seen.has(e.message.id)).map(slimEntry);
       return {
         messages: [...older, ...s.messages],
         // Advance the cursor to the page's oldest raw row; keep it if the page
@@ -606,15 +746,20 @@ export function answerQuestion(
 }
 
 /**
- * Load the model list for a tab's picker. Merges the live result onto the
- * curated base so the picker never shrinks below the curated models even if the
- * SDK reports a narrow set (or the request fails).
+ * Load the model list for a tab's picker from the SDK — the live set the plan
+ * actually grants. Falls back to the curated base only when the SDK reports
+ * nothing (session still booting, offline, or the request fails).
  */
 export function loadSupportedModels(tabId: string): void {
+  const store = storeFor(tabId);
+  if (store.getState().modelsLoading) return;
+  store.setState({ modelsLoading: true });
   void trpc()
     .claude.supportedModels.query({ tabId })
-    .then((models) => storeFor(tabId).setState({ availableModels: mergeModelOptions(models) }))
-    .catch(() => {});
+    .then((models) =>
+      store.setState({ availableModels: resolveModelOptions(models), modelsLoading: false }),
+    )
+    .catch(() => store.setState({ modelsLoading: false }));
 }
 
 /**
@@ -644,6 +789,27 @@ export function loadSupportedSkills(tabId: string): void {
       clearTimeout(timeout);
       store.setState({ skillsLoading: false });
     });
+}
+
+// MCP panel (the composer's `/mcp` command) —————————————————————————————————
+
+/** Fetch live MCP server status for a tab and fold it into the store. */
+export function loadMcpStatus(tabId: string): void {
+  void trpc()
+    .claude.mcpStatus.query({ tabId })
+    .then((servers) => storeFor(tabId).setState({ mcpStatus: servers }))
+    .catch(() => {});
+}
+
+/** Open the `/mcp` status panel for a tab and refresh its server status. */
+export function openMcpPanel(tabId: string): void {
+  storeFor(tabId).setState({ mcpPanelOpen: true });
+  loadMcpStatus(tabId);
+}
+
+/** Close the `/mcp` status panel for a tab. */
+export function closeMcpPanel(tabId: string): void {
+  storeFor(tabId).setState({ mcpPanelOpen: false });
 }
 
 /** Change a tab's model (optimistic: store updates, main confirms via Config). */

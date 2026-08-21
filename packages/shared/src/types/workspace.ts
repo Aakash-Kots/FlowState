@@ -4,6 +4,7 @@
  * `../schemas/workspace`.
  */
 import type { ClaudeSessionState, PermissionMode } from '../enums/claude';
+import type { ChatImageInput } from './claude';
 import type { LinearIssueRef } from './linear';
 
 /**
@@ -78,6 +79,12 @@ export type CreateWorktreeInput = {
   projectId: string;
   baseRef?: string;
   initialPrompt?: string;
+  /** Images attached to the first prompt, carried into the seed Claude message. */
+  initialImages?: ChatImageInput[];
   /** Permission mode the first session starts in (e.g. Plan). Defaults to Default. */
   permissionMode?: PermissionMode;
+  /** Linear issue to link to the new worktree (optional). */
+  linearIssue?: LinearIssueRef | null;
+  /** Explicit branch name (e.g. from the linked issue), overriding the random one. */
+  branch?: string;
 };

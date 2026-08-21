@@ -25,9 +25,11 @@ import { randomUUID } from 'node:crypto';
 import { readdir, rm } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { app } from 'electron';
+import { app, shell } from 'electron';
 import type {
   CanUseTool,
+  McpServerConfig as SdkMcpServerConfig,
+  McpServerStatus,
   ModelInfo,
   PermissionMode as SdkPermissionMode,
   PermissionResult,
@@ -46,12 +48,14 @@ import {
   DEFAULT_EFFORT,
   DEFAULT_MODEL,
   DEFAULT_TAB_TITLE,
+  McpConnectionStatus,
+  McpTransport,
   PermissionBehavior,
   PermissionMode,
   ReasoningEffort,
   UNTITLED_WORKSPACE_NAME,
   chatMessageSchema,
-  mergeModelOptions,
+  resolveModelOptions,
   type ChatBlock,
   type ChatEvent,
   type ChatHistoryPage,
@@ -59,6 +63,8 @@ import {
   type ChatMessage,
   type ChatSnapshot,
   type ChatSnapshotEntry,
+  type McpServerConfig,
+  type McpServerLiveStatus,
   type ModelOption,
   type PermissionRequest,
   type QuestionItem,
@@ -87,8 +93,10 @@ import {
   type TabChatPage,
 } from '../store';
 import { SdkSystemSubtype } from '../lib/enums/claude';
+import { getMcpServers } from '../store/mcp';
 import { authService } from './auth';
 import { GitService } from './git';
+import { windowStateService } from './windowState';
 import { renameWorktree } from './worktreeEvents';
 
 ///////////
@@ -121,6 +129,27 @@ type RawBlock = {
   is_error?: boolean;
 };
 
+/**
+ * MCP OAuth method the SDK exposes on its query object at runtime but does not
+ * surface in its public `Query` type. `mcpAuthenticate` begins the OAuth flow:
+ * the CLI stands up a local callback server (on `callbackPort`) and returns the
+ * provider's `authUrl` for the *consumer* to open — it does NOT open the browser
+ * itself. Once the browser redirects back to the callback server, the CLI
+ * exchanges the code and stores the token. Distinct from `reconnectMcpServer`,
+ * which only re-dials the transport and never starts OAuth.
+ */
+type McpAuthQuery = {
+  mcpAuthenticate: (serverName: string, redirectUri?: string) => Promise<McpAuthResult>;
+};
+
+/** Shape returned by `mcpAuthenticate` (not in the SDK's public types). */
+type McpAuthResult = {
+  authUrl?: string;
+  requiresUserAction?: boolean;
+  callbackExpected?: boolean;
+  callbackPort?: number;
+};
+
 ///////////////
 // Constants //
 ///////////////
@@ -139,6 +168,20 @@ const HISTORY_PAGE_SIZE = 100;
 
 /** Coalesce streamed `text_delta` tokens into one IPC emit per this window (ms). */
 const TEXT_FLUSH_MS = 33;
+/**
+ * Streaming tail retained for a session whose tab isn't mounted, so switching to
+ * it mid-turn can paint a preview immediately. Bounded because with many
+ * concurrent workflows these buffers would otherwise grow for a whole turn each.
+ */
+const HIDDEN_TEXT_BUFFER_MAX = 64 * 1024;
+
+/**
+ * After opening an MCP OAuth page, poll the server's status this often / for this
+ * long so the `/mcp` panel flips needs-auth → connected once the user finishes
+ * the browser login (the CLI completes the token exchange out-of-band).
+ */
+const MCP_AUTH_POLL_INTERVAL_MS = 2_000;
+const MCP_AUTH_POLL_TIMEOUT_MS = 180_000;
 
 /**
  * Signatures of a crash where the SDK's native `claude` runtime never launched
@@ -165,6 +208,18 @@ const ASSISTANT_ERROR_TEXT: Record<string, string> = {
  */
 const USAGE_POLL_EVERY_TURNS = 5;
 
+/**
+ * Tear down a session's forked `claude` runtime (~100-200MB each) after this
+ * long with no activity. Safe: the transcript lives in SQLite and the resume id
+ * on the tab row, so the next send() transparently re-opens with full context —
+ * the same dispose-now/resume-later mechanic `setEffort` already uses. Sessions
+ * mid-turn or parked on a permission/question prompt are never reaped.
+ */
+const IDLE_SESSION_TIMEOUT_MS = 10 * 60_000;
+
+/** How often the idle sweeper checks; runs only while sessions exist. */
+const IDLE_SWEEP_INTERVAL_MS = 60_000;
+
 /** Cheap model + limits for the one-shot auto-title summarizer. */
 const TITLE_MODEL = 'claude-haiku-4-5';
 const TITLE_TIMEOUT_MS = 20_000;
@@ -189,10 +244,13 @@ function loadSdk(): Promise<SdkModule> {
  * Absolute path to the native `claude` runtime the SDK forks, or undefined to let
  * the SDK resolve it from node_modules (dev). In a packaged app the SDK can't
  * resolve its per-platform binary out of Bun's symlink store, so we ship it as an
- * extraResource (`Resources/claude-code/claude`) and point the SDK straight at it.
+ * extraResource (`Resources/claude-code/claude[.exe]`) and point the SDK straight
+ * at it. The binary carries a `.exe` suffix on Windows (see electron-builder.yml).
  */
 function claudeExecutable(): string | undefined {
-  return app.isPackaged ? join(process.resourcesPath, 'claude-code', 'claude') : undefined;
+  if (!app.isPackaged) return undefined;
+  const bin = process.platform === 'win32' ? 'claude.exe' : 'claude';
+  return join(process.resourcesPath, 'claude-code', bin);
 }
 
 /**
@@ -381,6 +439,40 @@ function toSkillOption(cmd: SlashCommand): SkillOption {
 }
 
 /**
+ * Map FlowState's stored MCP server list to the SDK's `mcpServers` option,
+ * keyed by name. Disabled servers are dropped, as are configs missing their
+ * transport's required field (belt-and-braces — the schema already enforces it).
+ */
+function toSdkMcpServers(list: McpServerConfig[]): Record<string, SdkMcpServerConfig> {
+  const out: Record<string, SdkMcpServerConfig> = {};
+  for (const s of list) {
+    if (!s.enabled) continue;
+    if (s.transport === McpTransport.Stdio) {
+      if (!s.command) continue;
+      out[s.name] = { type: 'stdio', command: s.command, args: s.args, env: s.env };
+    } else if (s.transport === McpTransport.Http) {
+      if (!s.url) continue;
+      out[s.name] = { type: 'http', url: s.url, headers: s.headers };
+    } else {
+      if (!s.url) continue;
+      out[s.name] = { type: 'sse', url: s.url, headers: s.headers };
+    }
+  }
+  return out;
+}
+
+/** Map the SDK's per-server status to our renderer-facing `McpServerLiveStatus`. */
+function toMcpLiveStatus(s: McpServerStatus): McpServerLiveStatus {
+  return {
+    name: s.name,
+    // The enum's values are byte-identical to the SDK's status strings.
+    status: s.status as McpConnectionStatus,
+    tools: (s.tools ?? []).map((t) => t.name),
+    ...(s.error ? { error: s.error } : {}),
+  };
+}
+
+/**
  * Normalize an `AskUserQuestion` tool input into our `QuestionItem[]`. Defensive
  * because the SDK input is untyped here; malformed questions are skipped.
  */
@@ -475,6 +567,8 @@ class ClaudeSession {
   skills: SkillOption[] = [];
   /** Set while an interrupt is in flight so error results read as a clean stop. */
   interrupted = false;
+  /** Last user/SDK activity — the idle sweeper reaps sessions quiet past the timeout. */
+  lastActivityAt = Date.now();
   /** Guards one-shot auto-titling so it runs at most once per tab session. */
   titled = false;
   /**
@@ -516,6 +610,25 @@ export class ClaudeService {
   private turnsSinceUsagePoll = 0;
   /** Guards the one-shot background session booted purely to fetch usage. */
   private usageBootStarted = false;
+  /** Reaps idle sessions; running only while the sessions map is non-empty. */
+  private idleSweeper: NodeJS.Timeout | null = null;
+  /**
+   * The one chat tab the renderer currently has mounted, or null when none is
+   * (a file tab, settings, analytics). Only this tab's streaming text is worth
+   * shipping over IPC — see `isStreamingVisible`.
+   */
+  private activeTabId: string | null = null;
+
+  constructor() {
+    // Coming back from hidden/asleep, paint the visible tab's retained tail at
+    // once — while the window was down its deltas were suppressed, so without
+    // this the bubble would sit stale until the turn ends.
+    windowStateService.onChange((isActive) => {
+      if (!isActive || !this.activeTabId) return;
+      const session = this.sessions.get(this.activeTabId);
+      if (session) this.flushText(session);
+    });
+  }
 
   /**
    * Reset stuck states on startup: no sessions run at boot, so a tab persisted
@@ -578,6 +691,7 @@ export class ClaudeService {
     }
 
     const session = this.ensureSession(tab, cwd);
+    session.lastActivityAt = Date.now();
     const trimmed = text.trim();
     const imageList = images ?? [];
     // Persisted/rendered form: image blocks first (they lead the bubble), then
@@ -622,6 +736,7 @@ export class ClaudeService {
   async interrupt(tabId: string): Promise<void> {
     const session = this.sessions.get(tabId);
     if (!session) return;
+    session.lastActivityAt = Date.now();
     session.interrupted = true;
     // A pending permission prompt blocks the agent — deny it so the interrupt lands.
     this.resolveAllPermissions(session, {
@@ -685,6 +800,7 @@ export class ClaudeService {
     const session = this.sessions.get(tabId);
     const pending = session?.pendingPermissions.get(requestId);
     if (!session || !pending) return;
+    session.lastActivityAt = Date.now();
     session.pendingPermissions.delete(requestId);
     pending.resolve(
       behavior === PermissionBehavior.Allow
@@ -703,6 +819,7 @@ export class ClaudeService {
     const session = this.sessions.get(tabId);
     const pending = session?.pendingQuestions.get(requestId);
     if (!session || !pending) return;
+    session.lastActivityAt = Date.now();
     session.pendingQuestions.delete(requestId);
     pending.resolve(this.buildQuestionAnswer(pending.request, answers));
     this.emit(tabId, { kind: ChatEventKind.QuestionResolved, id: requestId });
@@ -710,17 +827,39 @@ export class ClaudeService {
   }
 
   /**
-   * Models offered to a tab's picker: the curated set always shown, plus any
-   * extra models the live SDK reports for this session (deduped by value).
+   * Models offered to a tab's picker: the live list the SDK reports for this
+   * session (what the plan actually grants), falling back to the curated set only
+   * when the SDK reports nothing. Boots a no-prompt session when none exists (like
+   * `getSupportedSkills`) so the real list is available before the first message.
    */
   async getSupportedModels(tabId: string): Promise<ModelOption[]> {
-    const session = this.sessions.get(tabId);
+    let session = this.sessions.get(tabId);
+    if (session) session.lastActivityAt = Date.now();
+    if (!session) {
+      // The model list is account-global — answer from any live session's
+      // control channel rather than forking another runtime just because this
+      // tab hasn't chatted yet.
+      const shared = this.anyLiveQuery();
+      if (shared) {
+        try {
+          const infos = await shared.supportedModels();
+          return resolveModelOptions((infos ?? []).map(toModelOption));
+        } catch (err) {
+          console.warn('[claude] supportedModels failed', err);
+          return resolveModelOptions([]);
+        }
+      }
+      const tab = getTab(tabId);
+      const cwd = tab ? this.getCwd(tab.workspaceId) : null;
+      if (!tab || !cwd || !authService.status().claudeConnected) return resolveModelOptions([]);
+      session = this.ensureSession(tab, cwd);
+    }
     try {
-      const infos = await session?.query?.supportedModels();
-      return mergeModelOptions((infos ?? []).map(toModelOption));
+      const infos = await session.query?.supportedModels();
+      return resolveModelOptions((infos ?? []).map(toModelOption));
     } catch (err) {
       console.warn('[claude] supportedModels failed', err);
-      return mergeModelOptions([]);
+      return resolveModelOptions([]);
     }
   }
 
@@ -732,6 +871,7 @@ export class ClaudeService {
    */
   async getSupportedSkills(tabId: string): Promise<SkillOption[]> {
     let session = this.sessions.get(tabId);
+    if (session) session.lastActivityAt = Date.now();
     // Boot the session (no prompt) so skills can be discovered before the first
     // message — the SDK initializes, then `commands_changed`/init populate the
     // cache and the renderer gets a live SkillsUpdated event. Only worthwhile
@@ -765,6 +905,136 @@ export class ClaudeService {
   async refreshSkillsForTab(tabId: string): Promise<void> {
     const session = this.sessions.get(tabId);
     if (session) await this.refreshSkills(session);
+  }
+
+  /**
+   * Re-read the user's MCP server config and apply it live to every active
+   * session (the SDK supports swapping servers on a running session, like
+   * `setModel`). New sessions pick up the change on their next launch via
+   * `run()`'s options, so this only needs to touch the ones already running.
+   * Called by the mcp router after any add/edit/remove/toggle.
+   */
+  async notifyMcpServersChanged(): Promise<void> {
+    const servers = toSdkMcpServers(getMcpServers());
+    for (const session of this.sessions.values()) {
+      try {
+        await session.query?.setMcpServers(servers);
+        await this.emitMcpStatus(session);
+      } catch (err) {
+        console.warn('[claude] setMcpServers failed', err);
+      }
+    }
+  }
+
+  /**
+   * Live MCP server status for a tab's session — boots a no-prompt session if
+   * one isn't up yet (like `getSupportedSkills`) so the `/mcp` panel has data
+   * before the first message. Empty until the tab has a folder and Claude is
+   * connected.
+   */
+  async getMcpStatus(tabId: string): Promise<McpServerLiveStatus[]> {
+    let session = this.sessions.get(tabId);
+    if (session) session.lastActivityAt = Date.now();
+    if (!session) {
+      const tab = getTab(tabId);
+      const cwd = tab ? this.getCwd(tab.workspaceId) : null;
+      if (!tab || !cwd || !authService.status().claudeConnected) return [];
+      session = this.ensureSession(tab, cwd);
+    }
+    try {
+      const statuses = (await session.query?.mcpServerStatus()) ?? [];
+      return statuses.map(toMcpLiveStatus);
+    } catch (err) {
+      console.warn('[claude] mcpServerStatus failed', err);
+      return [];
+    }
+  }
+
+  /**
+   * Reconnect a single MCP server on a tab's live session — re-dials the
+   * transport for a failed/disconnected server. No-op when the tab has no
+   * session yet. (For `needs-auth` servers use `authenticateMcpServer`;
+   * reconnect alone does not run the OAuth flow.)
+   */
+  async reconnectMcpServer(tabId: string, name: string): Promise<void> {
+    const session = this.sessions.get(tabId);
+    if (!session?.query) return;
+    try {
+      await session.query.reconnectMcpServer(name);
+      await this.emitMcpStatus(session);
+    } catch (err) {
+      console.warn('[claude] reconnectMcpServer failed', err);
+    }
+  }
+
+  /**
+   * Start the OAuth flow for a `needs-auth` MCP server. Asks the SDK/CLI's
+   * `mcp_authenticate` control request for the provider `authUrl` (the CLI also
+   * stands up a local callback server keyed to it), opens that URL in the user's
+   * browser, and then polls status so the panel flips to connected once the CLI
+   * completes the token exchange out-of-band. The method isn't in the SDK's
+   * public `Query` type, so we reach it through the `McpAuthQuery` shim. No-op
+   * when the tab has no session yet.
+   */
+  async authenticateMcpServer(tabId: string, name: string): Promise<void> {
+    const session = this.sessions.get(tabId);
+    if (!session?.query) return;
+    try {
+      const result = await (session.query as unknown as McpAuthQuery).mcpAuthenticate(name);
+      if (result?.authUrl) {
+        // The CLI hands back the URL for us to open (it does not open a browser
+        // itself); its local callback server finishes auth on the redirect.
+        await shell.openExternal(result.authUrl);
+        void this.pollMcpAuthCompletion(session, name);
+      }
+    } catch (err) {
+      console.warn('[claude] mcpAuthenticate failed', err);
+    }
+    // Reflect the immediate state (still needs-auth until the browser flow
+    // completes; the poll below broadcasts the flip to connected).
+    await this.emitMcpStatus(session);
+  }
+
+  /**
+   * After an OAuth browser page is opened, poll the session's MCP status until
+   * the target server leaves `needs-auth` (connected/failed) or we time out,
+   * broadcasting each snapshot so an open `/mcp` panel updates live without the
+   * user having to reconnect manually.
+   */
+  private async pollMcpAuthCompletion(session: ClaudeSession, name: string): Promise<void> {
+    const deadline = Date.now() + MCP_AUTH_POLL_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, MCP_AUTH_POLL_INTERVAL_MS));
+      if (this.sessions.get(session.tabId) !== session) return; // torn down/replaced
+      let statuses: McpServerStatus[];
+      try {
+        statuses = (await session.query?.mcpServerStatus()) ?? [];
+      } catch {
+        continue;
+      }
+      this.emit(session.tabId, {
+        kind: ChatEventKind.McpStatusUpdated,
+        servers: statuses.map(toMcpLiveStatus),
+      });
+      const target = statuses.find((s) => s.name === name);
+      // The SDK's status strings are byte-identical to our enum values.
+      if (target && (target.status as McpConnectionStatus) !== McpConnectionStatus.NeedsAuth) {
+        return;
+      }
+    }
+  }
+
+  /** Fetch a session's MCP status and broadcast it as a McpStatusUpdated event. */
+  private async emitMcpStatus(session: ClaudeSession): Promise<void> {
+    try {
+      const statuses = (await session.query?.mcpServerStatus()) ?? [];
+      this.emit(session.tabId, {
+        kind: ChatEventKind.McpStatusUpdated,
+        servers: statuses.map(toMcpLiveStatus),
+      });
+    } catch (err) {
+      console.warn('[claude] mcpServerStatus failed', err);
+    }
   }
 
   /** Set a tab's model. Persists it and applies it live if a session exists. */
@@ -996,7 +1266,8 @@ export class ClaudeService {
     const messages: ChatSnapshotEntry[] = [];
     for (const row of page.rows) {
       const parsed = chatMessageSchema.safeParse(row.content);
-      if (parsed.success) messages.push({ message: parsed.data, createdAt: row.createdAt });
+      if (parsed.success)
+        messages.push({ id: row.id, message: parsed.data, createdAt: row.createdAt });
     }
     return { messages, oldestId: page.rows[0]?.id ?? null };
   }
@@ -1065,6 +1336,7 @@ export class ClaudeService {
     session.effort = tab.effort;
     session.permissionMode = tab.permissionMode;
     this.sessions.set(tab.id, session);
+    this.startIdleSweeper();
     void this.run(session, tab.claudeSessionId);
     return session;
   }
@@ -1081,6 +1353,39 @@ export class ClaudeService {
     });
     session.queue.end();
     session.abort.abort();
+    this.stopIdleSweeperIfEmpty();
+  }
+
+  private startIdleSweeper(): void {
+    if (this.idleSweeper) return;
+    this.idleSweeper = setInterval(() => this.sweepIdleSessions(), IDLE_SWEEP_INTERVAL_MS);
+  }
+
+  private stopIdleSweeperIfEmpty(): void {
+    if (this.sessions.size > 0 || !this.idleSweeper) return;
+    clearInterval(this.idleSweeper);
+    this.idleSweeper = null;
+  }
+
+  /**
+   * Reap sessions idle past `IDLE_SESSION_TIMEOUT_MS`. Guarded twice against
+   * live work: the persisted tab state must be Idle (never Running/Waiting) AND
+   * the in-memory session must have no pending prompts and no turn in flight —
+   * a tab parked on a permission prompt survives indefinitely. Reaping emits no
+   * state change (the tab is already Idle); the renderer's subscription stays
+   * valid and the next send() re-opens the session with `resume`.
+   */
+  private sweepIdleSessions(): void {
+    const now = Date.now();
+    for (const [tabId, session] of this.sessions) {
+      if (now - session.lastActivityAt < IDLE_SESSION_TIMEOUT_MS) continue;
+      if (session.pendingPermissions.size > 0 || session.pendingQuestions.size > 0) continue;
+      if (session.turnBaseline !== null) continue;
+      const state = getTab(tabId)?.claudeState ?? ClaudeSessionState.Idle;
+      if (state !== ClaudeSessionState.Idle) continue;
+      this.disposeSession(tabId);
+    }
+    this.stopIdleSweeperIfEmpty();
   }
 
   private async run(session: ClaudeSession, resumeSessionId: string | null): Promise<void> {
@@ -1105,6 +1410,24 @@ export class ClaudeService {
           // skill available to invoke from the composer's `/` menu.
           settingSources: ['user', 'project'],
           skills: 'all',
+          // User-registered MCP servers (managed in Settings). Additive to any
+          // project `.mcp.json` the setting sources already discover; their tools
+          // flow through the same `canUseTool` runtime gate as everything else.
+          mcpServers: toSdkMcpServers(getMcpServers()),
+          // Interactive MCP auth: the SDK asks us to handle elicitation
+          // requests, and without this callback it auto-declines them — which
+          // is why the `/mcp` panel's "Authenticate" button appeared to do
+          // nothing. URL mode = OAuth: open the login page in the system
+          // browser and accept; the SDK finishes the handshake (correlated via
+          // elicitationId) and emits `elicitation_complete`, which we handle
+          // below to refresh the panel. Form mode has no UI yet — decline.
+          onElicitation: async (request) => {
+            if (request.mode === 'url' && request.url) {
+              void shell.openExternal(request.url);
+              return { action: 'accept' };
+            }
+            return { action: 'decline' };
+          },
           abortController: session.abort,
           stderr: (data) => console.warn('[claude:stderr]', data),
         },
@@ -1136,6 +1459,7 @@ export class ClaudeService {
       }
       // Drop the broken session; the next send() starts fresh and resumes.
       this.sessions.delete(tabId);
+      this.stopIdleSweeperIfEmpty();
       this.resolveAllPermissions(session, {
         behavior: 'deny',
         message: 'The session ended.',
@@ -1146,6 +1470,7 @@ export class ClaudeService {
   }
 
   private async handleSdkMessage(session: ClaudeSession, message: SDKMessage): Promise<void> {
+    session.lastActivityAt = Date.now();
     const { tabId } = session;
     switch (message.type) {
       case 'system': {
@@ -1162,6 +1487,8 @@ export class ClaudeService {
           });
           // Populate the usage widget as soon as a session opens (before turn 5).
           void this.pollUsageLimits();
+          // Push MCP server status so an open `/mcp` panel reflects this session.
+          void this.emitMcpStatus(session);
         } else if (message.subtype === SdkSystemSubtype.CommandsChanged) {
           // The SDK discovered/dropped skills mid-session — replace the cache.
           session.skills = (message.commands as SlashCommand[]).map(toSkillOption);
@@ -1180,6 +1507,10 @@ export class ClaudeService {
             attempt: message.attempt,
             maxRetries: message.max_retries,
           });
+        } else if (message.subtype === SdkSystemSubtype.ElicitationComplete) {
+          // An MCP auth flow just finished — refresh the `/mcp` panel so the
+          // server flips needs-auth → connected without a manual reconnect.
+          void this.emitMcpStatus(session);
         }
         break;
       }
@@ -1499,12 +1830,12 @@ export class ClaudeService {
 
   private persistAndEmit(session: ClaudeSession, message: ChatMessage): void {
     const createdAt = new Date().toISOString();
-    appendMessage(session.tabId, session.workspaceId, session.sessionId ?? 'pending', {
+    const id = appendMessage(session.tabId, session.workspaceId, session.sessionId ?? 'pending', {
       role: message.role,
       content: message,
       createdAt,
     });
-    this.emit(session.tabId, { kind: ChatEventKind.Message, message, createdAt });
+    this.emit(session.tabId, { kind: ChatEventKind.Message, id, message, createdAt });
   }
 
   private setState(tabId: string, state: ClaudeSessionState): void {
@@ -1529,14 +1860,56 @@ export class ClaudeService {
     this.events.emit(tabId, event);
   }
 
+  /**
+   * Whether a session's streaming text can actually be seen right now: its tab
+   * is the mounted one and the window is up. Every other running session's
+   * `TextDelta`s would land in a per-tab store with no React listeners and be
+   * discarded when the turn's `Message` arrives, so shipping them is pure cost —
+   * ~30 IPC wakeups/sec each on the renderer's main thread.
+   */
+  private isStreamingVisible(session: ClaudeSession): boolean {
+    return session.tabId === this.activeTabId && windowStateService.isActive();
+  }
+
+  /**
+   * Point streaming at the chat tab the renderer just mounted (null when none
+   * is). Flushes the newly-visible session's retained buffer straight away, so
+   * switching into a mid-turn tab paints its partial reply at once rather than
+   * waiting for the turn to finish.
+   */
+  setActiveTab(tabId: string | null, releasing?: string): void {
+    // An unmount cleanup racing the next tab's mount must not clear it: only
+    // honour a release from whoever still holds the slot.
+    if (tabId === null && releasing && this.activeTabId !== releasing) return;
+    if (this.activeTabId === tabId) return;
+    this.activeTabId = tabId;
+    const session = tabId ? this.sessions.get(tabId) : null;
+    if (session) this.flushText(session);
+  }
+
   /** Accumulate a streamed text delta and schedule a coalesced flush. */
   private bufferText(session: ClaudeSession, text: string): void {
     session.textBuffer += text;
+    // Nobody can see this one — keep only enough tail to paint a preview if the
+    // user switches to it mid-turn, and don't arm a timer that would only drop
+    // the buffer again. The turn's `Message` event carries the authoritative text.
+    if (!this.isStreamingVisible(session)) {
+      if (session.textBuffer.length > HIDDEN_TEXT_BUFFER_MAX) {
+        session.textBuffer = session.textBuffer.slice(-HIDDEN_TEXT_BUFFER_MAX);
+      }
+      return;
+    }
     if (session.textFlush) return;
     session.textFlush = setTimeout(() => this.flushText(session), TEXT_FLUSH_MS);
   }
 
-  /** Emit any buffered streaming text as a single `TextDelta` and clear the timer. */
+  /**
+   * Emit any buffered streaming text as a single `TextDelta` and clear the timer.
+   * For a session nobody is watching this drops the buffer instead of emitting:
+   * `emit` calls it before every non-text event, so discarding here is what keeps
+   * the retained tail scoped to the *current* in-progress reply — otherwise stale
+   * pre-tool-call text would resurface as a phantom bubble on tab switch.
+   */
   private flushText(session: ClaudeSession): void {
     if (session.textFlush) {
       clearTimeout(session.textFlush);
@@ -1545,6 +1918,7 @@ export class ClaudeService {
     if (!session.textBuffer) return;
     const text = session.textBuffer;
     session.textBuffer = '';
+    if (!this.isStreamingVisible(session)) return;
     // Emit directly (not via `emit`) — this IS the text flush, so it must not recurse.
     this.events.emit(session.tabId, { kind: ChatEventKind.TextDelta, text });
   }

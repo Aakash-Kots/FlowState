@@ -1,6 +1,7 @@
 'use client';
 
-import { Check, ChevronDown, Search } from 'lucide-react';
+import { Check, ChevronDown, Loader2, Search, Sparkles } from 'lucide-react';
+import { LocalModelState } from '@flowstate/shared';
 import {
   ensureWorkflowStates,
   refreshUsers,
@@ -10,8 +11,10 @@ import {
   setIncludeCompleted,
   setSearchQuery,
   setSelectedTeam,
+  surfacedTeams,
   useLinear,
 } from '@/lib/linear';
+import { useSettings } from '@/lib/settings';
 import { Combobox } from '../ui/combobox';
 import { cn } from '../ui/cn';
 import { Avatar, StateDot } from './atoms';
@@ -34,9 +37,14 @@ const TRIGGER =
  * Every change refetches the browser list via the store setters.
  */
 export function FilterBar() {
-  const teams = useLinear((s) => s.teams);
+  const allTeams = useLinear((s) => s.teams);
+  const surfacedTeamIds = useSettings((s) => s.surfacedTeamIds);
+  const teams = surfacedTeams(allTeams, surfacedTeamIds);
   const selectedTeamId = useLinear((s) => s.selectedTeamId);
   const searchQuery = useLinear((s) => s.searchQuery);
+  const modelStatus = useLinear((s) => s.modelStatus);
+  const semanticActive = useLinear((s) => s.semanticActive);
+  const semanticSearching = useLinear((s) => s.semanticSearching);
   const users = useLinear((s) => s.users);
   const filterAssigneeId = useLinear((s) => s.filterAssigneeId);
   const filterStateIds = useLinear((s) => s.filterStateIds);
@@ -44,7 +52,16 @@ export function FilterBar() {
   const includeCompleted = useLinear((s) => s.includeCompleted);
   const states = useLinear((s) => (selectedTeamId ? s.workflowStatesByTeam[selectedTeamId] ?? [] : []));
 
-  const selectedTeam = teams.find((t) => t.id === selectedTeamId) ?? null;
+  // While the on-device model downloads/loads, show a prep hint in the search
+  // box; once it's serving, a subtle "Smart" tag marks semantic-ranked results.
+  const preparing =
+    modelStatus?.state === LocalModelState.Downloading || modelStatus?.state === LocalModelState.Loading;
+  const prepLabel =
+    modelStatus?.state === LocalModelState.Downloading
+      ? `Preparing smart search… ${Math.round((modelStatus.downloadProgress ?? 0) * 100)}%`
+      : 'Loading smart search…';
+
+  const selectedTeam = allTeams.find((t) => t.id === selectedTeamId) ?? null;
   const selectedState = states.find((st) => st.id === filterStateIds[0]) ?? null;
   const selectedAssignee = users.find((u) => u.id === filterAssigneeId) ?? null;
   const selectedPriority = filterPriorities.length ? filterPriorities[0] : null;
@@ -59,8 +76,32 @@ export function FilterBar() {
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search issues…"
           spellCheck={false}
-          className="h-8 w-full rounded-md border border-border bg-background pl-8 pr-2 text-sm text-neutral-100 placeholder:text-muted-foreground focus:border-primary/50 focus:outline-none"
+          className={cn(
+            'h-8 w-full rounded-md border border-border bg-background pl-8 text-sm text-neutral-100 placeholder:text-muted-foreground focus:border-primary/50 focus:outline-none',
+            preparing ? 'pr-44' : semanticSearching ? 'pr-24' : semanticActive ? 'pr-16' : 'pr-2',
+          )}
         />
+        {preparing ? (
+          <span className="pointer-events-none absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1 text-[11px] text-muted-foreground">
+            <Loader2 className="size-3 animate-spin" />
+            {prepLabel}
+          </span>
+        ) : semanticSearching ? (
+          <span className="pointer-events-none absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1 text-[11px] text-muted-foreground">
+            <Loader2 className="size-3 animate-spin" />
+            Searching…
+          </span>
+        ) : (
+          semanticActive && (
+            <span
+              className="pointer-events-none absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1 text-[11px] text-primary"
+              title="Results ranked by meaning (on-device)"
+            >
+              <Sparkles className="size-3" />
+              Smart
+            </span>
+          )
+        )}
       </div>
 
       {/* Team */}

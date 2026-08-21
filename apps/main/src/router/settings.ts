@@ -1,19 +1,29 @@
 import { z } from 'zod';
 import { ArchiveRetention, CodeTheme, FontSize } from '@flowstate/shared';
+import { SecretName } from '../lib/enums/secret';
+import { archiveReaperService } from '../services/archive';
+import { geminiService } from '../services/gemini';
+import { deleteSecret, hasSecret, setSecret } from '../store/secrets';
 import {
   getArchiveRetention,
   getCodeTheme,
+  getDefaultTeamId,
   getFontSize,
   getSkillsPanelOpen,
   getSkillsPanelWidth,
   getSoundEnabled,
+  getSurfacedTeamIds,
+  getVibrancyEnabled,
   getTerminalPanelFraction,
   setArchiveRetention,
   setCodeTheme,
+  setDefaultTeamId,
   setFontSize,
   setSkillsPanelOpen,
   setSkillsPanelWidth,
   setSoundEnabled,
+  setSurfacedTeamIds,
+  setVibrancyEnabled,
   setTerminalPanelFraction,
 } from '../store/settings';
 import { publicProcedure, router } from '../trpc';
@@ -27,18 +37,46 @@ import { publicProcedure, router } from '../trpc';
 export const settingsRouter = router({
   get: publicProcedure.query(() => ({
     soundEnabled: getSoundEnabled(),
+    vibrancyEnabled: getVibrancyEnabled(),
     codeTheme: getCodeTheme(),
     fontSize: getFontSize(),
     archiveRetention: getArchiveRetention(),
     skillsPanelWidth: getSkillsPanelWidth(),
     skillsPanelOpen: getSkillsPanelOpen(),
     terminalPanelFraction: getTerminalPanelFraction(),
+    surfacedTeamIds: getSurfacedTeamIds(),
+    defaultTeamId: getDefaultTeamId(),
+    // Only whether a key exists — the plaintext key never leaves the main process.
+    geminiApiKeySet: hasSecret(SecretName.GeminiApiKey),
   })),
+
+  /** Store the user's Gemini API key (encrypted via safeStorage). Powers Ask
+   * Gemini, ticket refinement, and speech-to-text. */
+  setGeminiApiKey: publicProcedure
+    .input(z.object({ apiKey: z.string().min(1) }))
+    .mutation(({ input }) => {
+      setSecret(SecretName.GeminiApiKey, input.apiKey.trim());
+      geminiService.notifyKeyChanged();
+    }),
+
+  /** Remove the stored Gemini API key. */
+  clearGeminiApiKey: publicProcedure.mutation(() => {
+    deleteSecret(SecretName.GeminiApiKey);
+    geminiService.notifyKeyChanged();
+  }),
 
   setSoundEnabled: publicProcedure
     .input(z.object({ enabled: z.boolean() }))
     .mutation(({ input }) => {
       setSoundEnabled(input.enabled);
+    }),
+
+  /** Toggle the macOS frosted-glass sidebar. Applied when the window is created,
+   * so an existing window keeps its current look until the app relaunches. */
+  setVibrancyEnabled: publicProcedure
+    .input(z.object({ enabled: z.boolean() }))
+    .mutation(({ input }) => {
+      setVibrancyEnabled(input.enabled);
     }),
 
   setCodeTheme: publicProcedure
@@ -57,6 +95,9 @@ export const settingsRouter = router({
     .input(z.object({ retention: z.nativeEnum(ArchiveRetention) }))
     .mutation(({ input }) => {
       setArchiveRetention(input.retention);
+      // A shorter retention may make archived worktrees due right now; sweep so
+      // the change acts immediately (and re-arms the reaper's one-shot timer).
+      void archiveReaperService.sweep();
     }),
 
   setSkillsPanelWidth: publicProcedure
@@ -75,5 +116,17 @@ export const settingsRouter = router({
     .input(z.object({ fraction: z.number() }))
     .mutation(({ input }) => {
       setTerminalPanelFraction(input.fraction);
+    }),
+
+  setSurfacedTeamIds: publicProcedure
+    .input(z.object({ teamIds: z.array(z.string()) }))
+    .mutation(({ input }) => {
+      setSurfacedTeamIds(input.teamIds);
+    }),
+
+  setDefaultTeam: publicProcedure
+    .input(z.object({ teamId: z.string().nullable() }))
+    .mutation(({ input }) => {
+      setDefaultTeamId(input.teamId);
     }),
 });

@@ -145,7 +145,7 @@ export const usageEvents = sqliteTable(
 );
 
 // An append-only ledger of user activity — one row per meaningful action (a
-// commit, a finished Setup/Run script, a Linear state change, a Spotify play).
+// commit, a finished Setup/Run script, a Linear state change).
 // The analytics page reads these back as time-series aggregates. `type` mirrors
 // the JSON payload's discriminant (kept as a column for cheap filtering/index);
 // `data` is the full payload as JSON. `workspace_id`/`project_id` are
@@ -184,9 +184,13 @@ export const projects = sqliteTable('projects', {
   // Branch new worktrees are cut from, overriding `default_branch`; null uses the default.
   worktreeBaseBranch: text('worktree_base_branch'),
   private: integer('private', { mode: 'boolean' }).notNull(),
-  // Project-scoped shell commands for the Setup/Run default terminals; null until set.
+  // Project-scoped shell commands for the Setup/Run default terminals; null until
+  // set. The `_enabled` flags gate only the auto-run: false keeps the command
+  // (so the tab still shows it) but stops it firing when a worktree opens.
   setupScript: text('setup_script'),
+  setupScriptEnabled: integer('setup_script_enabled', { mode: 'boolean' }).notNull().default(true),
   runScript: text('run_script'),
+  runScriptEnabled: integer('run_script_enabled', { mode: 'boolean' }).notNull().default(true),
   createdAt: text('created_at').notNull(),
 });
 
@@ -210,6 +214,46 @@ export const pinnedSkills = sqliteTable(
     index('idx_pinned_skills_project').on(t.projectId),
     index('idx_pinned_skills_workspace').on(t.workspaceId),
   ],
+);
+
+// A freeform Markdown notes pad. `workspace_id` null is the app-wide Global pad;
+// a set `workspace_id` scopes the pad to that worktree (cascade-deletes with it).
+// One row per scope, enforced by the store (get-or-create).
+export const notes = sqliteTable(
+  'notes',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),
+    body: text('body').notNull().default(''),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (t) => [index('idx_notes_workspace').on(t.workspaceId)],
+);
+
+// A cached semantic-search embedding for one Linear ticket. The local embedding
+// model (EmbeddingGemma via node-llama-cpp) vectorizes each ticket's
+// identifier+title once; `content_hash` (a hash of the embedded text) lets the
+// reindexer skip unchanged tickets and re-embed only edited ones. `vector` is
+// the L2-normalized Float32 embedding as a raw little-endian buffer (blob), so
+// cosine similarity is a plain dot product in JS — the corpus is small enough
+// (hundreds/low-thousands per team) that brute-force beats a vector extension.
+// `identifier`/`title` are denormalized so a hit can be labeled without a live
+// Linear fetch. No FK to a workspace: this is an API-derived cache, not user
+// state, and `team_id` is Linear's own id.
+export const linearIssueEmbeddings = sqliteTable(
+  'linear_issue_embeddings',
+  {
+    issueId: text('issue_id').primaryKey(),
+    teamId: text('team_id').notNull(),
+    identifier: text('identifier').notNull(),
+    title: text('title').notNull(),
+    model: text('model').notNull(), // LocalModelId the vector was produced by
+    dim: integer('dim').notNull(), // Matryoshka output width of `vector`
+    contentHash: text('content_hash').notNull(),
+    vector: blob('vector', { mode: 'buffer' }).notNull(), // Float32 LE buffer
+    updatedAt: integer('updated_at').notNull(), // epoch ms
+  },
+  (t) => [index('idx_linear_issue_embeddings_team').on(t.teamId)],
 );
 
 export const settings = sqliteTable('settings', {

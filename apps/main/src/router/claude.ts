@@ -72,6 +72,25 @@ export const claudeRouter = router({
     .input(z.object({ tabId: z.string() }))
     .query(({ input }) => claudeService.getSupportedSkills(input.tabId)),
 
+  // Live MCP server status for the tab's session (drives the `/mcp` panel) —
+  // empty until a session exists; the renderer also gets live McpStatusUpdated
+  // events. Config CRUD lives on the global `mcp` router.
+  mcpStatus: publicProcedure
+    .input(z.object({ tabId: z.string() }))
+    .query(({ input }) => claudeService.getMcpStatus(input.tabId)),
+
+  // Reconnect one MCP server on the tab's live session (re-dials the transport
+  // for a failed/disconnected server).
+  reconnectMcpServer: publicProcedure
+    .input(z.object({ tabId: z.string(), name: z.string() }))
+    .mutation(({ input }) => claudeService.reconnectMcpServer(input.tabId, input.name)),
+
+  // Run the interactive OAuth flow for a needs-auth MCP server (opens the
+  // browser via the SDK/CLI's mcp_authenticate flow).
+  authenticateMcpServer: publicProcedure
+    .input(z.object({ tabId: z.string(), name: z.string() }))
+    .mutation(({ input }) => claudeService.authenticateMcpServer(input.tabId, input.name)),
+
   setModel: publicProcedure
     .input(z.object({ tabId: z.string(), model: z.string().min(1) }))
     .mutation(({ input }) => claudeService.setModel(input.tabId, input.model)),
@@ -145,6 +164,18 @@ export const claudeRouter = router({
         claudeService.onEvent(input.tabId, (event) => emit.next(event)),
       ),
     ),
+
+  /**
+   * Tell main which chat tab is mounted (null when none is). A tab's `onEvent`
+   * binding is app-lifetime by design, so this is main's only way to know whose
+   * streaming text is actually on screen — every other running session's deltas
+   * are dropped rather than shipped over IPC.
+   */
+  setActiveTab: publicProcedure
+    .input(z.object({ tabId: z.string().nullable(), releasing: z.string().optional() }))
+    .mutation(({ input }) => {
+      claudeService.setActiveTab(input.tabId, input.releasing);
+    }),
 
   // App-wide stream of every tab's state transitions — feeds the status dots on
   // the tab strip and sidebar worktree rows (unlike `onEvent`, not tab-scoped).

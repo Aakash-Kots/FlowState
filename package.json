@@ -1,6 +1,6 @@
 {
   "name": "flowstate",
-  "version": "0.2.3",
+  "version": "0.2.13",
   "private": true,
   "description": "One command center for your development workflow — Claude Code, Git, terminals, worktrees, and Linear in one flow.",
   "workspaces": [
@@ -11,7 +11,9 @@
     "node-pty",
     "better-sqlite3",
     "electron",
-    "esbuild"
+    "esbuild",
+    "node-llama-cpp",
+    "@node-llama-cpp/mac-arm64-metal"
   ],
   "scripts": {
     "dev": "bun scripts/dev.mjs",
@@ -22,6 +24,7 @@
     "build:renderer": "bun run --filter '@flowstate/renderer' build",
     "build:main": "bun run --filter '@flowstate/main' build",
     "dist": "bun run build && bun run --filter '@flowstate/main' dist",
+    "dist:win": "bun run build && bun run --filter '@flowstate/main' dist:win",
     "db:generate": "bun scripts/db-generate.mjs",
     "db:generate:local": "bun run --filter '@flowstate/main' db:generate",
     "db:migrate": "bun run --filter '@flowstate/main' db:migrate",

@@ -1,11 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { TabProvider, useChat, useChatSync, useTabId } from '@/lib/chat';
+import { TabProvider, useActiveChatTab, useChat, useChatSync, useTabId } from '@/lib/chat';
 import { pickWorkingFolder } from '@/lib/workspace';
 import { Button } from '../ui/Button';
 import { ChatView } from './ChatView';
 import { InputBar } from './InputBar';
+import { McpStatusPanel } from './McpStatusPanel';
 
 ///////////////////
 // Sub-components //
@@ -19,6 +20,9 @@ import { InputBar } from './InputBar';
 function ChatSession() {
   const tabId = useTabId();
   useChatSync(tabId);
+  // Only the active tab's ChatWorkspace is mounted, so this is main's signal for
+  // whose streaming text is on screen.
+  useActiveChatTab(tabId);
   const hydrated = useChat((s) => s.hydrated);
   const cwd = useChat((s) => s.cwd);
   const [picking, setPicking] = useState(false);
@@ -60,6 +64,7 @@ function ChatSession() {
       )}
 
       <InputBar disabled={!cwd} />
+      <McpStatusPanel />
     </div>
   );
 }

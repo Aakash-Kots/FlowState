@@ -9,6 +9,4 @@ export type OnboardingStatus = {
   githubConnected: boolean;
   /** Linear is optional — connecting it never gates the first-run flow. */
   linearConnected: boolean;
-  /** Spotify is optional — connecting it never gates the first-run flow. */
-  spotifyConnected: boolean;
 };

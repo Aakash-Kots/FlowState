@@ -1,7 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { AnalyticsRange, type AnalyticsSummary } from '@flowstate/shared';
+import {
+  AnalyticsRange,
+  type AnalyticsSummary,
+  type GithubContributionCalendar,
+} from '@flowstate/shared';
 import { trpc } from './trpc';
 
 ///////////
@@ -11,6 +15,13 @@ import { trpc } from './trpc';
 /** The async state of the analytics summary fetch for the selected range. */
 type AnalyticsQuery = {
   data: AnalyticsSummary | null;
+  loading: boolean;
+  error: boolean;
+};
+
+/** The async state of the GitHub contribution-calendar fetch. */
+type ContributionsQuery = {
+  data: GithubContributionCalendar | null;
   loading: boolean;
   error: boolean;
 };
@@ -83,6 +94,32 @@ export function useAnalyticsSummary(range: AnalyticsRange): AnalyticsQuery {
       cancelled = true;
     };
   }, [range]);
+
+  return state;
+}
+
+/**
+ * Fetch the linked GitHub account's contribution calendar once on mount (the
+ * fixed trailing-year window). Same vanilla-client shape as `useAnalyticsSummary`.
+ * Only call this when GitHub is connected.
+ */
+export function useGithubContributions(): ContributionsQuery {
+  const [state, setState] = useState<ContributionsQuery>({ data: null, loading: true, error: false });
+
+  useEffect(() => {
+    let cancelled = false;
+    trpc()
+      .github.contributionGraph.query()
+      .then((data) => {
+        if (!cancelled) setState({ data, loading: false, error: false });
+      })
+      .catch(() => {
+        if (!cancelled) setState({ data: null, loading: false, error: true });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return state;
 }

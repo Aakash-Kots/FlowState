@@ -3,6 +3,7 @@
  * Backed by the `settings` table — a single source of truth on disk.
  */
 import { eq } from 'drizzle-orm';
+import { z } from 'zod';
 import {
   ArchiveRetention,
   CodeTheme,
@@ -30,6 +31,7 @@ type WindowBounds = {
 
 const WINDOW_BOUNDS_KEY = 'window.bounds';
 const SOUND_ENABLED_KEY = 'notifications.soundEnabled';
+const VIBRANCY_ENABLED_KEY = 'appearance.vibrancyEnabled';
 const CODE_THEME_KEY = 'appearance.codeTheme';
 const FONT_SIZE_KEY = 'appearance.fontSize';
 const ARCHIVE_RETENTION_KEY = 'worktree.archiveRetention';
@@ -37,9 +39,23 @@ const SKILLS_PANEL_WIDTH_KEY = 'skillsPanel.width';
 const SKILLS_PANEL_OPEN_KEY = 'skillsPanel.open';
 const TERMINAL_PANEL_FRACTION_KEY = 'terminalPanel.fraction';
 const WORKSPACE_RECENT_KEY = 'workspace.recent';
+const RECENT_FILES_KEY = 'files.recent';
+const SEMANTIC_ENABLED_KEY = 'search.semanticEnabled';
+const SEMANTIC_SMALL_MODEL_KEY = 'search.preferSmallModel';
+const SURFACED_TEAM_IDS_KEY = 'linear.surfacedTeamIds';
+const DEFAULT_TEAM_ID_KEY = 'linear.defaultTeamId';
 
 /** How many recently-active worktrees to remember for reload restoration. */
 const MAX_RECENT_WORKSPACES = 10;
+
+/** How many recently-opened files to remember per worktree (the ⌘P empty state). */
+const MAX_RECENT_FILES = 15;
+
+/** Validator for the persisted per-worktree recent-files map (defensive parse). */
+const recentFilesMapSchema = z.record(z.array(z.string()));
+
+/** Validator for the persisted surfaced-team-id list (defensive parse). */
+const surfacedTeamIdsSchema = z.array(z.string());
 
 /**
  * Default width (px) of the right-hand panel, and its clamp range. Wider than a
@@ -77,6 +93,51 @@ export function setSetting<T>(key: string, value: T): void {
     .run();
 }
 
+/** Whether natural-language (semantic) ticket search is on (default on). Off
+ * fully disables it: no model download, no embedding — search stays literal. */
+export function getSemanticSearchEnabled(): boolean {
+  return getSetting<boolean>(SEMANTIC_ENABLED_KEY) ?? true;
+}
+
+export function setSemanticSearchEnabled(enabled: boolean): void {
+  setSetting(SEMANTIC_ENABLED_KEY, enabled);
+}
+
+/** Whether to force the smaller Q4 embedding weights regardless of RAM (default
+ * off) — ~80MB less disk + lower memory, a little less recall. */
+export function getPreferSmallModel(): boolean {
+  return getSetting<boolean>(SEMANTIC_SMALL_MODEL_KEY) ?? false;
+}
+
+export function setPreferSmallModel(prefer: boolean): void {
+  setSetting(SEMANTIC_SMALL_MODEL_KEY, prefer);
+}
+
+/**
+ * Which Linear teams' issues to surface across the app (browser list, team
+ * pickers, assigned-work sections, semantic index). Empty means "all teams" —
+ * the default, preserving pre-setting behavior. Parsed defensively so a stale
+ * shape degrades to "all teams" rather than throwing.
+ */
+export function getSurfacedTeamIds(): string[] {
+  const parsed = surfacedTeamIdsSchema.safeParse(getSetting(SURFACED_TEAM_IDS_KEY));
+  return parsed.success ? parsed.data : [];
+}
+
+export function setSurfacedTeamIds(teamIds: string[]): void {
+  setSetting(SURFACED_TEAM_IDS_KEY, teamIds);
+}
+
+/** The team preselected when creating a new ticket (null = none chosen; the UI
+ * falls back to the first surfaced team). */
+export function getDefaultTeamId(): string | null {
+  return getSetting<string>(DEFAULT_TEAM_ID_KEY);
+}
+
+export function setDefaultTeamId(teamId: string | null): void {
+  setSetting(DEFAULT_TEAM_ID_KEY, teamId);
+}
+
 export function getWindowBounds(): WindowBounds | null {
   return getSetting<WindowBounds>(WINDOW_BOUNDS_KEY);
 }
@@ -92,6 +153,21 @@ export function getSoundEnabled(): boolean {
 
 export function setSoundEnabled(enabled: boolean): void {
   setSetting(SOUND_ENABLED_KEY, enabled);
+}
+
+/**
+ * Whether the macOS frosted-glass sidebar is on (default off). It requires a
+ * fully transparent window, which denies Chromium the opaque compositing fast
+ * path for every layer and makes the OS live-blur the desktop behind the window
+ * each frame — a continuous GPU cost even on a completely idle app. Off by
+ * default; the look is worth it only if you want it.
+ */
+export function getVibrancyEnabled(): boolean {
+  return getSetting<boolean>(VIBRANCY_ENABLED_KEY) ?? false;
+}
+
+export function setVibrancyEnabled(enabled: boolean): void {
+  setSetting(VIBRANCY_ENABLED_KEY, enabled);
 }
 
 /** The chosen code-highlighting palette (defaults to GitHub Dark). */
@@ -184,4 +260,27 @@ export function getRecentWorkspaces(): RecentWorkspaceEntry[] {
 export function rememberRecentWorkspace(entry: RecentWorkspaceEntry): void {
   const next = [entry, ...getRecentWorkspaces().filter((e) => e.workspaceId !== entry.workspaceId)];
   setSetting(WORKSPACE_RECENT_KEY, next.slice(0, MAX_RECENT_WORKSPACES));
+}
+
+/**
+ * The worktree-relative paths most recently opened in a workspace, most-recent-
+ * first — the ⌘P finder's empty-state "Recent files". Parsed defensively so a
+ * stale shape degrades to "no history" rather than throwing.
+ */
+export function getRecentFiles(workspaceId: string): string[] {
+  const parsed = recentFilesMapSchema.safeParse(getSetting(RECENT_FILES_KEY));
+  return parsed.success ? (parsed.data[workspaceId] ?? []) : [];
+}
+
+/**
+ * Record a file as the most-recently opened in a workspace: move it to the front
+ * of that worktree's list (deduped) and cap the length. Other worktrees' lists
+ * are left untouched.
+ */
+export function rememberRecentFile(workspaceId: string, filePath: string): void {
+  const parsed = recentFilesMapSchema.safeParse(getSetting(RECENT_FILES_KEY));
+  const map = parsed.success ? parsed.data : {};
+  const current = map[workspaceId] ?? [];
+  map[workspaceId] = [filePath, ...current.filter((p) => p !== filePath)].slice(0, MAX_RECENT_FILES);
+  setSetting(RECENT_FILES_KEY, map);
 }

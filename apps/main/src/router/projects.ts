@@ -11,9 +11,10 @@ import { TRPCError } from '@trpc/server';
 import { BrowserWindow, dialog } from 'electron';
 import {
   DEFAULT_WORKSPACE_ID,
+  TerminalKind,
   addProjectInputSchema,
   updateProjectBaseBranchInputSchema,
-  updateProjectScriptsInputSchema,
+  updateProjectScriptInputSchema,
   type Project,
 } from '@flowstate/shared';
 import { z } from 'zod';
@@ -25,12 +26,13 @@ import {
   listProjects,
   listWorkspacesByProject,
   setProjectBaseBranch,
-  setProjectScripts,
+  setProjectScript,
   upsertProject,
 } from '../store';
 import { teardownWorkspace } from '../services/archive';
 import { claudeService } from '../services/claude';
 import { githubService } from '../services/github';
+import { killProjectScriptPtys } from '../services/workspaceScripts';
 import { publicProcedure, router } from '../trpc';
 
 export const projectsRouter = router({
@@ -80,7 +82,9 @@ export const projectsRouter = router({
       worktreeBaseBranch: existing?.worktreeBaseBranch ?? null,
       private: existing?.private ?? false,
       setupScript: existing?.setupScript ?? null,
+      setupScriptEnabled: existing?.setupScriptEnabled ?? true,
       runScript: existing?.runScript ?? null,
+      runScriptEnabled: existing?.runScriptEnabled ?? true,
       createdAt: existing?.createdAt ?? new Date().toISOString(),
     });
 
@@ -114,7 +118,9 @@ export const projectsRouter = router({
         worktreeBaseBranch: null,
         private: input.private,
         setupScript: null,
+        setupScriptEnabled: true,
         runScript: null,
+        runScriptEnabled: true,
         createdAt: new Date().toISOString(),
       });
 
@@ -154,15 +160,27 @@ export const projectsRouter = router({
       deleteProject(project.id);
     }),
 
-  /** Set a project's Setup/Run scripts (shared by every worktree of the project). */
-  setScripts: publicProcedure
-    .input(updateProjectScriptsInputSchema)
+  /**
+   * Patch one of a project's two scripts — its command and/or its auto-run flag
+   * (both shared by every worktree of the project). Only the fields the caller
+   * sends change, so a stale client can't revert the other one.
+   */
+  setScript: publicProcedure
+    .input(updateProjectScriptInputSchema)
     .mutation(({ input }): Project => {
-      const project = setProjectScripts(input.projectId, {
-        setupScript: input.setupScript,
-        runScript: input.runScript,
-      });
+      const before = getProject(input.projectId);
+      if (!before) throw new TRPCError({ code: 'NOT_FOUND', message: 'Project not found.' });
+
+      const project = setProjectScript(input.projectId, input.kind, input);
       if (!project) throw new TRPCError({ code: 'NOT_FOUND', message: 'Project not found.' });
+
+      // A cleared command leaves each worktree's tab back on its setup form —
+      // reap the ptys now, or a running dev server outlives the UI to stop it.
+      const setup = input.kind === TerminalKind.Setup;
+      const had = setup ? before.setupScript : before.runScript;
+      const has = setup ? project.setupScript : project.runScript;
+      if (had && !has) killProjectScriptPtys(project.id, input.kind);
+
       return project;
     }),
 

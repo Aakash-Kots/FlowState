@@ -62,6 +62,9 @@ export enum ChatEventKind {
   // The session's available skills (SDK slash commands) changed — replaces the
   // renderer's cached list. Fired at init and on the SDK's mid-session push.
   SkillsUpdated = 'skills_updated',
+  // The session's MCP servers' live connection status changed — refreshes the
+  // `/mcp` panel. Fired at init and after a reconnect.
+  McpStatusUpdated = 'mcp_status_updated',
   // Live per-turn progress signals — all ephemeral, never persisted, cleared
   // when the turn advances or finalizes (mirrors TextDelta / BlockStart).
   ToolProgress = 'tool_progress',

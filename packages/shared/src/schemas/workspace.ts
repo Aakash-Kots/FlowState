@@ -8,7 +8,7 @@
 import { z } from 'zod';
 import { ClaudeSessionState, PermissionMode } from '../enums/claude';
 import type { RecentWorkspaceEntry } from '../types/workspace';
-import { claudeSessionStateSchema } from './claude';
+import { chatImageInputSchema, claudeSessionStateSchema } from './claude';
 import { linearIssueRefSchema } from './linear';
 
 export const workspaceSchema = z.object({
@@ -49,6 +49,8 @@ export const createWorktreeInputSchema = z.object({
   projectId: z.string(),
   baseRef: z.string().optional(),
   initialPrompt: z.string().optional(),
+  /** Images attached to the first prompt, carried into the seed Claude message. */
+  initialImages: z.array(chatImageInputSchema).optional(),
   permissionMode: z.nativeEnum(PermissionMode).optional(),
   /** Linear issue to link to the new worktree (optional). */
   linearIssue: linearIssueRefSchema.nullable().optional(),

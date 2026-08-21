@@ -2,6 +2,7 @@
 
 import {
   forwardRef,
+  useDeferredValue,
   useEffect,
   useImperativeHandle,
   useRef,
@@ -12,7 +13,8 @@ import { createPortal } from 'react-dom';
 import type { ChatImageInput } from '@flowstate/shared';
 import { fileToChatImage } from '@/lib/chat';
 import { MAX_COMPOSER_IMAGES, MAX_COMPOSER_IMAGE_BYTES } from '@/lib/constants/chat';
-import type { MentionCaret } from '@/lib/types/chat';
+import { fuzzyScorePath } from '@/lib/search';
+import type { ComposerDraft, MentionCaret } from '@/lib/types/chat';
 import { cn } from '../ui/cn';
 import { ImagePill } from './ImagePill';
 import { MentionMenu } from './MentionMenu';
@@ -20,9 +22,6 @@ import { MentionMenu } from './MentionMenu';
 ///////////
 // Types //
 ///////////
-
-/** The composer's current content: typed text plus attached images, in order. */
-export type ComposerDraft = { text: string; images: ChatImageInput[] };
 
 /**
  * Enables the `@` file-mention menu. `fetch` returns the candidate paths (called
@@ -37,8 +36,12 @@ export type ComposerEditorHandle = {
   clear: () => void;
   /** Replace all content with plain text (drops images), caret at the end. */
   setText: (text: string) => void;
+  /** Replace all content with a saved draft (text + image pills), caret at the end. */
+  setDraft: (draft: ComposerDraft) => void;
   /** Insert image pills at the caret (or the end when unfocused). */
   insertImages: (images: ChatImageInput[]) => void;
+  /** Insert plain text at the caret (or the end when unfocused) — e.g. a mic transcript. */
+  insertText: (text: string) => void;
   getDraft: () => ComposerDraft;
 };
 
@@ -77,11 +80,20 @@ function createMentionChip(path: string): HTMLSpanElement {
   return chip;
 }
 
-/** Filter candidate paths by a (case-insensitive) substring query, capped. */
+/**
+ * Rank candidate paths against the query with the shared fuzzy scorer (filename
+ * matches outrank directory-only ones), best-first, capped. An empty query keeps
+ * the server's alphabetical order. `sort` is stable, so equal-score results keep
+ * that incoming alphabetical order as a natural tiebreak.
+ */
 function filterMentions(files: string[], query: string): string[] {
-  const q = query.toLowerCase();
-  const matched = q ? files.filter((f) => f.toLowerCase().includes(q)) : files;
-  return matched.slice(0, MAX_MENTION_RESULTS);
+  if (!query) return files.slice(0, MAX_MENTION_RESULTS);
+  return files
+    .map((path) => ({ path, score: fuzzyScorePath(path, query) }))
+    .filter((m) => m.score >= 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, MAX_MENTION_RESULTS)
+    .map((m) => m.path);
 }
 
 /** Skip unsupported types / oversized files, then decode to base64 attachments. */
@@ -292,6 +304,20 @@ export const ComposerEditor = forwardRef<
     document.execCommand('insertText', false, text);
   };
 
+  // Allow images to be dropped straight onto the editor, mirroring the paste
+  // path. `onDragOver` must preventDefault for the drop to fire.
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    if (allowImages) e.preventDefault();
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    if (!allowImages) return;
+    const files = Array.from(e.dataTransfer.files).filter((f) => f.type.startsWith('image/'));
+    if (files.length === 0) return;
+    e.preventDefault();
+    void filesToImages(files).then(insertImagesAtCaret);
+  };
+
   //////////////
   // Mentions //
   //////////////
@@ -419,14 +445,66 @@ export const ComposerEditor = forwardRef<
       sel?.addRange(range);
       savedRangeRef.current = range.cloneRange();
     },
+    setDraft: (draft) => {
+      const root = editorRef.current;
+      if (!root) return;
+      root.innerHTML = '';
+      imagesRef.current.clear();
+      closeMention();
+      if (draft.text) root.appendChild(document.createTextNode(draft.text));
+      // Rehydrate image pills after the text (draft restore drops the original
+      // interleaving — the exact caret positions aren't worth persisting).
+      const images = allowImages ? draft.images.slice(0, MAX_COMPOSER_IMAGES) : [];
+      const restored: Pill[] = images.map((image) => {
+        const id = `img-${idRef.current++}`;
+        imagesRef.current.set(id, image);
+        const span = document.createElement('span');
+        span.dataset.imgId = id;
+        span.contentEditable = 'false';
+        span.className = 'mx-0.5 inline-flex align-middle';
+        root.appendChild(span);
+        return { id, node: span, image };
+      });
+      setPills(restored);
+      setEmpty(draft.text.length === 0 && restored.length === 0);
+      const range = document.createRange();
+      range.selectNodeContents(root);
+      range.collapse(false);
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+      savedRangeRef.current = range.cloneRange();
+    },
     insertImages: (images) => {
       if (allowImages) insertImagesAtCaret(images);
+    },
+    insertText: (text) => {
+      const root = editorRef.current;
+      if (!root || !text) return;
+      root.focus();
+      const range = currentRange();
+      range.deleteContents();
+      const node = document.createTextNode(text);
+      range.insertNode(node);
+      range.setStartAfter(node);
+      range.collapse(true);
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+      savedRangeRef.current = range.cloneRange();
+      setEmpty(false);
+      fireChange();
     },
     getDraft: () => serialize(),
   }));
 
+  // Defer the query so scoring the full file list per keystroke doesn't block a
+  // fast typist on large repos (mirrors the ⌘P finder).
+  const deferredMentionQuery = useDeferredValue(mentionQuery);
   const mentionCandidates =
-    mentionQuery !== null && mentionFiles ? filterMentions(mentionFiles, mentionQuery) : [];
+    deferredMentionQuery !== null && mentionFiles
+      ? filterMentions(mentionFiles, deferredMentionQuery)
+      : [];
   const mentionMenuOpen =
     !!mentions && mentionQuery !== null && (mentionCandidates.length > 0 || mentionLoading);
   const mentionActiveIndex = Math.min(mentionIndex, Math.max(0, mentionCandidates.length - 1));
@@ -506,6 +584,8 @@ export const ComposerEditor = forwardRef<
         aria-multiline="true"
         onInput={handleInput}
         onPaste={handlePaste}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
         onKeyDown={handleKeyDown}
         onKeyUp={handleSelect}
         onMouseUp={handleSelect}

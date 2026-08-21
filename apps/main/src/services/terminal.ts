@@ -16,6 +16,7 @@
  * `electron-builder install-app-deps` (same as better-sqlite3).
  */
 import { EventEmitter } from 'node:events';
+import { spawnSync } from 'node:child_process';
 import { homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { ActivityType } from '@flowstate/shared';
@@ -31,8 +32,13 @@ type Session = {
   pty: pty.IPty;
   /** 'data' → (chunk: string), 'exit' → (code: number) */
   events: EventEmitter;
-  /** Tail of the pty's output, replayed to a (re)attaching renderer. */
-  scrollback: string;
+  /**
+   * Tail of the pty's output, replayed to a (re)attaching renderer, held as the
+   * flushed chunks rather than one joined string — see `flushOut`.
+   */
+  scrollback: string[];
+  /** Total length of `scrollback`, tracked so trimming never re-measures it. */
+  scrollbackLen: number;
   /** Visible output accumulated since the last flush (coalesced before emitting). */
   outBuffer: string;
   /** Pending output-flush timer, or null when nothing is buffered. */
@@ -71,9 +77,14 @@ const SCROLLBACK_LIMIT = 256 * 1024;
  * Coalesce pty output into one IPC emit per this window (ms). A chatty process
  * (a watch dev server, a noisy build) can push hundreds of small chunks a
  * second; emitting each as its own subscription message floods the bridge.
- * ~16ms (a frame) keeps output feeling instant while collapsing the bursts.
+ *
+ * 32ms (~30/sec) rather than a frame: every emit crosses the IPC bridge and turns
+ * into an xterm WebGL draw in the renderer, and a dev server saturating a 16ms
+ * timer was a measurable share of renderer + GPU energy. Output still lands well
+ * inside the ~100ms that reads as instant, and text arriving in slightly larger
+ * bursts is invisible on a scrolling log.
  */
-const OUTPUT_FLUSH_MS = 16;
+const OUTPUT_FLUSH_MS = 32;
 
 /** Let the login shell source its rc files and print a prompt before auto-typing. */
 const STARTUP_DELAY_MS = 300;
@@ -100,6 +111,39 @@ const DEVICE_QUERY_RE = /\x1b\][0-9;]*\?(?:\x07|\x1b\\)|\x1b\[[0-9?;=>]*[nc]/g;
 function defaultShell(): string {
   if (process.platform === 'win32') return process.env.COMSPEC ?? 'powershell.exe';
   return process.env.SHELL ?? '/bin/zsh';
+}
+
+/**
+ * SIGKILL `pid` and every descendant. `pty.kill()` only signals the interactive
+ * shell (SIGHUP to its pid), but job control puts a launched dev server in its
+ * own process group, so it survives as an orphan. We instead walk the process
+ * tree and kill each process directly. Synchronous on purpose: the `will-quit`
+ * teardown (`disposeAll`) runs as the app exits, with no chance to await.
+ */
+function killProcessTree(pid: number): void {
+  if (process.platform === 'win32') {
+    // /T kills the whole tree, /F forces it. Swallow errors (already-dead pid).
+    spawnSync('taskkill', ['/pid', String(pid), '/T', '/F']);
+    return;
+  }
+  // Breadth-first collect descendants (deepest last), then kill deepest-first so
+  // a parent can't respawn a child we already reaped.
+  const tree = [pid];
+  for (let i = 0; i < tree.length; i++) {
+    const out = spawnSync('pgrep', ['-P', String(tree[i])], { encoding: 'utf8' });
+    if (out.status !== 0 || !out.stdout) continue;
+    for (const line of out.stdout.trim().split('\n')) {
+      const child = Number(line);
+      if (Number.isInteger(child)) tree.push(child);
+    }
+  }
+  for (const target of tree.reverse()) {
+    try {
+      process.kill(target, 'SIGKILL');
+    } catch {
+      // Already exited (or reparented away) — nothing to do.
+    }
+  }
 }
 
 /**
@@ -146,9 +190,7 @@ export class TerminalService {
    * *inside* the interactive shell, so if the program exits the user drops back
    * to a normal prompt.
    */
-  spawn(
-    opts: SpawnOpts & { startupCommand?: string } = {},
-  ): { id: string } {
+  spawn(opts: SpawnOpts & { startupCommand?: string } = {}): { id: string } {
     const id = opts.id ?? randomUUID();
     // A persistent terminal that's already running just reattaches — never
     // double-spawn a pty (which would rerun its startup command) for one tab.
@@ -176,38 +218,6 @@ export class TerminalService {
     return { id };
   }
 
-  /**
-   * Re-run `command` in an existing (idle, at-prompt) pty — the "Re-run setup
-   * script" action. Resets completion tracking and types the command again;
-   * `onComplete` fires afresh when it finishes. Falls back to a fresh
-   * spawn-and-inject if the pty is gone (e.g. after an app restart).
-   */
-  rerunScript(
-    id: string,
-    command: string,
-    opts: SpawnOpts & { trackCompletion?: boolean } = {},
-  ): { id: string } {
-    const session = this.sessions.get(id);
-    if (!session) {
-      // No live shell to type into — start one from scratch (its `injected`
-      // guard is fresh, so the command runs).
-      return this.runScript(id, command, opts);
-    }
-    const track = (opts.trackCompletion ?? false) && process.platform !== 'win32';
-    session.marker = track ? sentinelRegex(id) : null;
-    session.markerGlobal = track ? sentinelRegex(id, true) : null;
-    session.markerSource = track ? sentinelSource(id) : null;
-    session.trackedCommand = track ? command : null;
-    session.trackedStartedAt = track ? Date.now() : null;
-    session.filterCarry = '';
-    this.completions.delete(id);
-    const write = track ? `${command.trimEnd()}${session.markerSource}\r` : `${command}\r`;
-    // The shell is already at a prompt (the previous run finished), so no
-    // startup delay is needed — type it straight in.
-    session.pty.write(write);
-    return { id };
-  }
-
   /** Spawn the pty + wire its data/exit plumbing. Caller guarantees `id` is not live. */
   private createSession(id: string, opts: SpawnOpts): void {
     const shell = defaultShell();
@@ -224,7 +234,8 @@ export class TerminalService {
     const session: Session = {
       pty: child,
       events,
-      scrollback: '',
+      scrollback: [],
+      scrollbackLen: 0,
       outBuffer: '',
       outFlush: null,
       injected: false,
@@ -265,10 +276,11 @@ export class TerminalService {
     }
 
     // Give the login shell a beat to source its rc files and print its first
-    // prompt, then type the command as if the user did. Guarded so a fast
-    // unmount that kills the pty before it's ready doesn't write to a dead fd.
+    // prompt, then type the command as if the user did. Compare identity, not
+    // just presence: a restart within the delay kills this pty and puts a fresh
+    // session under the same id, and writing to the dead fd would throw.
     setTimeout(() => {
-      if (this.sessions.has(id)) session.pty.write(write);
+      if (this.sessions.get(id) === session) session.pty.write(write);
     }, STARTUP_DELAY_MS);
   }
 
@@ -286,7 +298,15 @@ export class TerminalService {
     session.outFlush = setTimeout(() => this.flushOut(session), OUTPUT_FLUSH_MS);
   }
 
-  /** Emit buffered output as one chunk, appending it to scrollback in a single slice. */
+  /**
+   * Emit buffered output as one chunk and append it to scrollback.
+   *
+   * Scrollback is kept as a list of chunks and trimmed from the front. Rebuilding
+   * one capped string per flush instead (`(scrollback + data).slice(-LIMIT)`) meant
+   * allocating and copying a fresh 256 KB string on every tick — tens of MB/s of
+   * garbage while a dev server is chatty, for a buffer that is only ever read when a
+   * terminal reattaches. Appending is now O(chunk); the join moved to that rare read.
+   */
   private flushOut(session: Session): void {
     if (session.outFlush) {
       clearTimeout(session.outFlush);
@@ -295,7 +315,26 @@ export class TerminalService {
     if (!session.outBuffer) return;
     const data = session.outBuffer;
     session.outBuffer = '';
-    session.scrollback = (session.scrollback + data).slice(-SCROLLBACK_LIMIT);
+    session.scrollback.push(data);
+    session.scrollbackLen += data.length;
+    // Drop whole chunks off the front while the rest still covers the limit, then
+    // slice the new head to land exactly on it.
+    while (session.scrollbackLen > SCROLLBACK_LIMIT) {
+      const head = session.scrollback[0];
+      if (head === undefined) {
+        // Length and contents disagree — resync rather than spin.
+        session.scrollbackLen = 0;
+        break;
+      }
+      if (session.scrollbackLen - head.length >= SCROLLBACK_LIMIT) {
+        session.scrollback.shift();
+        session.scrollbackLen -= head.length;
+      } else {
+        const cut = session.scrollbackLen - SCROLLBACK_LIMIT;
+        session.scrollback[0] = head.slice(cut);
+        session.scrollbackLen -= cut;
+      }
+    }
     session.events.emit('data', data);
   }
 
@@ -415,6 +454,7 @@ export class TerminalService {
     const session = this.sessions.get(id);
     if (!session) return;
     if (session.outFlush) clearTimeout(session.outFlush);
+    killProcessTree(session.pty.pid); // kill the dev server et al. before the shell
     session.pty.kill();
     this.sessions.delete(id);
     this.completions.delete(id);
@@ -429,7 +469,7 @@ export class TerminalService {
    * replay before it subscribes to live data. Empty if the session isn't live.
    */
   snapshot(id: string): string {
-    const scrollback = this.sessions.get(id)?.scrollback ?? '';
+    const scrollback = this.sessions.get(id)?.scrollback.join('') ?? '';
     return scrollback.replace(DEVICE_QUERY_RE, '');
   }
 
@@ -437,6 +477,7 @@ export class TerminalService {
   disposeAll(): void {
     for (const session of this.sessions.values()) {
       if (session.outFlush) clearTimeout(session.outFlush);
+      killProcessTree(session.pty.pid); // kill the dev server et al. before the shell
       session.pty.kill();
     }
     this.sessions.clear();

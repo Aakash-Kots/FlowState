@@ -16,7 +16,7 @@ import {
   filesReadDirInputSchema,
 } from '@flowstate/shared';
 import { TRPCError } from '@trpc/server';
-import { getProject, getWorkspace } from '../store';
+import { getProject, getRecentFiles, getWorkspace, rememberRecentFile } from '../store';
 import { FilesService } from '../services/files';
 import { publicProcedure, router } from '../trpc';
 
@@ -63,6 +63,18 @@ export const filesRouter = router({
       const project = requireProject(input.projectId);
       return new FilesService(project.localPath).list();
     }),
+
+  /** The worktree's most-recently-opened files (⌘P empty-state candidates). */
+  recent: publicProcedure.input(filesListInputSchema).query(({ input }): string[] => {
+    requireWorkspace(input.workspaceId);
+    return getRecentFiles(input.workspaceId);
+  }),
+
+  /** Mark a file as just-opened, so it surfaces in the ⌘P "Recent files" list. */
+  recordRecent: publicProcedure.input(fileReadInputSchema).mutation(({ input }): void => {
+    requireWorkspace(input.workspaceId);
+    rememberRecentFile(input.workspaceId, input.path);
+  }),
 
   /** A single file's text, echoed back with its path. */
   read: publicProcedure

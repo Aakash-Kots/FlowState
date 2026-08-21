@@ -2,8 +2,16 @@
  * Renderer-only narrowings of the shared `ChatBlock` union, shared by the chat
  * components that render tool calls and their results.
  */
-import { ChatBlockType, type ChatBlock, type ChatSnapshotEntry } from '@flowstate/shared';
+import {
+  ChatBlockType,
+  type ChatBlock,
+  type ChatImageInput,
+  type ChatSnapshotEntry,
+} from '@flowstate/shared';
 import type { ChatItemKind } from '@/lib/enums/chat';
+
+/** The composer's current content: typed text plus attached images, in order. */
+export type ComposerDraft = { text: string; images: ChatImageInput[] };
 
 export type ToolUseBlock = Extract<ChatBlock, { type: ChatBlockType.ToolUse }>;
 export type ToolResultBlock = Extract<ChatBlock, { type: ChatBlockType.ToolResult }>;
@@ -16,6 +24,12 @@ export type ToolRowProps = { block: ToolUseBlock; result?: ToolResultBlock };
 
 /** Viewport coordinates of the caret the `@`-mention menu anchors itself to. */
 export type MentionCaret = { left: number; top: number; bottom: number };
+
+/**
+ * A streaming reply cut into the part that can no longer change (`stable`) and the
+ * part still being written (`tail`). See `splitStreamingMarkdown`.
+ */
+export type StreamingSplit = { stable: string; tail: string };
 
 /**
  * One item in the flattened transcript that `ChatView` renders: a whole-message

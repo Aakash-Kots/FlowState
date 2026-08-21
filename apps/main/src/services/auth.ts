@@ -23,8 +23,6 @@ import type { OnboardingStatus } from '../lib/types/onboarding';
 import { getSetting, setSetting } from '../store/settings';
 import { deleteSecret, getSecret, hasSecret, setSecret } from '../store/secrets';
 import { runLinearOAuth } from './linear-oauth';
-import { runSpotifyOAuth } from './spotify-oauth';
-import { spotifyService } from './spotify';
 import { terminalService } from './terminal';
 
 ///////////////
@@ -41,13 +39,21 @@ const POLL_TIMEOUT_MS = 3 * 60 * 1000;
 
 const execFileAsync = promisify(execFile);
 
-/** Run a command through the user's login shell so PATH matches their terminal. */
+/**
+ * Run a command through the user's login shell so PATH matches their terminal.
+ * On Windows there's no login-shell concept, so we go through cmd.exe (`/d /s /c`)
+ * — the child inherits the app's PATH, which is the user's environment PATH.
+ */
 async function loginShell(
   command: string,
 ): Promise<{ code: number; stdout: string; stderr: string }> {
-  const shell = process.env.SHELL ?? '/bin/zsh';
+  const isWindows = process.platform === 'win32';
+  const shell = isWindows
+    ? (process.env.COMSPEC ?? 'cmd.exe')
+    : (process.env.SHELL ?? '/bin/zsh');
+  const args = isWindows ? ['/d', '/s', '/c', command] : ['-lic', command];
   try {
-    const { stdout, stderr } = await execFileAsync(shell, ['-lic', command], {
+    const { stdout, stderr } = await execFileAsync(shell, args, {
       env: process.env,
       timeout: 20_000,
       maxBuffer: 1024 * 1024,
@@ -100,7 +106,6 @@ export class AuthService extends EventEmitter {
   private claudePolling = false;
   private githubPolling = false;
   private linearLoginAbort: AbortController | null = null;
-  private spotifyLoginAbort: AbortController | null = null;
 
   async checkClaude(): Promise<boolean> {
     const { stdout } = await loginShell('claude auth status');
@@ -115,7 +120,9 @@ export class AuthService extends EventEmitter {
   }
 
   async hasGithubCli(): Promise<boolean> {
-    const { code } = await loginShell('command -v gh');
+    // `command -v` is a POSIX shell builtin; `where` is its cmd.exe equivalent.
+    const probe = process.platform === 'win32' ? 'where gh' : 'command -v gh';
+    const { code } = await loginShell(probe);
     return code === 0;
   }
 
@@ -124,7 +131,6 @@ export class AuthService extends EventEmitter {
       claudeConnected: getSetting<boolean>(CLAUDE_CONNECTED_KEY) === true,
       githubConnected: hasSecret(SecretName.GithubToken),
       linearConnected: hasSecret(SecretName.LinearToken),
-      spotifyConnected: hasSecret(SecretName.SpotifyAccessToken),
     };
   }
 
@@ -255,39 +261,6 @@ export class AuthService extends EventEmitter {
   /** Disconnect Linear and clear the stored token. */
   linearLogout(): OnboardingStatus {
     deleteSecret(SecretName.LinearToken);
-    return this.emitStatus();
-  }
-
-  /**
-   * Link a Spotify account via OAuth (Authorization Code + PKCE — no CLI, no
-   * client secret). On success the access + refresh tokens are encrypted via
-   * safeStorage and a `status` event fires; any failure/cancel/timeout leaves
-   * the status unchanged so the pill simply stays "Connect".
-   */
-  async beginSpotifyLogin(): Promise<OnboardingStatus> {
-    if (this.spotifyLoginAbort) return this.status(); // a flow is already running
-    this.spotifyLoginAbort = new AbortController();
-    try {
-      const result = await runSpotifyOAuth({ signal: this.spotifyLoginAbort.signal });
-      spotifyService.persistTokens(result);
-      return this.emitStatus();
-    } catch (err) {
-      console.warn('[auth] Spotify login failed/cancelled:', (err as Error).message);
-      return this.status();
-    } finally {
-      this.spotifyLoginAbort = null;
-    }
-  }
-
-  /** Cancel an in-flight Spotify OAuth flow (tears down the loopback listener). */
-  cancelSpotifyLogin(): OnboardingStatus {
-    this.spotifyLoginAbort?.abort();
-    return this.status();
-  }
-
-  /** Disconnect Spotify and clear the stored tokens. */
-  spotifyLogout(): OnboardingStatus {
-    spotifyService.clearTokens();
     return this.emitStatus();
   }
 

@@ -43,6 +43,8 @@ export * from './tabs';
 export * from './terminals';
 export * from './projects';
 export * from './pins';
+export * from './notes';
+export * from './embeddings';
 export * from './transcripts';
 export * from './usage';
 export * from './activity';

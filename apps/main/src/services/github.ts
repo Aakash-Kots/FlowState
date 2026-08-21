@@ -15,11 +15,13 @@ import { promisify } from 'node:util';
 import type {
   AddProjectInput,
   CreatePrResult,
+  GithubContributionCalendar,
+  GithubContributionDay,
   GithubRepo,
   GithubViewer,
   PrStatus,
 } from '@flowstate/shared';
-import { PrChecks, PrState } from '@flowstate/shared';
+import { GithubContributionLevel, PrChecks, PrState } from '@flowstate/shared';
 import { PROJECTS_DIR } from '../lib/constants/project';
 import { SecretName } from '../lib/enums/secret';
 import { getSecret } from '../store/secrets';
@@ -30,17 +32,59 @@ import { authService } from './auth';
 ///////////////
 
 const GITHUB_API = 'https://api.github.com';
+const GITHUB_GRAPHQL = 'https://api.github.com/graphql';
 
 /**
- * How long a branch's PR status stays cached (ms). The header polls every ~20s
- * and every sidebar row + focus/archive read hits this same call; without a
- * cache each read fans out to 3 GitHub REST requests. A short TTL collapses a
- * focus burst onto one result while staying fresh against the poll.
+ * How long the viewer's contribution calendar stays cached (ms). It changes at
+ * most a few times a day, but the analytics page re-queries on every open — a
+ * 10-minute TTL collapses repeated opens onto one GraphQL round-trip.
  */
-const PR_STATUS_TTL_MS = 15_000;
+const CONTRIBUTIONS_TTL_MS = 10 * 60_000;
+
+/** GraphQL for the viewer's trailing-year contribution calendar. */
+const CONTRIBUTIONS_QUERY = `query {
+  viewer {
+    contributionsCollection {
+      contributionCalendar {
+        totalContributions
+        weeks {
+          contributionDays {
+            date
+            contributionCount
+            contributionLevel
+          }
+        }
+      }
+    }
+  }
+}`;
+
+/**
+ * How long a branch's PR status stays cached (ms). The header polls every ~60s
+ * (`PR_POLL_MS` in renderer lib/git.ts — this TTL must stay below it so polls
+ * refresh) and every sidebar row + focus/archive read hits this same call;
+ * without a cache each read fans out to 3 GitHub REST requests. The TTL
+ * collapses a focus burst onto one result while staying fresh against the poll.
+ */
+const PR_STATUS_TTL_MS = 55_000;
 
 /** How long a worktree's parsed `origin` remote stays cached (ms) — it ~never changes. */
 const ORIGIN_TTL_MS = 5 * 60_000;
+
+/**
+ * How long a repo's remote-branch fetch stays "fresh" (ms). Every branch-picker
+ * open asks for a refresh; a few seconds collapses a double-open (the modal
+ * opens, then the user clicks the branch trigger) onto one network round-trip
+ * while still feeling like "every time".
+ */
+const BRANCH_FETCH_TTL_MS = 5_000;
+
+/**
+ * Hard ceiling on the branch-refresh fetch (ms). The picker never blocks on it,
+ * so this only bounds a stuck credential helper or a dead network — `git()`'s
+ * 10-minute default would pin the in-flight entry for that long.
+ */
+const BRANCH_FETCH_TIMEOUT_MS = 30_000;
 
 /////////////
 // Helpers //
@@ -54,10 +98,80 @@ const prStatusCache = new Map<string, { value: PrStatus | null; expiresAt: numbe
 /** Per-worktree parsed `origin` cache. */
 const originCache = new Map<string, { value: { owner: string; fullName: string }; expiresAt: number }>();
 
+/**
+ * Per-repo branch-refresh state. `settledAt === null` means the fetch is still
+ * in flight — concurrent callers ride that promise rather than racing a second
+ * `git fetch`, which git rejects with "cannot lock ref".
+ */
+const branchFetches = new Map<string, { done: Promise<void>; settledAt: number | null }>();
+
+/** The viewer's contribution calendar cache (single viewer per app). */
+let contributionsCache: { value: GithubContributionCalendar; expiresAt: number } | null = null;
+
+/**
+ * Drop a removed worktree's cache entries so they don't outlive the worktree.
+ * `branchFetches` stays — it's keyed by repo root, shared across worktrees.
+ */
+export function evictGithubCaches(worktreePath: string): void {
+  originCache.delete(worktreePath);
+  for (const key of prStatusCache.keys()) {
+    if (key.startsWith(`${worktreePath}\n`)) prStatusCache.delete(key);
+  }
+}
+
+/** GitHub's contribution-level buckets → a 0–4 heat step. */
+const CONTRIBUTION_LEVELS: Record<GithubContributionLevel, number> = {
+  [GithubContributionLevel.None]: 0,
+  [GithubContributionLevel.FirstQuartile]: 1,
+  [GithubContributionLevel.SecondQuartile]: 2,
+  [GithubContributionLevel.ThirdQuartile]: 3,
+  [GithubContributionLevel.FourthQuartile]: 4,
+};
+
+/** The GraphQL contribution-calendar response shape (the fields we select). */
+type GithubApiContributions = {
+  data?: {
+    viewer?: {
+      contributionsCollection?: {
+        contributionCalendar?: {
+          totalContributions: number;
+          weeks: {
+            contributionDays: {
+              date: string;
+              contributionCount: number;
+              contributionLevel: GithubContributionLevel;
+            }[];
+          }[];
+        };
+      };
+    };
+  };
+  errors?: { message: string }[];
+};
+
+/** Map a GraphQL contribution day (snake-ish wire) → the domain day. */
+function toContributionDay(d: {
+  date: string;
+  contributionCount: number;
+  contributionLevel: GithubContributionLevel;
+}): GithubContributionDay {
+  return {
+    day: d.date,
+    count: d.contributionCount,
+    level: CONTRIBUTION_LEVELS[d.contributionLevel] ?? 0,
+  };
+}
+
 /** Run a `git` subcommand, surfacing stderr on failure. */
-async function git(args: string[]): Promise<void> {
+async function git(
+  args: string[],
+  opts?: { timeoutMs?: number; env?: NodeJS.ProcessEnv },
+): Promise<void> {
   try {
-    await execFileAsync('git', args, { env: process.env, timeout: 10 * 60 * 1000 });
+    await execFileAsync('git', args, {
+      env: opts?.env ?? process.env,
+      timeout: opts?.timeoutMs ?? 10 * 60 * 1000,
+    });
   } catch (err) {
     const e = err as { stderr?: string; message?: string };
     throw new Error(e.stderr?.trim() || e.message || 'git command failed');
@@ -176,6 +290,43 @@ export class GithubService {
     }
     const user = (await res.json()) as { login: string; avatar_url: string };
     return { login: user.login, avatarUrl: user.avatar_url };
+  }
+
+  /**
+   * The linked account's own contribution calendar for the trailing year — the
+   * data behind the GitHub-style heatmap on the analytics page. Cached in memory
+   * (see `CONTRIBUTIONS_TTL_MS`) since the analytics page re-queries on every open.
+   */
+  async contributionCalendar(): Promise<GithubContributionCalendar> {
+    if (contributionsCache && contributionsCache.expiresAt > Date.now()) {
+      return contributionsCache.value;
+    }
+
+    const token = await this.token();
+    const res = await fetch(GITHUB_GRAPHQL, {
+      method: 'POST',
+      headers: { ...this.apiHeaders(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: CONTRIBUTIONS_QUERY }),
+    });
+    if (!res.ok) {
+      throw new Error(`GitHub API error (${res.status}): failed to read your contributions.`);
+    }
+
+    const body = (await res.json()) as GithubApiContributions;
+    if (body.errors?.length) {
+      throw new Error(`GitHub API error: ${body.errors.map((e) => e.message).join('; ')}`);
+    }
+    const calendar = body.data?.viewer?.contributionsCollection?.contributionCalendar;
+    if (!calendar) {
+      throw new Error('GitHub API error: no contribution calendar returned.');
+    }
+
+    const value: GithubContributionCalendar = {
+      totalContributions: calendar.totalContributions,
+      weeks: calendar.weeks.map((week) => week.contributionDays.map(toContributionDay)),
+    };
+    contributionsCache = { value, expiresAt: Date.now() + CONTRIBUTIONS_TTL_MS };
+    return value;
   }
 
   /** Repositories the linked account can access, most-recently-updated first. */
@@ -298,6 +449,43 @@ export class GithubService {
     await this.githubOrigin(worktreePath);
     const auth = await this.authHeaderArgs();
     await git(['-C', worktreePath, ...auth, 'fetch', 'origin']);
+  }
+
+  /**
+   * Best-effort `git fetch --prune origin` so the branch pickers see branches
+   * pushed — or deleted — since the last look. Unlike `fetch` this never gates on
+   * a GitHub `origin` or a linked token: the auth header is URL-scoped to
+   * github.com, so it is inert on other remotes and simply omitted when no
+   * account is linked, letting public HTTPS and SSH remotes still refresh.
+   * Concurrent calls for one repo share a single fetch (git refuses concurrent
+   * ref updates) and a settled fetch is reused for BRANCH_FETCH_TTL_MS. Never
+   * throws — a local-only or offline repo just keeps its existing refs.
+   */
+  async refreshRemoteBranches(repoRoot: string): Promise<void> {
+    const existing = branchFetches.get(repoRoot);
+    if (
+      existing &&
+      (existing.settledAt === null || Date.now() - existing.settledAt < BRANCH_FETCH_TTL_MS)
+    ) {
+      return existing.done;
+    }
+    // No token linked → fetch unauthenticated rather than failing outright.
+    const auth = await this.authHeaderArgs().catch(() => []);
+    const entry: { done: Promise<void>; settledAt: number | null } = {
+      done: Promise.resolve(),
+      settledAt: null,
+    };
+    entry.done = git(['-C', repoRoot, ...auth, 'fetch', '--prune', 'origin'], {
+      timeoutMs: BRANCH_FETCH_TIMEOUT_MS,
+      // Never let a credential helper block on a prompt we have no TTY for.
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+    })
+      .catch(() => {})
+      .finally(() => {
+        entry.settledAt = Date.now();
+      });
+    branchFetches.set(repoRoot, entry);
+    return entry.done;
   }
 
   /**

@@ -5,8 +5,8 @@ import { setAnalyticsOpen, useSettings } from '@/lib/settings';
 import { cn } from '../ui/cn';
 
 /**
- * A compact header toggle that opens the full-screen Analytics surface. Sits
- * beside the Spotify button; highlights while the surface is open.
+ * A compact header toggle that opens the full-screen Analytics surface.
+ * Highlights while the surface is open.
  */
 export function AnalyticsButton() {
   const analyticsOpen = useSettings((s) => s.analyticsOpen);

@@ -12,4 +12,5 @@ export enum SdkSystemSubtype {
   CommandsChanged = 'commands_changed',
   SessionStateChanged = 'session_state_changed',
   ApiRetry = 'api_retry',
+  ElicitationComplete = 'elicitation_complete',
 }

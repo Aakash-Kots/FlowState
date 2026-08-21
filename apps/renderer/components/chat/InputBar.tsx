@@ -19,6 +19,7 @@ import {
   fileToChatImage,
   interruptSession,
   loadSupportedSkills,
+  openMcpPanel,
   respondPermission,
   sendPrompt,
   useChat,
@@ -26,18 +27,36 @@ import {
   usePrefillComposer,
   useTabId,
 } from '@/lib/chat';
+import {
+  clearComposerDraft,
+  getComposerDraft,
+  setComposerDraft,
+} from '@/lib/composerDrafts';
 import { MAX_COMPOSER_IMAGE_BYTES } from '@/lib/constants/chat';
 import { EXIT_PLAN_MODE_TOOL } from '@/lib/constants/tools';
 import { trpc } from '@/lib/trpc';
+import type { ComposerDraft } from '@/lib/types/chat';
 import { useWorkspace } from '@/lib/workspace';
 import { ArrowUp, Square } from 'lucide-react';
 import { cn } from '../ui/cn';
 import { Button } from '../ui/Button';
 import { IconButton } from '../ui/IconButton';
-import { ComposerEditor, type ComposerDraft, type ComposerEditorHandle } from './ComposerEditor';
+import { ComposerEditor, type ComposerEditorHandle } from './ComposerEditor';
 import { InlinePrompt } from './InlinePrompt';
 import { InputToolbar } from './InputToolbar';
 import { SlashMenu } from './SlashMenu';
+import { TaskTracker } from './TaskTracker';
+
+/**
+ * A synthetic `/` menu entry for the built-in `/mcp` command. Unlike SDK skills
+ * (which are sent as prompt text), selecting it opens the MCP status panel. Kept
+ * out of the SDK skill list so it's always available even before a session boots.
+ */
+const MCP_MENU_ENTRY: SkillOption = {
+  name: 'mcp',
+  description: 'Manage MCP servers — status, tools, reconnect, and authentication.',
+  argumentHint: '',
+};
 
 /**
  * The floating prompt bar: a rounded card overlaid on the bottom of the
@@ -75,6 +94,20 @@ export function InputBar({ disabled }: { disabled: boolean }) {
   const busy =
     sessionState === ClaudeSessionState.Running || sessionState === ClaudeSessionState.Waiting;
 
+  // Each chat tab owns its unsent draft. Restore this tab's saved text + images
+  // whenever the active chat changes (the composer instance is reused across tab
+  // switches, so it would otherwise carry the previous chat's text) or the editor
+  // remounts after an inline prompt clears. The editor is uncontrolled, so push
+  // the stored draft in imperatively and re-sync the mirrored plain text.
+  useEffect(() => {
+    if (hasPrompt) return;
+    const draft = getComposerDraft(tabId);
+    editorRef.current?.setDraft(draft);
+    setText(draft.text);
+    setHasImages(draft.images.length > 0);
+    setMenuDismissed(true);
+  }, [tabId, hasPrompt]);
+
   useEffect(() => {
     if (!disabled && !hasPrompt) editorRef.current?.focus();
   }, [disabled, hasPrompt]);
@@ -111,18 +144,18 @@ export function InputBar({ disabled }: { disabled: boolean }) {
   const slashMatch = /^\/(\S*)$/.exec(text);
   const slashQuery = slashMatch ? slashMatch[1].toLowerCase() : null;
   // Recompute only when the query or skill set changes — not on every re-render
-  // (e.g. arrow-key menu navigation, which only moves the highlight).
-  const filteredSkills = useMemo(
-    () =>
-      slashQuery !== null
-        ? skills.filter(
-            (sk) =>
-              sk.name.toLowerCase().includes(slashQuery) ||
-              sk.aliases?.some((a) => a.toLowerCase().includes(slashQuery)),
-          )
-        : [],
-    [skills, slashQuery],
-  );
+  // (e.g. arrow-key menu navigation, which only moves the highlight). The
+  // synthetic `/mcp` entry is a built-in command (not an SDK skill): selecting it
+  // opens the MCP status panel rather than prefilling the composer.
+  const filteredSkills = useMemo(() => {
+    if (slashQuery === null) return [];
+    const matched = skills.filter(
+      (sk) =>
+        sk.name.toLowerCase().includes(slashQuery) ||
+        sk.aliases?.some((a) => a.toLowerCase().includes(slashQuery)),
+    );
+    return MCP_MENU_ENTRY.name.includes(slashQuery) ? [MCP_MENU_ENTRY, ...matched] : matched;
+  }, [skills, slashQuery]);
   // Keep the menu up during the initial load so it can show a spinner.
   const menuLoading = skillsLoading && filteredSkills.length === 0;
   const menuActive = !disabled && !hasPrompt && !menuDismissed && slashQuery !== null;
@@ -146,9 +179,18 @@ export function InputBar({ disabled }: { disabled: boolean }) {
     setText(next);
     setHasImages(false);
     setMenuDismissed(true);
+    setComposerDraft(tabId, { text: next, images: [] });
   };
 
-  const selectSkill = (skill: SkillOption) => setComposer(`/${skill.name} `);
+  const selectSkill = (skill: SkillOption) => {
+    // `/mcp` is a built-in command handled in-app, not a skill to send.
+    if (skill.name === MCP_MENU_ENTRY.name) {
+      openMcpPanel(tabId);
+      setComposer('');
+      return;
+    }
+    setComposer(`/${skill.name} `);
+  };
 
   // Let the Skills & Actions panel prefill this composer (insert-then-send).
   usePrefillComposer(setComposer);
@@ -184,6 +226,7 @@ export function InputBar({ disabled }: { disabled: boolean }) {
     setText(draft.text);
     setHasImages(draft.images.length > 0);
     setMenuDismissed(false);
+    setComposerDraft(tabId, draft);
   };
 
   // The toolbar's image button routes through a hidden file input; convert the
@@ -203,6 +246,17 @@ export function InputBar({ disabled }: { disabled: boolean }) {
     editorRef.current?.clear();
     setText('');
     setHasImages(false);
+    clearComposerDraft(tabId);
+  };
+
+  // Insert a mic transcript at the caret, then re-sync the mirrored text + draft.
+  const onTranscribe = (transcript: string) => {
+    editorRef.current?.insertText(transcript);
+    const draft = editorRef.current?.getDraft() ?? { text: '', images: [] };
+    setText(draft.text);
+    setHasImages(draft.images.length > 0);
+    setMenuDismissed(true);
+    setComposerDraft(tabId, draft);
   };
 
   const submit = () => {
@@ -213,6 +267,13 @@ export function InputBar({ disabled }: { disabled: boolean }) {
     // rather than sending the literal text to the SDK.
     if (trimmed === '/clear') {
       clearChat(tabId);
+      resetComposer();
+      return;
+    }
+    // `/mcp` is a built-in command too: open the MCP status panel instead of
+    // sending the (inert) literal text to the SDK.
+    if (trimmed === '/mcp') {
+      openMcpPanel(tabId);
       resetComposer();
       return;
     }
@@ -350,6 +411,7 @@ export function InputBar({ disabled }: { disabled: boolean }) {
                   </Button>
                 </div>
               )}
+              <TaskTracker />
               <div className="px-2.5 py-2">
                 <ComposerEditor
                   ref={editorRef}
@@ -381,6 +443,7 @@ export function InputBar({ disabled }: { disabled: boolean }) {
               <InputToolbar
                 disabled={disabled}
                 onAttachImage={() => fileInputRef.current?.click()}
+                onTranscribe={onTranscribe}
                 trailing={
                   busy && !pendingPlan ? (
                     <IconButton

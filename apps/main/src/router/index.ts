@@ -3,15 +3,19 @@ import { analyticsRouter } from './analytics';
 import { appRouter as appMeta } from './app';
 import { claudeRouter } from './claude';
 import { filesRouter } from './files';
+import { gemmaRouter } from './gemma';
 import { gitRouter } from './git';
+import { githubRouter } from './github';
 import { linearRouter } from './linear';
+import { mcpRouter } from './mcp';
+import { notesRouter } from './notes';
 import { onboardingRouter } from './onboarding';
 import { pinsRouter } from './pins';
 import { projectsRouter } from './projects';
+import { searchRouter } from './search';
 import { settingsRouter } from './settings';
 import { shortcutsRouter } from './shortcuts';
 import { skillsRouter } from './skills';
-import { spotifyRouter } from './spotify';
 import { systemRouter } from './system';
 import { tabsRouter } from './tabs';
 import { terminalRouter } from './terminal';
@@ -21,6 +25,7 @@ import { worktreeRouter } from './worktree';
 export const appRouter = router({
   app: appMeta,
   git: gitRouter,
+  github: githubRouter,
   files: filesRouter,
   worktree: worktreeRouter,
   tabs: tabsRouter,
@@ -28,10 +33,13 @@ export const appRouter = router({
   onboarding: onboardingRouter,
   projects: projectsRouter,
   pins: pinsRouter,
+  notes: notesRouter,
   skills: skillsRouter,
   claude: claudeRouter,
   linear: linearRouter,
-  spotify: spotifyRouter,
+  mcp: mcpRouter,
+  search: searchRouter,
+  gemma: gemmaRouter,
   system: systemRouter,
   shortcuts: shortcutsRouter,
   settings: settingsRouter,

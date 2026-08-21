@@ -1,7 +1,7 @@
 /**
  * Persistence for the activity ledger (`activity_events`) — an append-only log
  * of meaningful user actions (commits, finished Setup/Run scripts, Linear state
- * changes, Spotify plays), read back by the analytics page as time-series
+ * changes), read back by the analytics page as time-series
  * aggregates. Rows are denormalized on purpose (no FK), so the ledger outlives
  * the workspaces and projects it references.
  *

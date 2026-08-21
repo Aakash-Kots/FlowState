@@ -42,7 +42,7 @@ const ASSIGNED_ISSUES_QUERY = `
   }
 `;
 
-/** Shared issue selection — every browse/detail/write query returns this shape. */
+/** Shared issue selection — detail/write queries return this full shape. */
 const ISSUE_FIELDS = `
   id
   identifier
@@ -58,6 +58,28 @@ const ISSUE_FIELDS = `
   attachments(first: 20) { nodes { url title sourceType metadata } }
 `;
 
+/**
+ * Lighter selection for the browse/search list (up to 100 rows). Drops the
+ * `description` body — the list never renders it; the detail/preview panels fetch
+ * the full issue by id on demand — and trims attachments, since a handful is
+ * plenty to find the linked GitHub PR. Keeps every field the list + relevance
+ * ranking need (state type, priority, assignee, PR). Cuts per-fetch payload and
+ * Linear-side work sharply, which is what the keystroke-driven search pays for.
+ */
+const ISSUE_LIST_FIELDS = `
+  id
+  identifier
+  title
+  url
+  branchName
+  priority
+  updatedAt
+  team { id }
+  state { id name type color }
+  assignee { id name avatarUrl }
+  attachments(first: 10) { nodes { url title sourceType metadata } }
+`;
+
 const TEAMS_QUERY = `
   query Teams($first: Int!) {
     teams(first: $first, orderBy: updatedAt) {
@@ -69,7 +91,7 @@ const TEAMS_QUERY = `
 const ISSUES_QUERY = `
   query Issues($first: Int!, $filter: IssueFilter) {
     issues(first: $first, filter: $filter, orderBy: updatedAt) {
-      nodes { ${ISSUE_FIELDS} }
+      nodes { ${ISSUE_LIST_FIELDS} }
     }
   }
 `;
@@ -77,6 +99,17 @@ const ISSUES_QUERY = `
 const ISSUE_BY_ID_QUERY = `
   query Issue($id: String!) {
     issue(id: $id) { ${ISSUE_FIELDS} }
+  }
+`;
+
+// Semantic-index corpus: a team's issues with their `description` bodies (the
+// full ISSUE_FIELDS selection), all states, so search can match meaning in the
+// body — not just the title. Same 100-row cap as the browse list.
+const TEAM_ISSUES_INDEX_QUERY = `
+  query TeamIssuesIndex($first: Int!, $filter: IssueFilter) {
+    issues(first: $first, filter: $filter, orderBy: updatedAt) {
+      nodes { ${ISSUE_FIELDS} }
+    }
   }
 `;
 
@@ -250,6 +283,10 @@ function toLinearIssue(n: IssueNode): LinearIssue {
   };
 }
 
+/** Process-wide SDK client cache, keyed by the token it was built with. */
+let cachedClient: LinearClient | null = null;
+let cachedToken: string | null = null;
+
 export class LinearService {
   /** The linked account's OAuth token, or throw a Connect-first error. */
   private token(): string {
@@ -260,9 +297,18 @@ export class LinearService {
     return token;
   }
 
-  /** A fresh SDK client bound to the linked account's token. */
+  /**
+   * The SDK client bound to the linked account's token, cached across calls so a
+   * keystroke-driven search doesn't rebuild the client (and re-decrypt the secret)
+   * every request. Rebuilt only when the token changes (reconnect / re-auth).
+   */
   private client(): LinearClient {
-    return new LinearClient({ accessToken: this.token() });
+    const token = this.token();
+    if (!cachedClient || cachedToken !== token) {
+      cachedClient = new LinearClient({ accessToken: token });
+      cachedToken = token;
+    }
+    return cachedClient;
   }
 
   /** Issues assigned to the linked user (all states), most-recently-updated first. */
@@ -294,6 +340,7 @@ export class LinearService {
   async issues(input: ListLinearIssuesInput): Promise<LinearIssue[]> {
     const filter: Record<string, unknown> = {};
     if (input.teamId) filter.team = { id: { eq: input.teamId } };
+    else if (input.teamIds?.length) filter.team = { id: { in: input.teamIds } };
     if (!input.includeCompleted) Object.assign(filter, ACTIVE_STATE_FILTER);
     const q = input.query?.trim();
     if (q) {
@@ -317,6 +364,20 @@ export class LinearService {
       { issues: { nodes: IssueNode[] } },
       { first: number; filter: Record<string, unknown> }
     >(ISSUES_QUERY, { first: 100, filter });
+    return (data?.issues.nodes ?? []).map(toLinearIssue);
+  }
+
+  /**
+   * A team's issues with description bodies — the corpus the local semantic index
+   * embeds. Includes every state (finished tickets are worth searching too) and
+   * carries the full body so search matches meaning, not just the title.
+   */
+  async teamIssuesForIndex(teamId: string): Promise<LinearIssue[]> {
+    const filter = { team: { id: { eq: teamId } } };
+    const { data } = await this.client().client.rawRequest<
+      { issues: { nodes: IssueNode[] } },
+      { first: number; filter: Record<string, unknown> }
+    >(TEAM_ISSUES_INDEX_QUERY, { first: 100, filter });
     return (data?.issues.nodes ?? []).map(toLinearIssue);
   }
 

@@ -14,6 +14,7 @@ import type {
   ReasoningEffort,
 } from '../enums/claude';
 import type { GitFileStatus } from '../enums/git';
+import type { McpServerLiveStatus } from './mcp';
 
 /**
  * A single persisted message in a Claude Code session transcript. `content` is
@@ -165,7 +166,8 @@ export type ChatEvent =
   // `toolName` is the raw SDK name, present only for tool_use blocks.
   | { kind: ChatEventKind.BlockStart; blockType: string; toolName?: string }
   // Finalized, persisted message. Authoritative: replaces any delta buffer.
-  | { kind: ChatEventKind.Message; message: ChatMessage; createdAt: string }
+  // `id` is the DB row id (a paging cursor; null if persistence failed).
+  | { kind: ChatEventKind.Message; id: number | null; message: ChatMessage; createdAt: string }
   | { kind: ChatEventKind.State; state: ClaudeSessionState }
   | {
       kind: ChatEventKind.PermissionRequest;
@@ -197,6 +199,8 @@ export type ChatEvent =
   | { kind: ChatEventKind.WorktreeName; workspaceId: string; name: string; branch: string }
   // The session's available skills changed — replaces the cached list wholesale.
   | { kind: ChatEventKind.SkillsUpdated; skills: SkillOption[] }
+  // The session's MCP servers' live status changed — replaces the panel's list.
+  | { kind: ChatEventKind.McpStatusUpdated; servers: McpServerLiveStatus[] }
   // Live elapsed time for the current top-level tool; ephemeral, not persisted.
   | { kind: ChatEventKind.ToolProgress; toolName: string; elapsedSeconds: number }
   // The SDK is retrying a transient API failure; ephemeral, not persisted.
@@ -212,6 +216,9 @@ export type TabStateChange = { tabId: string; workspaceId: string; state: Claude
 
 /** One transcript entry in a snapshot: a message plus when it was persisted. */
 export type ChatSnapshotEntry = {
+  /** DB row id — the cursor the renderer's live-array trim re-pages from; null
+   * for entries that predate id plumbing (a trim then simply skips). */
+  id: number | null;
   message: ChatMessage;
   createdAt: string;
 };

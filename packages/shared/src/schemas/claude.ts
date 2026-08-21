@@ -16,6 +16,7 @@ import {
   ReasoningEffort,
 } from '../enums/claude';
 import { GitFileStatus } from '../enums/git';
+import { mcpServerLiveStatusSchema } from './mcp';
 import type {
   ChatBlock,
   ChatEvent,
@@ -144,6 +145,7 @@ export const chatEventSchema: z.ZodType<ChatEvent> = z.discriminatedUnion('kind'
   }),
   z.object({
     kind: z.literal(ChatEventKind.Message),
+    id: z.number().nullable(),
     message: chatMessageSchema,
     createdAt: z.string().datetime(),
   }),
@@ -187,6 +189,10 @@ export const chatEventSchema: z.ZodType<ChatEvent> = z.discriminatedUnion('kind'
     skills: z.array(skillOptionSchema),
   }),
   z.object({
+    kind: z.literal(ChatEventKind.McpStatusUpdated),
+    servers: z.array(mcpServerLiveStatusSchema),
+  }),
+  z.object({
     kind: z.literal(ChatEventKind.ToolProgress),
     toolName: z.string(),
     elapsedSeconds: z.number(),
@@ -199,6 +205,12 @@ export const chatEventSchema: z.ZodType<ChatEvent> = z.discriminatedUnion('kind'
   z.object({ kind: z.literal(ChatEventKind.Error), message: z.string() }),
 ]);
 
+const chatSnapshotEntrySchema = z.object({
+  id: z.number().nullable(),
+  message: chatMessageSchema,
+  createdAt: z.string().datetime(),
+});
+
 export const chatSnapshotSchema: z.ZodType<ChatSnapshot> = z.object({
   state: claudeSessionStateSchema,
   sessionId: z.string().nullable(),
@@ -206,7 +218,7 @@ export const chatSnapshotSchema: z.ZodType<ChatSnapshot> = z.object({
   model: z.string().nullable(),
   effort: reasoningEffortSchema.nullable(),
   permissionMode: z.nativeEnum(PermissionMode),
-  messages: z.array(z.object({ message: chatMessageSchema, createdAt: z.string().datetime() })),
+  messages: z.array(chatSnapshotEntrySchema),
   oldestId: z.number().nullable(),
   hasMoreBefore: z.boolean(),
   pendingPermissions: z.array(permissionRequestSchema),
@@ -215,7 +227,7 @@ export const chatSnapshotSchema: z.ZodType<ChatSnapshot> = z.object({
 });
 
 export const chatHistoryPageSchema: z.ZodType<ChatHistoryPage> = z.object({
-  messages: z.array(z.object({ message: chatMessageSchema, createdAt: z.string().datetime() })),
+  messages: z.array(chatSnapshotEntrySchema),
   oldestId: z.number().nullable(),
   hasMoreBefore: z.boolean(),
 });

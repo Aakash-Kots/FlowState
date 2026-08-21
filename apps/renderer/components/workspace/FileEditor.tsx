@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
-import { EditorView, keymap } from '@codemirror/view';
+import { drawSelection, EditorView, keymap } from '@codemirror/view';
 import { Prec, type Extension } from '@codemirror/state';
 import { javascript } from '@codemirror/lang-javascript';
 import { json } from '@codemirror/lang-json';
@@ -21,6 +21,17 @@ import {
 } from '@/lib/fileTabs';
 import { trpc } from '@/lib/trpc';
 import { Markdown } from '../chat/Markdown';
+
+///////////////
+// Constants //
+///////////////
+
+/**
+ * `basicSetup` minus its `drawSelection`, which hard-codes a blinking caret. The
+ * extension list re-adds `drawSelection` with the blink turned off; everything else
+ * in the default setup stays on.
+ */
+const NO_BLINK_SETUP = { drawSelection: false } as const;
 
 /////////////
 // Helpers //
@@ -138,6 +149,11 @@ export function FileEditor({ tab }: { tab: Tab }) {
         ]),
       ),
       EditorView.lineWrapping,
+      // Replaces the default `drawSelection` (disabled via `basicSetup` below) purely
+      // to stop the caret blinking. A blinking caret repaints twice a second for as
+      // long as a file tab is focused, keeping the compositor awake on an idle editor
+      // — the same reason `cursorBlink` is off on both xterm surfaces.
+      drawSelection({ cursorBlinkRate: 0 }),
       ...languageExtension(path),
     ],
     [path],
@@ -199,6 +215,7 @@ export function FileEditor({ tab }: { tab: Tab }) {
             value={value}
             onChange={onChange}
             extensions={extensions}
+            basicSetup={NO_BLINK_SETUP}
             theme={githubDark}
             height="100%"
             className="h-full text-sm"

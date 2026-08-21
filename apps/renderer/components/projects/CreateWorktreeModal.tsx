@@ -2,12 +2,14 @@
 
 import { useEffect, useRef, useState } from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
-import { ArrowLeft, ChevronDown, GitBranch, Tag, X } from 'lucide-react';
+import { ArrowLeft, ChevronDown, GitBranch, ImagePlus, Tag, X } from 'lucide-react';
 import { PermissionMode } from '@flowstate/shared';
-import type { LinearIssueRef } from '@flowstate/shared';
+import type { ChatImageInput, LinearIssueRef } from '@flowstate/shared';
+import { fileToChatImage } from '@/lib/chat';
+import { MAX_COMPOSER_IMAGE_BYTES } from '@/lib/constants/chat';
 import { refreshAssignedIssues, useLinear } from '@/lib/linear';
 import { useOnboarding } from '@/lib/onboarding';
-import { createWorktree, setCreateOpen, useProjects } from '@/lib/projects';
+import { createWorktree, loadBranches, setCreateOpen, useProjects } from '@/lib/projects';
 import { trpc } from '@/lib/trpc';
 import { Button } from '@/components/ui/Button';
 import { cn } from '@/components/ui/cn';
@@ -32,8 +34,8 @@ export function CreateWorktreeModal() {
   const projectId = useProjects((s) => s.createProjectId);
   const creating = useProjects((s) => s.creating);
   const error = useProjects((s) => s.createError);
-  const branches = useProjects((s) => s.branches);
-  const branchesLoading = useProjects((s) => s.branchesLoading);
+  const branches = useProjects((s) => (projectId ? (s.branches[projectId] ?? []) : []));
+  const branchesLoading = useProjects((s) => (projectId ? !!s.branchesLoading[projectId] : false));
   const project = useProjects((s) => s.projects.find((p) => p.id === s.createProjectId) ?? null);
   const linearSeed = useProjects((s) => s.createLinearSeed);
   const linearConnected = useOnboarding((s) => s.linearConnected);
@@ -42,6 +44,7 @@ export function CreateWorktreeModal() {
 
   const [baseRef, setBaseRef] = useState('');
   const [prompt, setPrompt] = useState('');
+  const [promptImages, setPromptImages] = useState<ChatImageInput[]>([]);
   const [planMode, setPlanMode] = useState(false);
   const [linearIssue, setLinearIssue] = useState<LinearIssueRef | null>(null);
   const [branch, setBranch] = useState('');
@@ -49,6 +52,7 @@ export function CreateWorktreeModal() {
   // returns to the creation form, which stays mounted so the draft is preserved).
   const [viewingTicket, setViewingTicket] = useState(false);
   const editorRef = useRef<ComposerEditorHandle>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Reset the form each time the modal opens, defaulting to the project's branch,
   // honoring a pre-linked Linear issue (from the Linear tab), and pulling the
@@ -57,6 +61,7 @@ export function CreateWorktreeModal() {
     if (!open) return;
     setBaseRef(project?.worktreeBaseBranch ?? project?.defaultBranch ?? '');
     setPrompt('');
+    setPromptImages([]);
     setPlanMode(false);
     setLinearIssue(linearSeed);
     setBranch(linearSeed?.branchName ?? '');
@@ -73,14 +78,18 @@ export function CreateWorktreeModal() {
     linearSeed,
   ]);
 
-  // Tickets are created constantly, so re-fetch when the window regains focus
-  // while the modal is open (e.g. after creating a ticket in Linear).
+  // Branches and tickets are both created constantly outside FlowState, so
+  // re-read both when the window regains focus while the modal is open (e.g.
+  // after branching in a terminal or filing a ticket in Linear).
   useEffect(() => {
-    if (!open || !linearConnected) return;
-    const onFocus = () => void refreshAssignedIssues();
+    if (!open) return;
+    const onFocus = () => {
+      if (linearConnected) void refreshAssignedIssues();
+      if (projectId) void loadBranches(projectId);
+    };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
-  }, [open, linearConnected]);
+  }, [open, linearConnected, projectId]);
 
   // Picking an issue seeds the (editable) branch with Linear's suggested name.
   const selectIssue = (issue: LinearIssueRef | null) => {
@@ -94,10 +103,22 @@ export function CreateWorktreeModal() {
     void createWorktree({
       baseRef,
       initialPrompt: prompt,
+      initialImages: promptImages,
       permissionMode: planMode ? PermissionMode.Plan : PermissionMode.Default,
       linearIssue,
       branch: linearIssue ? branch : undefined,
     });
+  };
+
+  // The attach button routes through a hidden file input; convert the picks and
+  // insert them into the editor (its onChange keeps `promptImages` in sync).
+  const onPickImages = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []).filter((f) => f.size <= MAX_COMPOSER_IMAGE_BYTES);
+    void Promise.all(files.map(fileToChatImage)).then((imgs) => {
+      const valid = imgs.filter((img): img is ChatImageInput => img !== null);
+      if (valid.length) editorRef.current?.insertImages(valid);
+    });
+    e.target.value = ''; // let the same file be picked again after removal
   };
 
   // The base branch may not be in the fetched list yet (or ever); include it so
@@ -183,14 +204,17 @@ export function CreateWorktreeModal() {
                 ref={editorRef}
                 disabled={false}
                 placeholder="What should Claude start on in this worktree?  (@ to add a file)"
-                allowImages={false}
+                allowImages={true}
                 editorClassName="min-h-[160px] max-h-80 leading-6"
                 mentions={
                   projectId
                     ? { fetch: () => trpc().files.listForProject.query({ projectId }) }
                     : undefined
                 }
-                onChange={(draft) => setPrompt(draft.text)}
+                onChange={(draft) => {
+                  setPrompt(draft.text);
+                  setPromptImages(draft.images);
+                }}
                 onKeyDown={(e) => {
                   // Cmd/Ctrl+Enter submits; Shift+Tab (plan toggle) bubbles to the
                   // dialog's own handler. The `@` menu handles its keys internally.
@@ -231,6 +255,23 @@ export function CreateWorktreeModal() {
             {error && <p className="px-4 pb-1 text-sm text-warn">{error}</p>}
 
             <div className="flex items-center gap-1 px-2 pb-2 pt-1">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/gif,image/webp"
+                multiple
+                className="hidden"
+                onChange={onPickImages}
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                title="Attach an image"
+                className={cn('inline-flex items-center rounded-md transition-colors', triggerClass)}
+              >
+                <ImagePlus className="h-4 w-4" />
+              </button>
+
               <Combobox
                 triggerClassName={triggerClass}
                 trigger={
@@ -245,6 +286,9 @@ export function CreateWorktreeModal() {
                 getFilterText={(b) => b}
                 isSelected={(b) => b === baseRef}
                 onSelect={setBaseRef}
+                onOpen={() => {
+                  if (projectId) void loadBranches(projectId);
+                }}
                 placeholder="Search branches…"
                 emptyText="No branches"
                 loading={branchesLoading}

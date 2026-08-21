@@ -1,0 +1,1 @@
+ALTER TABLE `mcp_servers` ADD `allow_insecure_tls` integer DEFAULT false NOT NULL;

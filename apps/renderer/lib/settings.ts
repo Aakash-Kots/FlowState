@@ -14,6 +14,9 @@ type SettingsState = {
   hydrated: boolean;
   /** Play a sound when an agent finishes a turn in a tab you're not watching. */
   soundEnabled: boolean;
+  /** Whether the macOS frosted-glass sidebar is on. Costs continuous GPU
+   * compositing, so it defaults off and applies on the next launch. */
+  vibrancyEnabled: boolean;
   /** The syntax-highlighting palette for code surfaces (diffs, chat blocks). */
   codeTheme: CodeTheme;
   /** The base UI text size; drives the root font size the whole UI scales from. */
@@ -34,6 +37,16 @@ type SettingsState = {
   skillsPanelOpen: boolean;
   /** Fraction (0–1) of the panel's height given to its bottom terminal section. */
   terminalPanelFraction: number;
+  /** Whether natural-language (semantic) ticket search is enabled. */
+  semanticSearchEnabled: boolean;
+  /** Whether to force the smaller Q4 embedding model regardless of RAM. */
+  preferSmallModel: boolean;
+  /** Linear team ids to surface across the app; empty means all teams. */
+  surfacedTeamIds: string[];
+  /** Team preselected for new tickets (null = none chosen → first surfaced). */
+  defaultTeamId: string | null;
+  /** Whether a Gemini API key is stored (the plaintext never reaches the renderer). */
+  geminiApiKeySet: boolean;
 };
 
 ///////////////
@@ -43,6 +56,7 @@ type SettingsState = {
 const INITIAL: SettingsState = {
   hydrated: false,
   soundEnabled: true,
+  vibrancyEnabled: false,
   codeTheme: CodeTheme.GithubDark,
   fontSize: FontSize.Default,
   archiveRetention: ArchiveRetention.OneDay,
@@ -52,6 +66,11 @@ const INITIAL: SettingsState = {
   skillsPanelWidth: 360,
   skillsPanelOpen: true,
   terminalPanelFraction: 0.5,
+  semanticSearchEnabled: true,
+  preferSmallModel: false,
+  surfacedTeamIds: [],
+  defaultTeamId: null,
+  geminiApiKeySet: false,
 };
 
 export const useSettings = create<SettingsState>(() => INITIAL);
@@ -77,6 +96,17 @@ function applyCodeTheme(theme: CodeTheme): void {
   }
 }
 
+/**
+ * Drive the CSS `data-vibrancy` attribute. With vibrancy off the window is
+ * opaque, so the sidebar's translucent tone would read as washed out — the
+ * attribute lets `globals.css` give it a solid fill instead.
+ */
+function applyVibrancy(enabled: boolean): void {
+  if (typeof document !== 'undefined') {
+    document.documentElement.dataset.vibrancy = enabled ? 'on' : 'off';
+  }
+}
+
 /** Set the root font size the rem-based UI scales from. */
 function applyFontSize(size: FontSize): void {
   if (typeof document !== 'undefined') {
@@ -96,35 +126,104 @@ export function useSettingsSync(): void {
       .then(
         ({
           soundEnabled,
+          vibrancyEnabled,
           codeTheme,
           fontSize,
           archiveRetention,
           skillsPanelWidth,
           skillsPanelOpen,
           terminalPanelFraction,
+          surfacedTeamIds,
+          defaultTeamId,
+          geminiApiKeySet,
         }) => {
           useSettings.setState({
             hydrated: true,
             soundEnabled,
+            vibrancyEnabled,
             codeTheme,
             fontSize,
             archiveRetention,
             skillsPanelWidth,
             skillsPanelOpen,
             terminalPanelFraction,
+            surfacedTeamIds,
+            defaultTeamId,
+            geminiApiKeySet,
           });
           applyCodeTheme(codeTheme);
           applyFontSize(fontSize);
+          applyVibrancy(vibrancyEnabled);
         },
       )
       .catch(() => useSettings.setState({ hydrated: true }));
+
+    // Semantic-search prefs live under the search router (main owns the model).
+    trpc()
+      .search.prefs.query()
+      .then(({ enabled, preferSmallModel }) =>
+        useSettings.setState({ semanticSearchEnabled: enabled, preferSmallModel }),
+      )
+      .catch(() => {});
   }, []);
+}
+
+/** Enable or disable natural-language ticket search (optimistic + persisted). */
+export function setSemanticSearchEnabled(enabled: boolean): void {
+  useSettings.setState({ semanticSearchEnabled: enabled });
+  void trpc().search.setEnabled.mutate({ enabled });
+}
+
+/** Toggle the smaller (Q4) embedding model preference (optimistic + persisted). */
+export function setPreferSmallModel(prefer: boolean): void {
+  useSettings.setState({ preferSmallModel: prefer });
+  void trpc().search.setPreferSmallModel.mutate({ prefer });
+}
+
+/**
+ * Choose which Linear teams to surface (optimistic + persisted). Callers that
+ * need the issue lists / index to reflect the change should trigger the Linear
+ * refetch themselves — this store stays free of `@/lib/linear` to avoid a cycle.
+ */
+export function setSurfacedTeamIds(teamIds: string[]): void {
+  useSettings.setState({ surfacedTeamIds: teamIds });
+  void trpc().settings.setSurfacedTeamIds.mutate({ teamIds });
+}
+
+/** Choose the team preselected for new tickets (optimistic + persisted). */
+export function setDefaultTeam(teamId: string | null): void {
+  useSettings.setState({ defaultTeamId: teamId });
+  void trpc().settings.setDefaultTeam.mutate({ teamId });
+}
+
+/** Save the user's Gemini API key (encrypted in the main process). Resolves once
+ * persisted so the caller can surface a saved/failed state. */
+export async function setGeminiApiKey(apiKey: string): Promise<void> {
+  await trpc().settings.setGeminiApiKey.mutate({ apiKey });
+  useSettings.setState({ geminiApiKeySet: true });
+}
+
+/** Remove the stored Gemini API key (optimistic + persisted). */
+export async function clearGeminiApiKey(): Promise<void> {
+  await trpc().settings.clearGeminiApiKey.mutate();
+  useSettings.setState({ geminiApiKeySet: false });
 }
 
 /** Toggle the completion sound (optimistic; persisted in the main process). */
 export function setSoundEnabled(enabled: boolean): void {
   useSettings.setState({ soundEnabled: enabled });
   void trpc().settings.setSoundEnabled.mutate({ enabled });
+}
+
+/**
+ * Toggle the macOS frosted-glass sidebar. Optimistic in the store so the sidebar
+ * swaps to its opaque tone at once, but the window's own `vibrancy` is fixed at
+ * creation — the glass itself only changes on the next launch.
+ */
+export function setVibrancyEnabled(enabled: boolean): void {
+  useSettings.setState({ vibrancyEnabled: enabled });
+  applyVibrancy(enabled);
+  void trpc().settings.setVibrancyEnabled.mutate({ enabled });
 }
 
 /** Choose the code-highlighting palette (optimistic + applied immediately). */

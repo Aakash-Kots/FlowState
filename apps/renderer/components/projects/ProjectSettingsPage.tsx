@@ -19,10 +19,11 @@ import { ProjectAvatar } from './ProjectAvatar';
  */
 export function ProjectSettingsPage({ projectId }: { projectId: string }) {
   const project = useProjects((s) => s.projects.find((p) => p.id === projectId) ?? null);
-  const branches = useProjects((s) => s.branches);
-  const branchesLoading = useProjects((s) => s.branchesLoading);
+  const branches = useProjects((s) => s.branches[projectId] ?? []);
+  const branchesLoading = useProjects((s) => !!s.branchesLoading[projectId]);
 
-  // Load this project's branches once so the picker has choices.
+  // Warm this project's branch list so the picker has choices before its first
+  // open (each open refreshes it again).
   useEffect(() => {
     void loadBranches(projectId);
   }, [projectId]);
@@ -94,6 +95,7 @@ export function ProjectSettingsPage({ projectId }: { projectId: string }) {
                   getFilterText={(b) => b}
                   isSelected={(b) => b === baseBranch}
                   onSelect={(b) => void saveProjectBaseBranch(projectId, b)}
+                  onOpen={() => void loadBranches(projectId)}
                   placeholder="Search branches…"
                   emptyText="No branches"
                   loading={branchesLoading}

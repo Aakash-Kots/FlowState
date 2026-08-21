@@ -5,6 +5,7 @@
  * repositories (a candidate that has not been cloned/persisted yet). Validation
  * lives in `../schemas/project`.
  */
+import type { TerminalKind } from '../enums/terminal';
 
 /** The linked GitHub account itself — its login and profile avatar. */
 export type GithubViewer = {
@@ -44,8 +45,12 @@ export type Project = {
   private: boolean;
   /** Shell command run in each new worktree's Setup terminal (e.g. `bun install`); null until set. */
   setupScript: string | null;
+  /** False keeps `setupScript` but stops it auto-running when a worktree opens. */
+  setupScriptEnabled: boolean;
   /** Shell command run in a worktree's Run terminal (e.g. `bun run dev`); null until set. */
   runScript: string | null;
+  /** False keeps `runScript` but stops it auto-running when a worktree opens. */
+  runScriptEnabled: boolean;
   createdAt: string;
 };
 
@@ -57,11 +62,21 @@ export type AddProjectInput = {
   private: boolean;
 };
 
-/** Input to set a project's Setup/Run scripts (either may be cleared to null). */
-export type UpdateProjectScriptsInput = {
+/** Which of a project's two scripts an operation targets. */
+export type ProjectScriptKind = TerminalKind.Setup | TerminalKind.Run;
+
+/**
+ * Input to set one of a project's two scripts. Both fields are optional so a
+ * caller only ever sends what it changed — sending the whole pair would let a
+ * stale client silently revert the other field.
+ */
+export type UpdateProjectScriptInput = {
   projectId: string;
-  setupScript: string | null;
-  runScript: string | null;
+  kind: ProjectScriptKind;
+  /** New command; `null` clears it (which also re-enables the slot). */
+  command?: string | null;
+  /** New auto-run flag. */
+  enabled?: boolean;
 };
 
 /** Input to set the branch new worktrees are cut from (null falls back to the default). */
